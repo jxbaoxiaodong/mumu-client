@@ -1,0 +1,32 @@
+# Mumu 成长记录系统 - 客户端依赖
+# 最低 Python 版本: 3.8
+
+# Web 框架
+Flask==2.3.3
+Werkzeug==2.3.7
+
+# HTTP 客户端
+requests==2.31.0
+urllib3==2.0.7
+
+# 图片处理
+Pillow==10.1.0
+
+# 视频处理
+imageio-ffmpeg>=0.4.9
+
+# 音频处理
+pydub==0.25.1
+
+# 日期处理
+python-dateutil==2.8.2
+
+# 其他工具
+colorama==0.4.6
+
+# 可选: 如果使用 Windows 打包
+# pyinstaller==6.3.0
+
+# 可选: 如果直接调用 AI API (不通过服务端转发)
+# openai>=1.0.0
+# dashscope>=1.0.0

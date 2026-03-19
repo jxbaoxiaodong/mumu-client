@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="theme-color" content="#FF9A8B">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="format-detection" content="telephone=no">
+    <title>{% block title %}成长记录 - {{ baby_name }}的成长点滴{% endblock %}</title>
+    
+    <!-- Bootstrap 5 CSS (本地) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.min.css') }}">
+    
+    <!-- Font Awesome (本地) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
+    
+    <!-- Google Fonts (本地离线) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='fonts/google-fonts.css') }}">
+    
+    <!-- 自定义 CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    
+    <!-- 导航栏头像样式 - 响应式大小，无边框 -->
+    <style>
+    .navbar-avatar {
+        width: 40px;
+        height: 40px;
+        object-fit: cover;
+        border: none;
+        transition: all 0.3s ease;
+    }
+    
+    /* 平板 (≥768px) */
+    @media (min-width: 768px) {
+        .navbar-avatar {
+            width: 44px;
+            height: 44px;
+        }
+    }
+    
+    /* PC (≥992px) */
+    @media (min-width: 992px) {
+        .navbar-avatar {
+            width: 48px;
+            height: 48px;
+        }
+    }
+    </style>
+    
+    <!-- 动态主题 CSS -->
+    <style id="dynamic-theme">{{ theme_css | safe }}</style>
+    
+    <!-- Masonry for瀑布流 (本地) -->
+    <script src="{{ url_for('static', filename='vendor/masonry/masonry-4.2.2.pkgd.min.js') }}"></script>
+    
+    <!-- 日历 CSS (本地) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.css') }}">
+    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.zh.js') }}"></script>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- 本地模式提示横幅 -->
+    {% if local_mode %}
+    <div class="local-mode-banner" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 20px; text-align: center; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <div style="max-width: 900px; margin: 0 auto; font-size: 0.95em;">
+            <i class="fas fa-home" style="margin-right: 8px;"></i>
+            <strong>您目前使用的是本地模式</strong>，可局域网内浏览照片，公网访问、智能日志及AI画像等不可用。
+        </div>
+    </div>
+    <style>
+        body.local-mode nav.navbar { top: 42px !important; }
+        body.local-mode { padding-top: 42px; }
+    </style>
+    <script>document.body.classList.add('local-mode');</script>
+    {% endif %}
+    
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-light fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <img src="{{ avatar_url|default('/static/images/default-avatar.png') }}" alt="头像" class="navbar-avatar rounded-circle me-2">
+                <span class="brand-text">{{ baby_name }}的成长记录</span>
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('index') }}">
+                            <span class="me-2">🏠</span>首页
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                            <span class="me-2">📤</span>上传
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#calendarModal">
+                            <span class="me-2">📅</span>日历
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('profile_page') }}">
+                            <span class="me-2">🤖</span>成长画像
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="openAllTagsModal(); return false;">
+                            <span class="me-2">🏷️</span>标签照片
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#themeModal">
+                            <span class="me-2">🎨</span>主题
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                            <span class="me-2">⚙️</span>设置
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#contactModal">
+                            <span class="me-2">📜</span>说明
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区域 -->
+    <main class="container mt-5 pt-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="footer mt-5 py-4">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8 mb-3 mb-md-0">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3" style="font-size: 2rem;">💕</div>
+                        <div>
+                            <h5 class="mb-1">{{ baby_name }}的成长记录</h5>
+                            <p class="mb-1 text-muted">记录宝宝的点点滴滴，留住那些温暖的小时光</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <div class="mb-2">
+                        <img id="footer-qrcode" src="" alt="下载" style="width:80px;height:80px;border-radius:8px;display:none;">
+                    </div>
+                    <small class="text-muted">扫码下载安装包</small>
+                </div>
+            </div>
+            <hr class="my-3">
+            <div class="row">
+                <div class="col-12 text-center">
+                    <small class="text-muted">
+                        宝宝成长日志系统 v{{ client_version|default('2.0.0') }} &copy; mumu
+                    </small>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 模态框区域 -->
+    {% include 'modals/calendar.html' %}
+    {% include 'modals/upload.html' %}
+    {% include 'modals/ai.html' %}
+    {% include 'modals/theme_customizer.html' %}
+    {% include 'modals/photo_detail.html' %}
+    {% include 'modals/photo_tags.html' %}
+    {% include 'modals/settings.html' %}
+    {% include 'components/notifications.html' %}
+    
+    <!-- 使用说明模态框 -->
+    <div class="modal fade" id="contactModal" tabindex="-1" aria-labelledby="contactModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="contactModalLabel">
+                        <i class="fas fa-book me-2" style="color: var(--peach);"></i>使用说明
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 核心价值 -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-3">🎯 发现宝宝的独特之处</h6>
+                        <p class="text-muted">
+                            通过 AI 深度分析宝宝的照片、视频和日常记录，生成专属成长画像——性格特质、兴趣倾向、发展优势一目了然。帮助家长及早发现孩子的天赋和长处，因势利导，科学教育，让宝宝赢在起跑线。
+                        </p>
+                    </div>
+                    
+                    <!-- AI 核心功能 -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-3">🤖 AI 画像分析（核心功能）</h6>
+                        <p class="text-muted small mb-2">基于大模型深度分析，消耗 Token：</p>
+                        <ul class="text-muted small">
+                            <li><strong>特质识别</strong>：从日常点滴中发现性格、兴趣和潜能</li>
+                            <li><strong>发展评估</strong>：运动、语言、社交等维度跟踪成长轨迹</li>
+                            <li><strong>教育建议</strong>：根据画像特点提供因势利导的养育指导</li>
+                            <li><strong>智能日志</strong>：自动整理照片生成成长日记</li>
+                        </ul>
+                        <div class="alert alert-light border mt-3 mb-0">
+                            <p class="small mb-2"><strong>关于调用AI的token额度：</strong></p>
+                            <p class="small text-muted mb-0">
+                                作者提供一定免费额度，日常自动生成日志基本够用。<br>
+                                如需画像生成需批量处理大量照片素材，额度可能不足，可联系作者补充。
+                                有技术基础的用户可从Github下载源码自行配置 AI 接口，不受额度限制。
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- 基础功能 -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-3">📷 照片管理（基础功能）</h6>
+                        <p class="text-muted small mb-2">照片统一管理，无需 AI 接口，永久免费：</p>
+                        <ul class="text-muted small">
+                            <li>汇集多设备照片视频，本地集中存储</li>
+                            <li>按日期自动归类，快速回溯任意时光</li>
+                            <li>远程分享给家人，省去微信传图麻烦</li>
+                            <li>数据完全本地托管，隐私自主可控</li>
+                        </ul>
+                    </div>
+                    
+                    <!-- 自行部署 -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-3">🔧 Github地址</h6>
+                        <p class="text-muted small">
+                            客户端采用Python编写，可从GitHub 获取源码自行部署，或进行代码审查。
+                        </p>
+                        <div class="d-flex gap-2 mt-2">
+                            <a href="https://github.com/你的用户名/仓库名" target="_blank" class="btn btn-sm btn-outline-dark">
+                                <i class="fab fa-github me-1"></i>GitHub 仓库
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- 联系方式 -->
+                    <div class="alert alert-info mb-4">
+                        <h6 class="fw-bold mb-2">💬 需要帮助？</h6>
+                        <p class="small mb-1">遇到问题、想要补充额度，或者有任何建议：</p>
+                        <p class="small mb-0"><strong>微信：</strong>linhb112233</p>
+                    </div>
+                    
+                    <!-- 问题反馈 -->
+                    <div>
+                        <h6 class="fw-bold mb-3">📝 意见反馈</h6>
+                        <form id="feedbackForm" onsubmit="submitFeedback(event)">
+                            <div class="mb-2">
+                                <input type="text" class="form-control form-control-sm" id="feedbackName" placeholder="怎么称呼（选填）">
+                            </div>
+                            <div class="mb-2">
+                                <textarea class="form-control form-control-sm" id="feedbackContent" rows="3" placeholder="遇到了什么问题，或有什么想法..." required></textarea>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-paper-plane me-1"></i>发送反馈
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function submitFeedback(event) {
+        event.preventDefault();
+        const name = document.getElementById('feedbackName').value || '匿名用户';
+        const content = document.getElementById('feedbackContent').value;
+        
+        // 提交反馈到服务器
+        fetch('/api/feedback', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, content})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('感谢您的反馈！我们会认真考虑您的建议', 'success');
+                document.getElementById('feedbackForm').reset();
+                bootstrap.Modal.getInstance(document.getElementById('contactModal')).hide();
+            } else {
+                showNotification('提交失败: ' + data.message, 'error');
+            }
+        })
+        .catch(err => {
+            showNotification('提交失败，请稍后重试', 'error');
+        });
+    }
+    </script>
+
+    <!-- 中国省市区数据 -->
+    <script src="{{ url_for('static', filename='js/china_cities.js') }}"></script>
+    
+    <!-- Bootstrap JS (本地) -->
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.bundle.min.js') }}"></script>
+    
+    <!-- 自定义 JS -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    {% block extra_js %}{% endblock %}
+    
+    <!-- 初始化脚本 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化工具提示
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // 显示通知（如果有）
+            {% if notification %}
+                showNotification('{{ notification.message }}', '{{ notification.type }}');
+            {% endif %}
+            
+            // 初始化瀑布流
+            initMasonry();
+            
+            // 初始化日历（如果函数存在）
+            if (typeof initCalendar === 'function') {
+                initCalendar();
+            }
+            
+            // 加载二维码图片
+            loadQRCode();
+        });
+        
+        // 加载二维码
+        function loadQRCode() {
+            fetch('/api/qrcode')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const img = document.getElementById('footer-qrcode');
+                        if (data.qr_code_data) {
+                            img.src = data.qr_code_data;
+                            img.style.display = 'inline-block';
+                        } else if (data.qr_code_url) {
+                            img.src = data.qr_code_url;
+                            img.style.display = 'inline-block';
+                        }
+                    }
+                })
+                .catch(e => console.log('加载二维码失败:', e));
+        }
+    </script>
+</body>
+</html>

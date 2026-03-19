@@ -1,0 +1,105 @@
+<!-- 照片详情模态框 -->
+<div class="modal fade" id="photoDetailModal" tabindex="-1" aria-labelledby="photoDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photoDetailModalLabel">照片详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <img id="detailPhotoImg" src="" alt="照片" class="img-fluid rounded" style="max-height: 400px;">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">描述</label>
+                    <textarea id="detailCaption" class="form-control" rows="3" placeholder="添加描述..."></textarea>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">标签</label>
+                    <input type="text" id="detailTags" class="form-control" placeholder="用逗号分隔标签">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">日期</label>
+                    <input type="date" id="detailDate" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="savePhotoDetails()">保存</button>
+                <button type="button" class="btn btn-danger" onclick="deletePhoto()">删除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPhotoId = null;
+
+function showPhotoDetail(photoId) {
+    currentPhotoId = photoId;
+    
+    // 获取照片详情
+    fetch(`/api/photos/${photoId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const photo = data.photo;
+                
+                // 显示照片
+                document.getElementById('detailPhotoImg').src = `/photos/${photo.filename}`;
+                document.getElementById('detailCaption').value = photo.caption || '';
+                document.getElementById('detailTags').value = photo.tags ? photo.tags.join(', ') : '';
+                document.getElementById('detailDate').value = photo.date || '';
+                
+                // 显示模态框
+                const modal = new bootstrap.Modal(document.getElementById('photoDetailModal'));
+                modal.show();
+            }
+        });
+}
+
+function savePhotoDetails() {
+    if (!currentPhotoId) return;
+    
+    const caption = document.getElementById('detailCaption').value;
+    const tags = document.getElementById('detailTags').value.split(',').map(tag => tag.trim()).filter(tag => tag);
+    const date = document.getElementById('detailDate').value;
+    
+    fetch(`/api/photos/${currentPhotoId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ caption, tags, date })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('保存成功');
+            location.reload();
+        } else {
+            alert('保存失败: ' + data.message);
+        }
+    });
+}
+
+function deletePhoto() {
+    if (!currentPhotoId || !confirm('确定要删除这张照片吗？')) return;
+    
+    fetch(`/api/photos/${currentPhotoId}`, {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('删除成功');
+            location.reload();
+        } else {
+            alert('删除失败: ' + data.message);
+        }
+    });
+}
+</script>

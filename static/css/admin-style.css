@@ -1,0 +1,455 @@
+/* 
+  管理后台 - 温馨风格样式
+  与主站风格统一，使用暖色调
+*/
+
+/* ========== 基础样式 ========== */
+:root {
+  --admin-primary: #FF9A8B;
+  --admin-primary-light: #FFB4A2;
+  --admin-secondary: #A8E6CF;
+  --admin-accent: #FFD93D;
+  --admin-bg: #FFF8F0;
+  --admin-card: rgba(255, 255, 255, 0.95);
+  --admin-text: #4A4A4A;
+  --admin-text-light: #6B6B6B;
+  --admin-border: rgba(255, 154, 139, 0.1);
+  --admin-shadow: 0 4px 20px rgba(255, 154, 139, 0.15);
+  --admin-radius: 16px;
+}
+
+body {
+  background: var(--admin-bg);
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--admin-text);
+  line-height: 1.6;
+}
+
+/* ========== 侧边栏 ========== */
+.sidebar {
+  background: linear-gradient(135deg, var(--admin-primary) 0%, var(--admin-primary-light) 100%);
+  color: white;
+  min-height: 100vh;
+  position: fixed;
+  width: 250px;
+  padding-top: 20px;
+  box-shadow: 2px 0 20px rgba(255, 154, 139, 0.2);
+}
+
+.sidebar-header {
+  padding: 25px 20px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.3rem;
+}
+
+.sidebar-header small {
+  opacity: 0.8;
+  font-size: 0.85rem;
+}
+
+.nav-link {
+  color: rgba(255, 255, 255, 0.9);
+  padding: 14px 20px;
+  margin: 6px 12px;
+  border-radius: var(--admin-radius);
+  transition: all 0.3s ease;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.nav-link:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateX(5px);
+}
+
+.nav-link.active {
+  color: white;
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.nav-link i {
+  margin-right: 12px;
+  width: 20px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.logout-btn {
+  position: absolute;
+  bottom: 25px;
+  left: 20px;
+  right: 20px;
+}
+
+/* ========== 主内容区域 ========== */
+.main-content {
+  margin-left: 250px;
+  padding: 25px;
+  min-height: 100vh;
+}
+
+.header {
+  background: var(--admin-card);
+  padding: 25px;
+  border-radius: var(--admin-radius);
+  margin-bottom: 30px;
+  box-shadow: var(--admin-shadow);
+  border: 1px solid var(--admin-border);
+}
+
+.header h1 {
+  color: var(--admin-text);
+  margin: 0;
+  font-weight: 600;
+  font-size: 1.8rem;
+}
+
+.header p {
+  color: var(--admin-text-light);
+  margin: 8px 0 0 0;
+  opacity: 0.8;
+}
+
+/* ========== 卡片样式 ========== */
+.table-container,
+.stats-container,
+.form-container {
+  background: var(--admin-card);
+  border-radius: var(--admin-radius);
+  padding: 25px;
+  margin-bottom: 25px;
+  box-shadow: var(--admin-shadow);
+  border: 1px solid var(--admin-border);
+}
+
+.card {
+  background: var(--admin-card);
+  border-radius: var(--admin-radius);
+  border: 1px solid var(--admin-border);
+  box-shadow: var(--admin-shadow);
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(255, 154, 139, 0.2);
+}
+
+.card-header {
+  background: linear-gradient(135deg, var(--admin-primary-light), var(--admin-primary));
+  color: white;
+  border-bottom: none;
+  padding: 18px 25px;
+  border-radius: var(--admin-radius) var(--admin-radius) 0 0 !important;
+}
+
+.card-header h5 {
+  margin: 0;
+  font-weight: 600;
+}
+
+.card-body {
+  padding: 25px;
+}
+
+/* ========== 表格样式 ========== */
+.table {
+  font-size: 0.9rem;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.table th {
+  background: rgba(255, 154, 139, 0.05);
+  color: var(--admin-text);
+  font-weight: 600;
+  padding: 15px;
+  border-bottom: 2px solid var(--admin-border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 15px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--admin-border);
+  color: var(--admin-text-light);
+}
+
+.table tr:hover td {
+  background: rgba(255, 154, 139, 0.03);
+}
+
+/* ========== 徽章样式 ========== */
+.badge {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-weight: 500;
+  font-size: 0.8rem;
+}
+
+.badge-online,
+.badge.bg-success {
+  background: var(--admin-secondary) !important;
+  color: #2D6A4F;
+}
+
+.badge-offline,
+.badge.bg-secondary {
+  background: rgba(108, 117, 125, 0.2) !important;
+  color: var(--admin-text);
+}
+
+.badge-paid,
+.badge.bg-warning {
+  background: var(--admin-accent) !important;
+  color: #8B6914;
+}
+
+.badge-free {
+  background: rgba(108, 117, 125, 0.2) !important;
+  color: var(--admin-text);
+}
+
+/* ========== 按钮样式 ========== */
+.btn {
+  border-radius: 20px;
+  padding: 10px 22px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  border: none;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 154, 139, 0.2);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--admin-primary), var(--admin-primary-light));
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--admin-primary-light), var(--admin-primary));
+  color: white;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--admin-secondary), #8FD9B6);
+  color: #2D6A4F;
+}
+
+.btn-outline-primary {
+  border: 2px solid var(--admin-primary);
+  color: var(--admin-primary);
+  background: transparent;
+}
+
+.btn-outline-primary:hover {
+  background: var(--admin-primary);
+  color: white;
+}
+
+.btn-sm {
+  padding: 6px 16px;
+  font-size: 0.85rem;
+}
+
+.btn-lg {
+  padding: 14px 32px;
+  font-size: 1rem;
+}
+
+/* ========== 表单样式 ========== */
+.form-control,
+.form-select {
+  border-radius: 12px;
+  border: 2px solid rgba(255, 154, 139, 0.2);
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  transition: all 0.3s ease;
+  background: white;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--admin-primary);
+  box-shadow: 0 0 0 4px rgba(255, 154, 139, 0.15);
+  background: white;
+}
+
+.form-label {
+  font-weight: 600;
+  color: var(--admin-text);
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+/* ========== 统计卡片 ========== */
+.stat-card {
+  text-align: center;
+  padding: 25px;
+  border-radius: var(--admin-radius);
+  background: linear-gradient(135deg, var(--admin-primary-light), var(--admin-primary));
+  color: white;
+  margin-bottom: 20px;
+}
+
+.stat-icon {
+  font-size: 2.5rem;
+  margin-bottom: 15px;
+  opacity: 0.9;
+}
+
+.stat-number {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.stat-label {
+  font-size: 0.9rem;
+  opacity: 0.9;
+}
+
+/* ========== 响应式设计 ========== */
+
+/* 汉堡菜单按钮 */
+.menu-toggle {
+  display: none;
+  position: fixed;
+  top: 15px;
+  left: 15px;
+  z-index: 1001;
+  background: linear-gradient(135deg, var(--admin-primary), var(--admin-primary-light));
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  box-shadow: var(--admin-shadow);
+}
+
+.menu-toggle i {
+  font-size: 1.3rem;
+}
+
+/* 遮罩层 */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+.sidebar-overlay.show {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .menu-toggle {
+    display: block;
+  }
+  
+  .sidebar {
+    position: fixed;
+    width: 260px;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    z-index: 1000;
+  }
+  
+  .sidebar.show {
+    transform: translateX(0);
+  }
+  
+  .main-content {
+    margin-left: 0;
+    padding: 15px;
+    padding-top: 70px;
+  }
+  
+  .header {
+    padding: 15px;
+  }
+  
+  .header h1 {
+    font-size: 1.2rem;
+  }
+  
+  .table-container,
+  .stats-container,
+  .form-container {
+    padding: 15px;
+  }
+  
+  .nav-link {
+    padding: 12px 16px;
+    margin: 4px 8px;
+  }
+  
+  .table {
+    font-size: 0.8rem;
+  }
+  
+  .table th, .table td {
+    padding: 10px 8px;
+  }
+  
+  .btn {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+  }
+  
+  .card-body {
+    padding: 15px;
+  }
+}
+
+/* ========== 动画效果 ========== */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+/* ========== 滚动条美化 ========== */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--admin-bg);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--admin-primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--admin-primary-light);
+}

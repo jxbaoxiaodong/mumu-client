@@ -1,0 +1,502 @@
+<!-- 留言模态框 -->
+<div class="modal fade" id="messageModal" tabindex="-1" aria-labelledby="messageModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="messageModalLabel">
+                    <i class="far fa-comment-dots me-2"></i>添加留言
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 留言角色选择 -->
+                <div class="mb-3">
+                    <label class="form-label">选择角色</label>
+                    <div class="d-flex flex-wrap gap-2 mb-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn active" data-role="爸爸">👨 爸爸</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn" data-role="妈妈">👩 妈妈</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn" data-role="爷爷">👴 爷爷</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn" data-role="奶奶">👵 奶奶</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn" data-role="外公">🧔 外公</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm role-btn" data-role="外婆">🧓 外婆</button>
+                    </div>
+                    <input type="text" class="form-control form-control-sm" id="customRole" 
+                           placeholder="或者输入其他称呼..." maxlength="10">
+                </div>
+                
+                <!-- 留言类型选择 -->
+                <div class="message-type-tabs mb-4">
+                    <ul class="nav nav-pills nav-fill" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="text-tab" data-bs-toggle="pill" 
+                                    data-bs-target="#textMessage" type="button" role="tab">
+                                <i class="fas fa-pen me-2"></i>文字留言
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="voice-tab" data-bs-toggle="pill" 
+                                    data-bs-target="#voiceMessage" type="button" role="tab">
+                                <i class="fas fa-microphone me-2"></i>语音留言
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                
+                <!-- 文字留言 -->
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="textMessage" role="tabpanel">
+                        <div class="mb-3">
+                            <label class="form-label">留言内容</label>
+                            <textarea class="form-control" id="textMessageContent" rows="4" 
+                                      placeholder="记录今天最想对{{ baby_name }}说的话..."></textarea>
+                        </div>
+                        <div class="d-grid">
+                            <button class="btn btn-primary" onclick="messageModalSendText()">
+                                <i class="fas fa-paper-plane me-2"></i>发送文字留言
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- 语音留言 -->
+                    <div class="tab-pane fade" id="voiceMessage" role="tabpanel">
+                        <div class="voice-recorder">
+                            <div class="text-center py-4">
+                                <div class="voice-icon mb-3" id="voiceIcon">
+                                    <i class="fas fa-microphone fa-3x"></i>
+                                </div>
+                                
+                                <p class="text-muted mb-3" id="voiceStatus">
+                                    点击麦克风开始录音
+                                </p>
+                                
+                                <!-- 录音波形动画 -->
+                                <div class="waveform mb-4" id="waveform" style="display: none;">
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                    <div class="wave-bar"></div>
+                                </div>
+                                
+                                <div class="d-flex justify-content-center gap-3">
+                                    <button class="btn btn-danger btn-lg rounded-circle" 
+                                            id="recordBtn" onclick="messageModalToggleRecording()">
+                                        <i class="fas fa-microphone"></i>
+                                    </button>
+                                    
+                                    <button class="btn btn-secondary btn-lg rounded-circle" 
+                                            id="stopBtn" onclick="messageModalStopRecording()" disabled>
+                                        <i class="fas fa-stop"></i>
+                                    </button>
+                                </div>
+                                
+                                <!-- 录音时长 -->
+                                <div class="mt-3">
+                                    <span id="recordingTime" class="text-danger" style="display: none;">
+                                        <i class="fas fa-circle fa-xs me-1"></i>
+                                        <span id="timer">00:00</span>
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <!-- 语音预览 -->
+                            <div id="voicePreview" class="mt-3" style="display: none;">
+                                <audio id="audioPreview" controls class="w-100"></audio>
+                                <div class="mt-2">
+                                    <input type="text" class="form-control" id="voiceCaption" 
+                                           placeholder="添加语音备注（可选）">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid mt-3">
+                            <button class="btn btn-primary" id="sendVoiceBtn" onclick="messageModalSendVoice()" disabled>
+                                <i class="fas fa-paper-plane me-2"></i>发送语音留言
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 密码验证模态框 -->
+<div class="modal fade" id="passwordVerifyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">🔐 验证密码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">请输入管理密码进行此操作。<br>不知道密码？请询问家人或朋友。</p>
+                <input type="password" class="form-control" id="verifyPassword" placeholder="输入密码">
+                <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmPassword()">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.message-type-tabs .nav-link {
+    border-radius: 25px;
+    padding: 12px 20px;
+    font-weight: 500;
+}
+
+.message-type-tabs .nav-link.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.role-btn {
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+}
+
+.role-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: transparent;
+}
+
+.voice-recorder {
+    background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+    border-radius: 16px;
+    padding: 20px;
+}
+
+.voice-icon {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    transition: all 0.3s ease;
+}
+
+.voice-icon.recording {
+    animation: pulse 1s infinite;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.waveform {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    height: 50px;
+}
+
+.wave-bar {
+    width: 4px;
+    height: 20px;
+    background: linear-gradient(to top, #667eea, #764ba2);
+    border-radius: 2px;
+    animation: wave 1s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(1) { animation-delay: 0s; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; }
+.wave-bar:nth-child(6) { animation-delay: 0.5s; }
+.wave-bar:nth-child(7) { animation-delay: 0.6s; }
+.wave-bar:nth-child(8) { animation-delay: 0.7s; }
+.wave-bar:nth-child(9) { animation-delay: 0.8s; }
+.wave-bar:nth-child(10) { animation-delay: 0.9s; }
+
+@keyframes wave {
+    0%, 100% { height: 10px; }
+    50% { height: 40px; }
+}
+
+.recording .wave-bar {
+    animation-play-state: running;
+}
+
+.text-danger .fa-circle {
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+</style>
+
+<script>
+// 角色选择
+(function() {
+    const roleBtns = document.querySelectorAll('.role-btn');
+    const customRoleInput = document.getElementById('customRole');
+    
+    roleBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            roleBtns.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            customRoleInput.value = '';
+        });
+    });
+    
+    customRoleInput.addEventListener('input', function() {
+        if (this.value) {
+            roleBtns.forEach(b => b.classList.remove('active'));
+        }
+    });
+})();
+
+function getSelectedRole() {
+    const customRole = document.getElementById('customRole').value.trim();
+    if (customRole) return customRole;
+    
+    const activeBtn = document.querySelector('.role-btn.active');
+    return activeBtn ? activeBtn.dataset.role : '家人';
+}
+
+// 密码验证
+let pendingAction = null;
+
+function showPasswordVerify(action) {
+    pendingAction = action;
+    const modal = new bootstrap.Modal(document.getElementById('passwordVerifyModal'));
+    document.getElementById('verifyPassword').value = '';
+    document.getElementById('passwordError').style.display = 'none';
+    modal.show();
+}
+
+function confirmPassword() {
+    const password = document.getElementById('verifyPassword').value;
+    const errorEl = document.getElementById('passwordError');
+    
+    fetch('/api/verify-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: password, action: pendingAction})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
+            if (pendingAction === 'send_message') {
+                doSendMessage();
+            } else if (pendingAction === 'send_voice') {
+                doSendVoice();
+            } else if (pendingAction === 'delete_message' && window.pendingDeleteId) {
+                doDeleteMessage(window.pendingDeleteId);
+            }
+            pendingAction = null;
+        } else {
+            errorEl.textContent = data.message || '密码错误';
+            errorEl.style.display = 'block';
+        }
+    });
+}
+
+// 录音功能
+let msgMediaRecorder = null;
+let msgAudioChunks = [];
+let msgAudioBlob = null;
+let msgRecordingTimer = null;
+let msgRecordingSeconds = 0;
+let msgIsRecording = false;
+
+function messageModalToggleRecording() {
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const voiceIcon = document.getElementById('voiceIcon');
+    const waveform = document.getElementById('waveform');
+    const voiceStatus = document.getElementById('voiceStatus');
+    const recordingTime = document.getElementById('recordingTime');
+    
+    if (msgIsRecording) {
+        messageModalStopRecording();
+        return;
+    }
+    
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            msgMediaRecorder = new MediaRecorder(stream);
+            msgAudioChunks = [];
+            
+            msgMediaRecorder.ondataavailable = e => msgAudioChunks.push(e.data);
+            
+            msgMediaRecorder.onstop = () => {
+                msgAudioBlob = new Blob(msgAudioChunks, { type: 'audio/webm' });
+                const audioPreview = document.getElementById('audioPreview');
+                audioPreview.src = URL.createObjectURL(msgAudioBlob);
+                document.getElementById('voicePreview').style.display = 'block';
+                document.getElementById('sendVoiceBtn').disabled = false;
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            msgMediaRecorder.start();
+            msgIsRecording = true;
+            
+            recordBtn.disabled = true;
+            stopBtn.disabled = false;
+            voiceIcon.classList.add('recording');
+            waveform.style.display = 'flex';
+            voiceStatus.textContent = '正在录音...';
+            recordingTime.style.display = 'inline';
+            
+            msgRecordingSeconds = 0;
+            msgRecordingTimer = setInterval(() => {
+                msgRecordingSeconds++;
+                const m = Math.floor(msgRecordingSeconds / 60).toString().padStart(2, '0');
+                const s = (msgRecordingSeconds % 60).toString().padStart(2, '0');
+                document.getElementById('timer').textContent = `${m}:${s}`;
+            }, 1000);
+        })
+        .catch(err => showNotification('无法访问麦克风: ' + err.message, 'error'));
+}
+
+function messageModalStopRecording() {
+    if (msgMediaRecorder && msgMediaRecorder.state !== 'inactive') {
+        msgMediaRecorder.stop();
+    }
+    msgIsRecording = false;
+    
+    document.getElementById('recordBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    document.getElementById('voiceIcon').classList.remove('recording');
+    document.getElementById('waveform').style.display = 'none';
+    document.getElementById('voiceStatus').textContent = '录音完成';
+    document.getElementById('recordingTime').style.display = 'none';
+    
+    if (msgRecordingTimer) {
+        clearInterval(msgRecordingTimer);
+        msgRecordingTimer = null;
+    }
+}
+
+// 发送文字留言
+function messageModalSendText() {
+    const content = document.getElementById('textMessageContent').value.trim();
+    if (!content) {
+        showNotification('请输入留言内容', 'warning');
+        return;
+    }
+    showPasswordVerify('send_message');
+}
+
+function doSendMessage() {
+    const content = document.getElementById('textMessageContent').value.trim();
+    const author = getSelectedRole();
+    
+    const formData = new FormData();
+    formData.append('message', content);
+    formData.append('type', 'text');
+    formData.append('author', author);
+    
+    fetch('/message', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('留言发送成功', 'success');
+            document.getElementById('textMessageContent').value = '';
+            bootstrap.Modal.getInstance(document.getElementById('messageModal')).hide();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showNotification('发送失败: ' + data.message, 'error');
+        }
+    });
+}
+
+// 发送语音留言
+function messageModalSendVoice() {
+    if (!msgAudioBlob) {
+        showNotification('请先录制语音', 'warning');
+        return;
+    }
+    showPasswordVerify('send_voice');
+}
+
+function doSendVoice() {
+    const caption = document.getElementById('voiceCaption').value.trim();
+    const author = getSelectedRole();
+    
+    const reader = new FileReader();
+    reader.readAsDataURL(msgAudioBlob);
+    reader.onloadend = function() {
+        const formData = new FormData();
+        formData.append('audio', reader.result);
+        formData.append('message', caption || '语音留言');
+        formData.append('type', 'voice');
+        formData.append('author', author);
+        
+        fetch('/message', {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('语音留言发送成功', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('messageModal')).hide();
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showNotification('发送失败: ' + data.message, 'error');
+            }
+        });
+    };
+}
+
+// 删除留言
+function deleteMessage(messageId) {
+    window.pendingDeleteId = messageId;
+    if (typeof showPasswordVerify === 'function') {
+        showPasswordVerify('delete_message');
+    } else {
+        // 如果密码验证模态框还没加载，直接确认删除
+        if (confirm('确定要删除这条留言吗？')) {
+            doDeleteMessage(messageId);
+        }
+    }
+}
+
+function doDeleteMessage(messageId) {
+    fetch(`/api/messages/${messageId}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('留言已删除', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showNotification('删除失败: ' + data.message, 'error');
+        }
+    });
+}
+
+// 暴露到全局作用域
+window.showPasswordVerify = showPasswordVerify;
+window.deleteMessage = deleteMessage;
+window.doDeleteMessage = doDeleteMessage;
+</script>

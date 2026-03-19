@@ -1,0 +1,3941 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - {{ baby_name }}的成长记录{% endblock %}
+
+{% block content %}
+<!-- 禁用提示横幅 -->
+{% if client_disabled %}
+<div class="alert alert-danger alert-dismissible fade show mb-0 rounded-0" role="alert" style="z-index: 9999;">
+    <div class="container d-flex align-items-center justify-content-between">
+        <div>
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>客户端暂时被禁用</strong>
+            <span class="ms-2">部分功能暂不可用，如有疑问请给管理员留言。</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-light" onclick="openFeedbackModal()">
+            <i class="fas fa-comment me-1"></i>留言
+        </button>
+    </div>
+</div>
+{% endif %}
+
+<!-- 引入分享库 (本地) -->
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/social-share/share.min.css') }}">
+<script src="{{ url_for('static', filename='vendor/social-share/social-share.min.js') }}"></script>
+
+<style>
+/* ===== 设计系统 ===== */
+:root {
+    --bg-primary: #F8F6F3;
+    --bg-secondary: #EFEBE6;
+    --bg-warm: #F5F0EA;
+    --accent-rose: #E8B4B8;
+    --accent-sage: #A8B5A0;
+    --accent-warm: #C9A87C;
+    --accent-coral: #E07A5F;
+    --text-dark: #2C2C2C;
+    --text-medium: #5A5A5A;
+    --text-light: #8A8A8A;
+    --white: #FFFFFF;
+    --frame-beige: #E8DCC4;
+    --shadow-soft: 0 4px 20px rgba(44, 44, 44, 0.06);
+    --shadow-medium: 0 8px 40px rgba(44, 44, 44, 0.1);
+}
+
+/* ===== 主区域：一体化展示 ===== */
+.hero-unified {
+    min-height: 90vh;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 0;
+    background: var(--bg-primary);
+}
+
+@media (max-width: 900px) {
+    .hero-unified {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===== 左侧：日期 + 日志 ===== */
+.hero-left-content {
+    padding: 30px 50px;
+    display: flex;
+    flex-direction: column;
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* 日期头部 - 紧凑版 */
+.date-header-unified {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(138, 138, 138, 0.12);
+}
+
+.date-main-unified {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.date-number-big {
+    font-size: 3.5rem;
+    font-weight: 300;
+    line-height: 1;
+    color: var(--text-dark);
+    letter-spacing: -2px;
+}
+
+.date-meta-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.date-my {
+    font-size: 1rem;
+    color: var(--text-medium);
+    letter-spacing: 1px;
+}
+
+.date-wl {
+    font-size: 0.85rem;
+    color: var(--text-light);
+}
+
+/* 天气小标签 */
+.weather-tag {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, var(--bg-warm), var(--white));
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 0.95rem;
+    color: var(--text-medium);
+}
+
+.weather-icon-small {
+    font-size: 1.3rem;
+}
+
+/* 导航按钮 */
+.nav-btn-uni {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(138, 138, 138, 0.2);
+    background: var(--white);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: var(--text-medium);
+    font-size: 0.85rem;
+}
+
+.nav-btn-uni:hover:not(:disabled) {
+    background: var(--accent-rose);
+    border-color: var(--accent-rose);
+    color: white;
+}
+
+.nav-btn-uni:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* 日志内容区 */
+.journal-content-unified {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* 日志正文 - 增大空间 */
+.journal-body-uni {
+    font-size: 1.15rem;
+    line-height: 1.9;
+    color: var(--text-medium);
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+    margin-bottom: 15px;
+}
+
+.journal-body-uni::-webkit-scrollbar {
+    width: 4px;
+}
+
+.journal-body-uni::-webkit-scrollbar-thumb {
+    background: rgba(138, 138, 138, 0.3);
+    border-radius: 2px;
+}
+
+/* 空日志状态 */
+.journal-empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 30px 20px;
+}
+
+.empty-illustration-uni {
+    position: relative;
+    margin-bottom: 25px;
+}
+
+.empty-circle-uni {
+    width: 100px;
+    height: 100px;
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 40px rgba(232, 180, 184, 0.3);
+}
+
+.empty-circle-uni i {
+    font-size: 2.5rem;
+    color: white;
+}
+
+.empty-orbits-uni {
+    position: absolute;
+    font-size: 1.2rem;
+    animation: float-orbit 3s ease-in-out infinite;
+}
+
+.empty-orbits-uni:nth-child(1) { top: -8px; left: 50%; transform: translateX(-50%); animation-delay: 0s; }
+.empty-orbits-uni:nth-child(2) { bottom: 5px; left: -5px; animation-delay: 1s; }
+.empty-orbits-uni:nth-child(3) { bottom: 5px; right: -5px; animation-delay: 2s; }
+
+@keyframes float-orbit {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.empty-title-uni {
+    font-size: 1.3rem;
+    color: var(--text-dark);
+    font-weight: 400;
+    margin-bottom: 8px;
+}
+
+.empty-desc-uni {
+    font-size: 0.95rem;
+    color: var(--text-light);
+    margin-bottom: 25px;
+}
+
+.btn-create-uni {
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    color: white;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 28px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 6px 24px rgba(232, 180, 184, 0.4);
+}
+
+.btn-create-uni:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 32px rgba(232, 180, 184, 0.5);
+}
+
+/* 新闻引用 */
+.news-quote-uni {
+    background: linear-gradient(135deg, var(--bg-warm), var(--bg-secondary));
+    border-left: 3px solid var(--accent-coral);
+    padding: 15px 20px;
+    border-radius: 0 12px 12px 0;
+    margin: 15px 0;
+}
+
+.news-quote-header-uni {
+    font-size: 0.7rem;
+    color: var(--accent-coral);
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.news-quote-text-uni {
+    font-size: 0.9rem;
+    color: var(--text-medium);
+}
+
+.world-news-item {
+    transition: opacity 0.2s ease;
+}
+    font-style: italic;
+    line-height: 1.6;
+}
+
+/* 操作按钮 */
+.journal-actions-uni {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    gap: 10px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(138, 138, 138, 0.08);
+    overflow-x: auto;
+}
+
+.btn-action-uni {
+    padding: 10px 20px;
+    border-radius: 22px;
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-primary-uni {
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    color: white;
+    box-shadow: 0 4px 16px rgba(232, 180, 184, 0.35);
+}
+
+.btn-primary-uni:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(232, 180, 184, 0.45);
+}
+
+.btn-secondary-uni {
+    background: var(--white);
+    color: var(--text-medium);
+    border: 1.5px solid rgba(138, 138, 138, 0.2);
+}
+
+.btn-secondary-uni:hover {
+    border-color: var(--accent-rose);
+    color: var(--accent-rose);
+}
+
+.btn-ghost-uni {
+    background: transparent;
+    color: var(--text-light);
+}
+
+.btn-ghost-uni:hover {
+    color: var(--text-medium);
+}
+
+/* ===== 右侧：相框照片 ===== */
+.hero-right-frame {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-warm) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 相框容器 - 填满 */
+.photo-frame-container {
+    width: 100%;
+    height: 100%;
+    max-width: 500px;
+    max-height: 650px;
+    position: relative;
+    padding: 25px;
+    background: linear-gradient(145deg, var(--frame-beige), #D4C8B0);
+    border-radius: 4px;
+    box-shadow: 
+        0 30px 80px rgba(44, 44, 44, 0.2),
+        inset 0 2px 4px rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 1200px) {
+    .photo-frame-container {
+        max-width: 400px;
+        max-height: 520px;
+        padding: 20px;
+    }
+}
+
+/* 相框内边框 - 米色 */
+.photo-frame-inner {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    padding: 12px;
+    background: linear-gradient(145deg, #C4B8A0, #B8AC94);
+    border-radius: 2px;
+}
+
+/* 照片 */
+.frame-photo-wrapper {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.frame-photo-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* 相框装饰角 - 金色 */
+.frame-corner {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 2px solid #D4AF37;
+    z-index: 5;
+}
+
+.frame-corner-tl { top: 6px; left: 6px; border-right: none; border-bottom: none; }
+.frame-corner-tr { top: 6px; right: 6px; border-left: none; border-bottom: none; }
+.frame-corner-bl { bottom: 6px; left: 6px; border-right: none; border-top: none; }
+.frame-corner-br { bottom: 6px; right: 6px; border-left: none; border-top: none; }
+
+/* Today 标签 */
+.today-badge {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    color: white;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    z-index: 10;
+}
+
+/* 更改照片按钮 */
+.change-photo-btn {
+    position: absolute;
+    bottom: 60px;
+    right: 60px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    border: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-medium);
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.change-photo-btn:hover {
+    background: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+
+/* 照片操作按钮 */
+.photo-action-buttons {
+    position: absolute;
+    bottom: 50px;
+    right: 60px;
+    display: flex;
+    gap: 10px;
+    z-index: 10;
+}
+
+.photo-action-buttons .btn {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+}
+
+.photo-action-buttons .btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+}
+
+/* 空照片状态 */
+.frame-empty-state {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(145deg, var(--bg-warm), var(--bg-secondary));
+    color: var(--text-light);
+    text-align: center;
+}
+
+.frame-empty-state i {
+    font-size: 4rem;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.frame-empty-text {
+    font-size: 1.1rem;
+    margin-bottom: 20px;
+}
+
+/* 提示条 */
+.hint-bar {
+    position: absolute;
+    bottom: 130px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 20px;
+    border-radius: 25px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    font-size: 0.8rem;
+    color: var(--text-medium);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    animation: hint-pulse 2s ease-in-out infinite;
+    z-index: 10;
+}
+
+@keyframes hint-pulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
+.hint-bar a {
+    color: var(--accent-coral);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+/* ===== 照片墙区域 ===== */
+.gallery-section-uni {
+    padding: 60px 0;
+    background: var(--white);
+}
+
+.gallery-header-uni {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+/* Tab 切换 */
+.gallery-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.gallery-tab {
+    padding: 8px 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-light);
+    font-size: 0.95rem;
+    cursor: pointer;
+    border-radius: 20px;
+    transition: all 0.3s ease;
+}
+
+.gallery-tab:hover {
+    background: var(--bg-secondary);
+    color: var(--text-dark);
+}
+
+.gallery-tab.active {
+    background: var(--accent-sage);
+    color: white;
+}
+
+.gallery-title-uni {
+    font-size: 1.8rem;
+    font-weight: 300;
+    color: var(--text-dark);
+    margin-bottom: 6px;
+}
+
+.gallery-subtitle-uni {
+    color: var(--text-light);
+    font-size: 0.95rem;
+}
+
+/* 照片网格 */
+.gallery-grid-uni {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.gallery-item-uni {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    cursor: pointer;
+    box-shadow: var(--shadow-soft);
+    transition: all 0.4s ease;
+}
+
+.gallery-item-uni:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-medium);
+}
+
+.gallery-item-uni img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s ease;
+}
+
+.gallery-item-uni:hover img {
+    transform: scale(1.08);
+}
+
+.gallery-item-uni.photo-blurry {
+    border: 3px solid #dc3545 !important;
+    box-shadow: 0 0 10px rgba(220, 53, 69, 0.5) !important;
+}
+
+.gallery-item-uni.photo-blurry::after {
+    content: '模糊';
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: #dc3545;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 10;
+}
+
+.gallery-item-uni.photo-duplicate {
+    border: 3px solid #ffc107 !important;
+    box-shadow: 0 0 10px rgba(255, 193, 7, 0.5) !important;
+}
+
+.gallery-item-uni.photo-duplicate::after {
+    content: '重复';
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: #ffc107;
+    color: #333;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 10;
+}
+
+.gallery-item-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(44,44,44,0.7) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: flex;
+    align-items: flex-end;
+    padding: 16px;
+}
+
+.gallery-item-uni:hover .gallery-item-overlay {
+    opacity: 1;
+}
+
+.gallery-item-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-gallery-action {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.95);
+    color: var(--text-dark);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-gallery-action:hover {
+    transform: scale(1.1);
+    background: white;
+}
+
+/* 照片墙分享菜单 */
+.photo-share-menu {
+    display: none;
+    position: fixed;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+    padding: 8px;
+    z-index: 99999;
+    min-width: 160px;
+    max-width: 200px;
+}
+
+.photo-share-menu.active {
+    display: block;
+}
+
+.photo-share-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 0.85rem;
+    color: var(--text-medium);
+}
+
+.photo-share-menu-item:hover {
+    background: var(--bg-warm);
+}
+
+.photo-share-menu-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.photo-share-wechat { background: #07C160; color: white; }
+.photo-share-weibo { background: #E6162D; color: white; }
+.photo-share-xiaohongshu { background: #FF2442; color: white; }
+.photo-share-qq { background: #12B7F5; color: white; }
+.photo-share-copy { background: var(--bg-warm); color: var(--text-medium); }
+
+/* 照片上的标签 - 底部中央 */
+.photo-tag-on-image {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    color: white;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 80%;
+    z-index: 2;
+    transition: opacity 0.3s;
+    font-weight: 500;
+}
+
+.gallery-item-uni:hover .photo-tag-on-image {
+    opacity: 0;
+}
+
+/* 视频播放图标 */
+.video-play-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3rem;
+    color: white;
+    opacity: 0.9;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.gallery-item-uni:hover .video-play-icon {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 1;
+}
+
+/* 空照片墙 */
+.empty-gallery-uni {
+    text-align: center;
+    padding: 60px 40px;
+    background: var(--bg-primary);
+    border-radius: 24px;
+}
+
+.empty-gallery-icon-uni {
+    width: 90px;
+    height: 90px;
+    background: linear-gradient(135deg, var(--bg-warm), var(--bg-secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+}
+
+.empty-gallery-icon-uni i {
+    font-size: 2.2rem;
+    color: var(--accent-warm);
+}
+
+/* ===== 留言区域：气泡风格 ===== */
+.comments-section-uni {
+    padding: 60px 0;
+    background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+}
+
+.comments-header-uni {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+}
+
+/* 我要留言按钮 */
+.leave-comment-trigger {
+    margin: 0;
+}
+
+/* 留言表单弹窗 */
+.comment-form-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.comment-form-overlay.active {
+    display: flex;
+}
+
+.comment-form-modal {
+    background: var(--white);
+    border-radius: 24px;
+    padding: 35px;
+    max-width: 500px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    animation: modal-in 0.3s ease;
+}
+
+@keyframes modal-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.comment-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.comment-form-title {
+    font-size: 1.3rem;
+    color: var(--text-dark);
+    font-weight: 500;
+}
+
+.btn-close-modal {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: var(--bg-warm);
+    color: var(--text-medium);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-close-modal:hover {
+    background: var(--accent-rose);
+    color: white;
+}
+
+.comment-type-tabs {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.tab-btn {
+    flex: 1;
+    background: none;
+    border: 1.5px solid rgba(138, 138, 138, 0.2);
+    font-size: 0.9rem;
+    color: var(--text-light);
+    cursor: pointer;
+    padding: 12px;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.tab-btn.active {
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    color: white;
+    border-color: transparent;
+}
+
+.comment-textarea {
+    width: 100%;
+    min-height: 120px;
+    border: 1.5px solid rgba(138, 138, 138, 0.2);
+    border-radius: 16px;
+    padding: 16px;
+    font-size: 1rem;
+    resize: vertical;
+    transition: border-color 0.3s ease;
+    font-family: inherit;
+    margin-bottom: 20px;
+}
+
+.comment-textarea:focus {
+    outline: none;
+    border-color: var(--accent-rose);
+}
+
+.voice-record-area {
+    display: none;
+    text-align: center;
+    padding: 40px;
+    background: var(--bg-warm);
+    border-radius: 16px;
+    margin-bottom: 20px;
+}
+
+.voice-record-area.active {
+    display: block;
+}
+
+.btn-record {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral));
+    border: none;
+    color: white;
+    font-size: 2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 6px 24px rgba(232, 180, 184, 0.4);
+}
+
+.btn-record:hover {
+    transform: scale(1.05);
+}
+
+.btn-record.recording {
+    animation: recording-pulse 1s ease-in-out infinite;
+}
+
+@keyframes recording-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 6px 24px rgba(232, 180, 184, 0.4); }
+    50% { transform: scale(1.1); box-shadow: 0 8px 32px rgba(232, 180, 184, 0.6); }
+}
+
+.comment-form-actions {
+    display: flex;
+    gap: 12px;
+}
+
+/* 留言列表 - 云朵气泡式 */
+.comments-bubbles {
+    max-width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px 10px;
+}
+
+/* 气泡基础样式 */
+.comment-bubble {
+    display: inline-flex;
+    flex-direction: column;
+    max-width: 280px;
+    min-width: 120px;
+    animation: floatIn 0.5s ease-out;
+}
+
+/* 浮动动画 */
+@keyframes floatIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* 随机偏移使布局更自然 */
+.comment-bubble:nth-child(3n+1) {
+    transform: translateY(-3px) rotate(-1deg);
+}
+.comment-bubble:nth-child(3n+2) {
+    transform: translateY(2px) rotate(1deg);
+}
+.comment-bubble:nth-child(5n+1) {
+    transform: translateY(-5px) rotate(-0.5deg);
+}
+.comment-bubble:nth-child(7n+1) {
+    transform: translateY(3px) rotate(0.5deg);
+}
+
+/* 气泡内容区域 */
+.bubble-content {
+    background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
+    padding: 12px 16px;
+    border-radius: 20px;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+    position: relative;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.comment-bubble:hover .bubble-content {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+}
+
+/* 交替颜色 - 柔和色系 */
+.comment-bubble:nth-child(4n+1) .bubble-content {
+    background: linear-gradient(135deg, #fce4ec 0%, #f8bbd9 100%);
+}
+.comment-bubble:nth-child(4n+2) .bubble-content {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+}
+.comment-bubble:nth-child(4n+3) .bubble-content {
+    background: linear-gradient(135deg, #f1f8e9 0%, #dcedc8 100%);
+}
+.comment-bubble:nth-child(4n+4) .bubble-content {
+    background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+}
+
+/* 自己的气泡 - 粉色系 */
+.comment-bubble.own .bubble-content {
+    background: linear-gradient(135deg, #fce4ec 0%, #f48fb1 100%);
+    border-bottom-left-radius: 20px;
+    border-bottom-right-radius: 4px;
+}
+
+/* 时间标签 - 简洁 */
+.bubble-time {
+    font-size: 0.7rem;
+    color: rgba(0,0,0,0.4);
+    text-align: right;
+    margin-top: 6px;
+    padding-right: 4px;
+}
+
+.comment-bubble.own .bubble-time {
+    color: rgba(0,0,0,0.35);
+}
+
+/* 文字内容 */
+.bubble-text {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-dark);
+    word-wrap: break-word;
+}
+
+/* 语音气泡 */
+.bubble-voice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.bubble-voice audio {
+    width: 180px;
+    height: 32px;
+    border-radius: 16px;
+}
+
+/* 空留言提示 */
+.empty-comments-bubble {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-light);
+    width: 100%;
+}
+
+/* 删除留言按钮 */
+.btn-delete-message {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #ff6b6b;
+    color: white;
+    border: none;
+    font-size: 10px;
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    z-index: 10;
+}
+
+.comment-bubble:hover .btn-delete-message {
+    opacity: 1;
+}
+
+.btn-delete-message:hover {
+    background: #ff5252;
+    transform: scale(1.15);
+}
+
+/* 空留言 */
+.empty-comments-bubble {
+    text-align: center;
+    padding: 50px;
+    color: var(--text-light);
+}
+
+.empty-comments-bubble i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    opacity: 0.4;
+}
+
+/* 成长画像入口卡片 */
+.profile-entry-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 16px;
+    padding: 20px 24px;
+    color: white;
+    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+}
+
+.profile-entry-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.profile-entry-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.profile-entry-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-entry-info {
+    flex: 1;
+}
+
+.profile-entry-info h5 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.profile-entry-info p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+.profile-entry-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.profile-entry-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    color: white;
+}
+
+.profile-entry-summary {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 14px;
+    line-height: 1.6;
+    opacity: 0.95;
+}
+
+@media (max-width: 576px) {
+    .profile-entry-header {
+        flex-wrap: wrap;
+    }
+    
+    .profile-entry-btn {
+        width: 100%;
+        text-align: center;
+        margin-top: 12px;
+    }
+}
+
+/* 页脚 */
+.footer-uni {
+    padding: 30px;
+    text-align: center;
+    background: var(--white);
+    border-top: 1px solid rgba(138, 138, 138, 0.08);
+}
+
+.footer-text-uni {
+    color: var(--text-light);
+    font-size: 0.85rem;
+}
+
+/* 移动端快速操作 */
+.quick-actions-uni {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .quick-actions-uni {
+        display: block;
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1000;
+    }
+    
+    .quick-actions-inner-uni {
+        display: flex;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 12px;
+        border-radius: 50px;
+        box-shadow: var(--shadow-medium);
+    }
+    
+    .btn-quick-uni {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: none;
+        color: white;
+        font-size: 1.2rem;
+        cursor: pointer;
+        transition: transform 0.2s ease;
+    }
+    
+    .btn-quick-uni:hover {
+        transform: scale(1.1);
+    }
+    
+    .btn-quick-rose { background: linear-gradient(135deg, var(--accent-rose), var(--accent-coral)); }
+    .btn-quick-sage { background: linear-gradient(135deg, var(--accent-sage), #8A9A82); }
+}
+
+/* 分享菜单样式 */
+.share-menu {
+    display: none;
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    padding: 15px;
+    z-index: 100;
+    min-width: 200px;
+}
+
+.share-menu.active {
+    display: block;
+}
+
+.share-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 0.9rem;
+    color: var(--text-medium);
+}
+
+.share-menu-item:hover {
+    background: var(--bg-warm);
+}
+
+.share-menu-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.share-wechat { background: #07C160; color: white; }
+.share-weibo { background: #E6162D; color: white; }
+.share-xiaohongshu { background: #FF2442; color: white; }
+.share-qq { background: #12B7F5; color: white; }
+.share-copy { background: var(--bg-warm); color: var(--text-medium); }
+</style>
+
+<!-- 第一栏：一体化日志展示 -->
+<section class="hero-unified">
+    <!-- 左侧：日期 + 日志 -->
+    <div class="hero-left-content">
+        <!-- 日期头部 - 紧凑版 -->
+        <div class="date-header-unified">
+            <div class="date-main-unified">
+                <button class="nav-btn-uni" onclick="changeDate(-1)" title="前一天">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div style="display:flex;align-items:center;gap:15px;">
+                    <span class="date-number-big" id="dateNumberBig">{{ today[8:10] }}</span>
+                    <div class="date-meta-compact">
+                        <span class="date-my" id="dateMy">{{ today[5:7] }}月 {{ today[:4] }}</span>
+                        <span class="date-wl" id="calendarWeekday">
+                            {{ weekday }} 
+                            {% if user_city or (weather and weather.city) %}· {{ user_city or weather.city }}{% endif %} 
+                            · <span id="calendarLunar">{% if lunar_date %}{{ lunar_date }}{% else %}农历计算中{% endif %}</span>
+                        </span>
+                    </div>
+                </div>
+                
+                <button class="nav-btn-uni" onclick="changeDate(1)" title="后一天" id="nextDayBtn">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+            
+            {% if weather %}
+            <div class="weather-tag">
+                <span class="weather-icon-small">
+                    {% if '晴' in weather.condition %}☀️
+                    {% elif '多云' in weather.condition %}⛅
+                    {% elif '阴' in weather.condition %}☁️
+                    {% elif '雨' in weather.condition %}🌧️
+                    {% elif '雪' in weather.condition %}❄️
+                    {% else %}🌤️
+                    {% endif %}
+                </span>
+                <span>{{ weather.city }} {{ weather.temperature }}° {{ weather.condition }}</span>
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- 日志内容 -->
+        <div class="journal-content-unified">
+            {% if today_log %}
+            <div class="journal-body-uni">
+                {{ today_log.content | replace('\n', '<br>') | safe }}
+            </div>
+            
+            {% if news_item %}
+            <div class="news-quote-uni">
+                <div class="news-quote-header-uni">
+                    <i class="fas fa-globe"></i>
+                    <span>今日世界</span>
+                </div>
+                <div class="news-quote-text-uni">{{ news_item.title }}</div>
+            </div>
+            {% endif %}
+            
+            <div class="journal-actions-uni">
+                <button class="btn-action-uni btn-primary-uni" onclick="editBabyLog('{{ today }}')">
+                    <i class="fas fa-pen"></i>编辑
+                </button>
+                <button class="btn-action-uni btn-secondary-uni" onclick="regenerateLog('{{ today }}')">
+                    <i class="fas fa-wand-magic-sparkles"></i>重写
+                </button>
+                <div style="position:relative; display:inline-block; flex:0 0 auto;">
+                    <button class="btn-action-uni btn-ghost-uni" onclick="toggleShareMenu()">
+                        <i class="fas fa-share-nodes"></i>分享
+                    </button>
+                    <div class="share-menu" id="shareMenu">
+                        <div class="share-menu-item" onclick="shareToWechat()">
+                            <div class="share-menu-icon share-wechat"><i class="fab fa-weixin"></i></div>
+                            <span>微信</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToWeibo()">
+                            <div class="share-menu-icon share-weibo"><i class="fab fa-weibo"></i></div>
+                            <span>微博</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToXiaohongshu()">
+                            <div class="share-menu-icon share-xiaohongshu"><i class="fas fa-book-open"></i></div>
+                            <span>小红书</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToQQ()">
+                            <div class="share-menu-icon share-qq"><i class="fab fa-qq"></i></div>
+                            <span>QQ</span>
+                        </div>
+                        <div class="share-menu-item" onclick="copyLink()">
+                            <div class="share-menu-icon share-copy"><i class="fas fa-link"></i></div>
+                            <span>复制链接</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="journal-empty-state">
+                <div class="empty-illustration-uni">
+                    <span class="empty-orbits-uni">📸</span>
+                    <span class="empty-orbits-uni">☀️</span>
+                    <span class="empty-orbits-uni">📝</span>
+                    <div class="empty-circle-uni">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                </div>
+                <h3 class="empty-title-uni">今天还没写日记呢</h3>
+                <p class="empty-desc-uni">让 AI 帮{{ baby_name }}写一段今天的记录吧</p>
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button class="btn-create-uni" data-bs-toggle="modal" data-bs-target="#aiModal">
+                        <i class="fas fa-wand-magic-sparkles me-2"></i>生成日记
+                    </button>
+                    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#calendarModal">
+                        <i class="fas fa-calendar-alt me-1"></i>查看其他日期
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- 右侧：相框照片 -->
+    <div class="hero-right-frame">
+        <div class="today-badge" id="todayBadge" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">Today</div>
+        
+        <div class="photo-frame-container">
+            <div class="photo-frame-inner" id="photoFrameInner" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
+                <div class="frame-photo-wrapper" id="featuredPhotoWrapper">
+                    {% if featured_photo_hash %}
+                    <img src="{{ url_for('get_photo_by_hash', file_hash=featured_photo_hash) }}" alt="今日精选" id="featuredPhoto">
+                    {% elif featured_photo %}
+                    <img src="{{ url_for('get_photo', filename=featured_photo) }}" alt="今日精选" id="featuredPhoto">
+                    {% elif default_photo %}
+                        {% if default_is_video %}
+                        <img src="{{ url_for('get_video_thumb', filename=default_photo) }}" alt="视频缩略图" id="featuredPhoto" onerror="this.src='{{ url_for('static', filename='images/video-thumb.jpg') }}'">
+                        {% else %}
+                        <img src="{{ url_for('get_photo', filename=default_photo) }}" alt="今日照片" id="featuredPhoto">
+                        {% endif %}
+                    {% endif %}
+                </div>
+                <!-- 相框装饰角 -->
+                <div class="frame-corner frame-corner-tl"></div>
+                <div class="frame-corner frame-corner-tr"></div>
+                <div class="frame-corner frame-corner-bl"></div>
+                <div class="frame-corner frame-corner-br"></div>
+            </div>
+            
+            <!-- 空状态 -->
+            <div class="frame-empty-state" id="frameEmptyState" style="display: {% if today_photos and today_photos|length > 0 %}none{% else %}flex{% endif %};width:100%;height:100%;">
+                <i class="fas fa-image"></i>
+                <span class="frame-empty-text">这天还没有素材</span>
+                <button class="btn-create-uni" data-bs-toggle="modal" data-bs-target="#uploadModal" style="padding:12px 24px;font-size:0.9rem;">
+                    <i class="fas fa-camera me-2"></i>传几张照片
+                </button>
+            </div>
+        </div>
+        
+        <!-- 照片操作按钮 -->
+        <div class="photo-action-buttons" id="photoActionButtons" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
+            <button class="btn btn-sm btn-outline-primary" onclick="autoSelectFeatured()" title="AI选择最佳照片">
+                <i class="fas fa-magic"></i>
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="openPhotoSelector()" title="手动更换照片">
+                <i class="fas fa-images"></i>
+            </button>
+        </div>
+        
+        <div class="hint-bar" id="regenerateHint" style="display:none;">
+            <i class="fas fa-lightbulb" style="color:var(--accent-coral);"></i>
+            <span>照片已更换，<a href="#" onclick="regenerateLog('{{ today }}');return false;">点击重新生成日记</a></span>
+        </div>
+    </div>
+</section>
+
+<!-- 第二栏：照片墙 -->
+<section class="gallery-section-uni">
+    <div class="container">
+        <div class="gallery-header-uni">
+            <h2 class="gallery-title-uni">照片和视频</h2>
+            <p class="gallery-subtitle-uni">{{ today_photos|length }} 个片段记录今天</p>
+            
+            <!-- Tab 切换 -->
+            <div class="gallery-tabs">
+                <button class="gallery-tab active" onclick="switchGalleryTab('all')" id="tabAll">
+                    <i class="fas fa-th-large me-1"></i>全部
+                </button>
+                <button class="gallery-tab" onclick="switchGalleryTab('photo')" id="tabPhoto">
+                    <i class="fas fa-image me-1"></i>照片
+                </button>
+                <button class="gallery-tab" onclick="switchGalleryTab('video')" id="tabVideo">
+                    <i class="fas fa-video me-1"></i>视频
+                </button>
+            </div>
+            
+            <!-- 照片工具按钮 -->
+            <div class="photo-tools mt-3">
+                <button class="btn btn-sm btn-outline-warning" onclick="cleanupPhotos()" title="清理重复和模糊照片">
+                    <i class="fas fa-broom me-1"></i>清理
+                </button>
+            </div>
+        </div>
+        
+        <!-- 照片网格 - 始终存在，由JS控制显示 -->
+        <div class="gallery-grid-uni" id="galleryGrid" style="{% if not today_photos %}display:none;{% endif %}">
+            {% if today_photos %}
+            {% for photo in today_photos %}
+            <div class="gallery-item-uni {% if photo.is_video %}is-video{% endif %}" data-photo-id="{{ photo.filename }}" title="{{ photo.path }}" onclick="{% if photo.is_video %}playVideo('{{ photo.filename }}'){% else %}selectAsFeatured('{{ photo.filename }}'){% endif %}">
+                {% if photo.is_video %}
+                <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" onerror="this.src='{{ url_for('static', filename='images/video-thumb.jpg') }}'">
+                <div class="video-play-icon">
+                    <i class="fas fa-play-circle"></i>
+                </div>
+                {% else %}
+                <img src="{{ url_for('get_photo_thumb', filename=photo.filename) }}" alt="{{ photo.caption }}" onerror="this.src='{{ url_for('get_photo', filename=photo.filename) }}'">
+                {% endif %}
+                <!-- 标签显示 - 底部中央 -->
+                {% if photo.tag and photo.tag.tag %}
+                <div class="photo-tag-on-image">
+                    {{ photo.tag.tag }}
+                </div>
+                {% endif %}
+                <div class="gallery-item-overlay">
+                    <div class="gallery-item-actions" onclick="event.stopPropagation();">
+                        {% if photo.is_video %}
+                        <button class="btn-gallery-action" onclick="playVideo('{{ photo.filename }}')" title="播放">
+                            <i class="fas fa-play"></i>
+                        </button>
+                        {% else %}
+                        <button class="btn-gallery-action" onclick="openFullscreen('{{ photo.filename }}', false)" title="全屏查看">
+                            <i class="fas fa-expand"></i>
+                        </button>
+                        {% endif %}
+                        <div style="position:relative;display:inline-block;">
+                            <button class="btn-gallery-action" onclick="showPhotoShareMenu(event, '{{ photo.filename }}', {{ 'true' if photo.is_video else 'false' }})" title="分享">
+                                <i class="fas fa-share-alt"></i>
+                            </button>
+                        </div>
+                         <button class="btn-gallery-action" onclick="openPhotoTagModal('{{ photo.filename }}')" title="设置标签">
+                             <i class="fas fa-tag"></i>
+                         </button>
+                         <button class="btn-gallery-action" onclick="openAIAnalysis('{{ photo.filename }}')" title="AI分析" style="color:#8A9A82;">
+                             <i class="fas fa-robot"></i>
+                         </button>
+                         <button class="btn-gallery-action" onclick="deletePhoto('{{ photo.filename }}')" title="删除" style="color:#e74c3c;">
+                             <i class="fas fa-trash"></i>
+                         </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+        
+        <!-- 空状态 - 始终存在，由JS控制显示 -->
+        <div class="empty-gallery-uni" id="emptyGallery" style="{% if today_photos %}display:none;{% endif %}">
+            <div class="empty-gallery-icon-uni">
+                <i class="fas fa-images"></i>
+            </div>
+            <h3 style="color:var(--text-dark);margin-bottom:12px;">今天还没有素材</h3>
+            <p style="color:var(--text-light);margin-bottom:24px;">传几张照片或视频记录下吧</p>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="btn-action-uni btn-primary-uni" data-bs-toggle="modal" data-bs-target="#uploadModal">
+                    <i class="fas fa-cloud-arrow-up me-2"></i>上传照片
+                </button>
+                <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#calendarModal">
+                    <i class="fas fa-calendar-alt me-1"></i>查看其他日期
+                </button>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- 第三栏：留言 -->
+<section class="comments-section-uni">
+    <div class="container">
+        <div class="comments-header-uni">
+            <div class="leave-comment-trigger" id="leaveCommentTrigger">
+                <button class="btn-action-uni btn-primary-uni" onclick="openCommentForm()">
+                    <i class="fas fa-pen"></i>写留言
+                </button>
+            </div>
+        </div>
+        
+        <!-- 留言表单弹窗 -->
+        <div class="comment-form-overlay" id="commentFormOverlay" onclick="closeCommentForm(event)">
+            <div class="comment-form-modal" onclick="event.stopPropagation();">
+                <div class="comment-form-header">
+                    <span class="comment-form-title">写下你的留言</span>
+                    <button class="btn-close-modal" onclick="closeCommentForm()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="comment-type-tabs">
+                    <button class="tab-btn active" onclick="switchTab('text')">
+                        <i class="fas fa-comment"></i>文字
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('voice')">
+                        <i class="fas fa-microphone"></i>语音
+                    </button>
+                </div>
+                
+                <div id="textInputArea">
+                    <textarea class="comment-textarea" id="commentText" placeholder="写下你想对{{ baby_name }}说的话..."></textarea>
+                </div>
+                
+                <div id="voiceInputArea" class="voice-record-area">
+                    <button class="btn-record" id="recordBtn" onclick="toggleRecording()">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <p style="margin-top:16px;color:var(--text-light);font-size:0.9rem;">点击开始录音</p>
+                    <p id="recordingStatus" style="display:none;color:var(--accent-coral);font-weight:500;margin-top:8px;">正在录音...</p>
+                </div>
+                
+                <div class="comment-form-actions">
+                    <button class="btn-action-uni btn-secondary-uni" onclick="closeCommentForm()" style="flex:1;">取消</button>
+                    <button class="btn-action-uni btn-primary-uni" onclick="submitComment()" style="flex:1;">
+                        <i class="fas fa-paper-plane me-2"></i>发送
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 留言列表 - 气泡式 -->
+        <div class="comments-bubbles" id="commentsList">
+            <!-- 动态加载 -->
+        </div>
+    </div>
+</section>
+
+<!-- 成长画像入口 -->
+<section class="mt-4">
+    <div class="profile-entry-card">
+        <div class="profile-entry-header">
+            <div class="profile-entry-avatar" id="profileEntryAvatar">
+                <i class="fas fa-baby"></i>
+            </div>
+            <div class="profile-entry-info">
+                <h5 id="profileEntryName">{{ baby_name }} 的成长画像</h5>
+                <p class="text-muted mb-0">AI根据素材生成的画像，帮助家长因材施教</p>
+            </div>
+            <a href="/profile" class="btn btn-primary profile-entry-btn">
+                <i class="fas fa-chart-line me-1"></i>查看完整画像
+            </a>
+        </div>
+        <div class="profile-entry-summary" id="profileEntrySummary">
+            加载中...
+        </div>
+    </div>
+</section>
+
+<!-- 密码验证模态框 -->
+<div class="modal fade" id="passwordVerifyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">🔐 验证密码</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">请输入管理密码进行此操作。<br>不知道密码？请询问家人或朋友。</p>
+                <input type="password" class="form-control" id="verifyPassword" placeholder="输入密码">
+                <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="confirmPasswordVerify()">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI分析问答模态框 -->
+<div class="modal fade" id="aiAnalysisModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">🤖 AI 宝宝成长分析</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" id="aiModalCloseBtn"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <img src="" id="aiAnalysisPhoto" class="card-img-top" alt="分析照片">
+                            <div class="card-body p-2 text-center">
+                                <small class="text-muted">当前分析的照片</small>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <h6>常用问题推荐：</h6>
+                            <div class="d-flex flex-column gap-2 mt-2">
+                                <button class="btn btn-sm btn-outline-primary text-start" onclick="setQuestion('宝宝现在多大了？发育正常吗？')">
+                                    宝宝发育情况
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary text-start" onclick="setQuestion('宝宝看起来有没有比以前胖了？')">
+                                    体重变化
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary text-start" onclick="setQuestion('这张照片里宝宝在做什么？')">
+                                    照片内容识别
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary text-start" onclick="setQuestion('最近宝宝的成长有什么需要注意的吗？')">
+                                    护理建议
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label class="form-label">你的问题：</label>
+                            <textarea class="form-control" id="aiQuestion" rows="3" placeholder="例如：宝宝现在多高了？最近吃饭好不好？"></textarea>
+                        </div>
+                        <div class="d-grid">
+                            <button class="btn btn-primary" onclick="submitAIQuestion()" id="aiSubmitBtn">
+                                <i class="fas fa-paper-plane me-2"></i>发送问题
+                            </button>
+                        </div>
+                        <hr>
+                        <div id="aiAnswerContainer" style="display: none;">
+                            <h6>AI 回答：</h6>
+                            <div class="card bg-light p-3" id="aiAnswerText">
+                                <!-- 回答内容 -->
+                            </div>
+                            <div class="mt-3 d-flex gap-2">
+                                <button class="btn btn-sm btn-success" onclick="feedbackAnswer(true)">
+                                    <i class="fas fa-check me-1"></i>回答正确
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="feedbackAnswer(false)">
+                                    <i class="fas fa-times me-1"></i>回答错误
+                                </button>
+                            </div>
+                            <div class="mt-2" id="correctionArea" style="display: none;">
+                                <label class="form-label small">请输入正确答案：</label>
+                                <textarea class="form-control form-control-sm" id="aiCorrection" rows="2" placeholder="输入正确的信息，AI会记住这个内容哦"></textarea>
+                                <button class="btn btn-sm btn-primary mt-2" onclick="submitCorrection()">
+                                    提交纠正
+                                </button>
+                            </div>
+                        </div>
+                        <div id="aiLoading" class="text-center p-5" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                            <p class="mt-2 text-muted">AI正在分析，请稍候...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- 移动端快速操作 -->
+<div class="quick-actions-uni">
+    <div class="quick-actions-inner-uni">
+        <button class="btn-quick-uni btn-quick-rose" data-bs-toggle="modal" data-bs-target="#uploadModal">
+            <i class="fas fa-camera"></i>
+        </button>
+        <button class="btn-quick-uni btn-quick-sage" onclick="openCommentForm()">
+            <i class="fas fa-pen"></i>
+        </button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 当前选中的代表照片（从服务端渲染获取，可能为空）
+let currentFeaturedPhoto = '{{ featured_photo if featured_photo else "" }}';
+
+// 当前客户端ID（用于AI生成日志）
+window.currentClientId = '{{ client_id|default("") }}';
+
+// 日历切换函数（需要在HTML使用之前定义）
+function changeDate(days) {
+    if (days > 0) {
+        const today = new Date();
+        if (window.currentCalendarDate.toDateString() === today.toDateString()) return;
+    }
+    
+    window.currentCalendarDate.setDate(window.currentCalendarDate.getDate() + days);
+    const dateStr = formatDate(window.currentCalendarDate);
+    
+    updateCalendarDisplay();
+    
+    const url = new URL(window.location);
+    const today = new Date();
+    if (window.currentCalendarDate.toDateString() === today.toDateString()) {
+        url.searchParams.delete('date');
+    } else {
+        url.searchParams.set('date', dateStr);
+    }
+    window.history.replaceState({}, '', url);
+    
+    // 加载新日期数据（使用AJAX，优先从服务端获取）
+    loadDateData(dateStr);
+}
+
+// 万年历逻辑
+if (typeof window.currentCalendarDate === 'undefined') {
+    window.currentCalendarDate = new Date();
+}
+if (typeof window.calendarWeekdays === 'undefined') {
+    window.calendarWeekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+}
+
+function formatDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+function updateCalendarDisplay() {
+    // 此函数仅更新星期，城市和农历由 updatePageWithDateData 从服务端获取
+    updateNavButtons();
+}
+
+function updateNavButtons() {
+    const today = new Date();
+    const isToday = window.currentCalendarDate.toDateString() === today.toDateString();
+    const nextBtn = document.getElementById('nextDayBtn');
+    if (nextBtn) nextBtn.disabled = isToday;
+}
+
+// 加载日期数据 - 完整更新页面内容
+function loadDateData(dateStr) {
+    // 清除之前的轮播
+    clearNewsRotation();
+    
+    // 显示加载状态
+    document.body.style.cursor = 'wait';
+    
+    fetch(`/api/date/${dateStr}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                updatePageWithDateData(data, dateStr);
+            } else {
+                console.error('API返回错误:', data.message);
+                location.reload();
+            }
+        })
+        .catch(err => {
+            console.error('加载数据失败:', err);
+            location.reload();
+        })
+        .finally(() => {
+            document.body.style.cursor = 'default';
+        });
+}
+
+// 使用返回的数据更新页面
+function updatePageWithDateData(data, dateStr) {
+    const dateObj = new Date(dateStr);
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    
+    // 1. 更新日期数字显示
+    const dateNumberEl = document.getElementById('dateNumberBig');
+    if (dateNumberEl) {
+        dateNumberEl.textContent = day;
+    }
+    
+    // 2. 更新年月显示
+    const dateMyEl = document.getElementById('dateMy');
+    if (dateMyEl) {
+        dateMyEl.textContent = `${month}月 ${year}`;
+    }
+    
+    // 3. 更新天气显示
+    updateWeatherDisplay(data.weather);
+    
+    // 4. 更新城市、农历和星期
+    const weekdayEl = document.getElementById('calendarWeekday');
+    if (weekdayEl) {
+        const weekday = data.weekday || window.calendarWeekdays[window.currentCalendarDate.getDay()];
+        const lunar = data.lunar || '';
+        const city = (data.weather && data.weather.city) || '';
+        
+        let html = weekday;
+        if (city) {
+            html += ` · ${city}`;
+        }
+        if (lunar) {
+            html += ` · <span id="calendarLunar">${lunar}</span>`;
+        }
+        weekdayEl.innerHTML = html;
+    }
+    
+    // 5. 更新日志内容
+    updateLogContent(data.log, data.news);
+    
+    // 6. 缓存照片数据并根据当前 Tab 过滤显示
+    cachedPhotos = data.photos || [];
+    let filteredPhotos = cachedPhotos;
+    if (currentGalleryFilter === 'photo') {
+        filteredPhotos = filteredPhotos.filter(p => !p.is_video);
+    } else if (currentGalleryFilter === 'video') {
+        filteredPhotos = filteredPhotos.filter(p => p.is_video);
+    }
+    updatePhotoGallery(filteredPhotos, dateStr);
+    
+    // 7. 更新大照片框（优先使用精选照片）
+    console.log('[FeaturedPhoto] Updating with:', {
+        photos: data.photos?.length,
+        featured_photo: data.featured_photo,
+        featured_photo_hash: data.featured_photo_hash
+    });
+    updateFeaturedPhoto(data.photos, data.featured_photo, data.featured_photo_hash);
+    
+    // 8. 更新照片数量显示
+    const photoCountEl = document.querySelector('.gallery-subtitle-uni');
+    if (photoCountEl && data.photos) {
+        photoCountEl.textContent = `${data.photos.length} 个片段记录这天`;
+    }
+    
+    // 9. 加载留言 - 使用API返回的数据（如果有），否则单独请求
+    if (data.messages !== undefined) {
+        // 使用API返回的留言数据
+        const commentsList = document.getElementById('commentsList');
+        if (commentsList) {
+            if (data.messages && data.messages.length > 0) {
+                commentsList.innerHTML = data.messages.map((message, index) => `
+                    <div class="comment-bubble ${index % 2 === 0 ? '' : 'own'}">
+                        <div class="bubble-content">
+                            ${message.type === 'voice' ? `
+                                <div class="bubble-voice">
+                                    <i class="fas fa-microphone text-muted"></i>
+                                    <audio controls>
+                                        <source src="/voice/${message.voice_filename || message.voice_path}" type="${message.voice_filename && message.voice_filename.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm'}">
+                                    </audio>
+                                </div>
+                            ` : ''}
+                            ${message.content || message.message ? `<div class="bubble-text">${message.content || message.message}</div>` : ''}
+                            <button class="btn-delete-message" onclick="deleteMessage('${message.id}')" title="删除留言">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="bubble-time">${new Date(message.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</div>
+                    </div>
+                `).join('');
+            } else {
+                commentsList.innerHTML = '<div class="empty-comments-bubble">这天还没有留言</div>';
+            }
+        }
+    } else {
+        // 兼容旧版本，单独请求留言
+        loadMessages(dateStr);
+    }
+}
+
+// 加载留言 - 云朵气泡式
+function loadMessages(dateStr) {
+    const commentsList = document.getElementById('commentsList');
+    if (!commentsList) return;
+    
+    fetch(`/api/messages/${dateStr}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.messages && data.messages.length > 0) {
+                commentsList.innerHTML = data.messages.map((message, index) => `
+                    <div class="comment-bubble ${index % 2 === 0 ? '' : 'own'}">
+                        <div class="bubble-content">
+                            ${message.type === 'voice' ? `
+                                <div class="bubble-voice">
+                                    <i class="fas fa-microphone text-muted"></i>
+                                    <audio controls>
+                                        <source src="/voice/${message.voice_filename || message.voice_path}" type="${message.voice_filename && message.voice_filename.endsWith('.mp3') ? 'audio/mpeg' : 'audio/webm'}">
+                                    </audio>
+                                </div>
+                            ` : ''}
+                            ${message.content || message.message ? `<div class="bubble-text">${message.content || message.message}</div>` : ''}
+                            <button class="btn-delete-message" onclick="deleteMessage('${message.id}')" title="删除留言">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="bubble-time">${new Date(message.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</div>
+                    </div>
+                `).join('');
+            } else {
+                commentsList.innerHTML = '<div class="empty-comments-bubble">这天还没有留言</div>';
+            }
+        })
+        .catch(err => {
+            console.error('加载留言失败:', err);
+            commentsList.innerHTML = '<div class="empty-comments-bubble">加载留言失败</div>';
+        });
+}
+
+// 更新日志内容
+function updateLogContent(log, news) {
+    const logContainer = document.querySelector('.journal-content-unified');
+    if (!logContainer) return;
+    
+    const dateStr = formatDate(window.currentCalendarDate);
+    
+    if (log && log.content) {
+        // 有日志内容
+        let html = `<div class="journal-body-uni">${log.content.replace(/\n/g, '<br>')}</div>`;
+        
+        // 添加新闻引用（如果有）- 只显示1条，自动轮播
+        if (news && news.length > 0) {
+            const newsData = news.slice(0, 3); // 最多3条轮播
+            const firstNews = newsData[0];
+            html += `
+                <div class="news-quote-uni" id="newsQuoteContainer" data-news='${JSON.stringify(newsData)}'>
+                    <div class="news-quote-header-uni">
+                        <i class="fas fa-globe"></i>
+                        <span>今日世界</span>
+                        ${newsData.length > 1 ? `<small class="ms-2 text-muted">(<span id="newsIndex">1</span>/${newsData.length})</small>` : ''}
+                    </div>
+                    <div class="world-news-item" id="worldNewsText">${firstNews}</div>
+                </div>
+            `;
+            // 如果有多个新闻，启动轮播
+            if (newsData.length > 1) {
+                setTimeout(() => startNewsRotation('newsQuoteContainer'), 100);
+            }
+        }
+        
+        // 添加操作按钮
+        html += `
+            <div class="journal-actions-uni">
+                <button class="btn-action-uni btn-primary-uni" onclick="editBabyLog('${dateStr}')">
+                    <i class="fas fa-pen"></i>编辑
+                </button>
+                <button class="btn-action-uni btn-secondary-uni" onclick="regenerateLog('${dateStr}')">
+                    <i class="fas fa-wand-magic-sparkles"></i>重写
+                </button>
+                <div style="position:relative; display:inline-block; flex:0 0 auto;">
+                    <button class="btn-action-uni btn-ghost-uni" onclick="toggleShareMenu()">
+                        <i class="fas fa-share-nodes"></i>分享
+                    </button>
+                    <div class="share-menu" id="shareMenu">
+                        <div class="share-menu-item" onclick="shareToWechat()">
+                            <div class="share-menu-icon share-wechat"><i class="fab fa-weixin"></i></div>
+                            <span>微信</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToWeibo()">
+                            <div class="share-menu-icon share-weibo"><i class="fab fa-weibo"></i></div>
+                            <span>微博</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToXiaohongshu()">
+                            <div class="share-menu-icon share-xiaohongshu"><i class="fas fa-book-open"></i></div>
+                            <span>小红书</span>
+                        </div>
+                        <div class="share-menu-item" onclick="shareToQQ()">
+                            <div class="share-menu-icon share-qq"><i class="fab fa-qq"></i></div>
+                            <span>QQ</span>
+                        </div>
+                        <div class="share-menu-item" onclick="copyLink()">
+                            <div class="share-menu-icon share-copy"><i class="fas fa-link"></i></div>
+                            <span>复制链接</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        logContainer.innerHTML = html;
+    } else {
+        // 无日志内容，显示空状态（与服务器渲染的样式一致）
+        let emptyHtml = `
+            <div class="journal-empty-state">
+                <div class="empty-illustration-uni">
+                    <span class="empty-orbits-uni">📸</span>
+                    <span class="empty-orbits-uni">☀️</span>
+                    <span class="empty-orbits-uni">📝</span>
+                    <div class="empty-circle-uni">
+                        <i class="fas fa-book-open"></i>
+                    </div>
+                </div>
+                <h3 class="empty-title-uni">这天还没写日记呢</h3>
+                <p class="empty-desc-uni">让 AI 帮{{ baby_name }}写一段记录吧</p>
+                <div style="display:flex;gap:12px;justify-content:center;">
+                    <button class="btn-create-uni" onclick="regenerateLog('${formatDate(window.currentCalendarDate)}')">
+                        <i class="fas fa-wand-magic-sparkles me-2"></i>生成日记
+                    </button>
+                    <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#calendarModal">
+                        <i class="fas fa-calendar-alt me-1"></i>查看其他日期
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // 即使没有日志，如果有今日新闻也显示新闻滚动栏
+        if (news && news.length > 0) {
+            const newsData = news.slice(0, 3);
+            const firstNews = newsData[0];
+            emptyHtml += `
+                <div class="news-quote-uni" id="newsQuoteContainer" data-news='${JSON.stringify(newsData)}' style="margin-top:20px;">
+                    <div class="news-quote-header-uni">
+                        <i class="fas fa-globe"></i>
+                        <span>今日世界</span>
+                        ${newsData.length > 1 ? `<small class="ms-2 text-muted">(<span id="newsIndex">1</span>/${newsData.length})</small>` : ''}
+                    </div>
+                    <div class="world-news-item" id="worldNewsText">${firstNews}</div>
+                </div>
+            `;
+            logContainer.innerHTML = emptyHtml;
+            if (newsData.length > 1) {
+                setTimeout(() => startNewsRotation('newsQuoteContainer'), 100);
+            }
+        } else {
+            logContainer.innerHTML = emptyHtml;
+        }
+    }
+}
+
+// 新闻轮播控制
+let newsRotationInterval = null;
+
+function startNewsRotation(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // 清除旧的轮播
+    if (newsRotationInterval) {
+        clearInterval(newsRotationInterval);
+    }
+    
+    try {
+        const newsData = JSON.parse(container.dataset.news || '[]');
+        if (newsData.length <= 1) return;
+        
+        let currentIndex = 0;
+        const textEl = container.querySelector('#worldNewsText');
+        const indexEl = container.querySelector('#newsIndex');
+        
+        newsRotationInterval = setInterval(() => {
+            currentIndex = (currentIndex + 1) % newsData.length;
+            if (textEl) {
+                // 淡出效果
+                textEl.style.opacity = '0';
+                setTimeout(() => {
+                    textEl.textContent = newsData[currentIndex];
+                    textEl.style.opacity = '1';
+                }, 200);
+            }
+            if (indexEl) {
+                indexEl.textContent = currentIndex + 1;
+            }
+        }, 5000); // 5秒切换一次
+    } catch (e) {
+        console.error('新闻轮播启动失败:', e);
+    }
+}
+
+// 清除新闻轮播（切换日期时调用）
+function clearNewsRotation() {
+    if (newsRotationInterval) {
+        clearInterval(newsRotationInterval);
+        newsRotationInterval = null;
+    }
+}
+
+// 更新照片墙
+function updatePhotoGallery(photos, dateStr) {
+    const galleryGrid = document.getElementById('galleryGrid');
+    const emptyGallery = document.getElementById('emptyGallery');
+    
+    console.log('[DEBUG] updatePhotoGallery:', photos?.length, '张照片');
+    
+    if (!photos || photos.length === 0) {
+        // 没有素材，显示空状态
+        console.log('[DEBUG] 无素材，显示空状态');
+        if (galleryGrid) galleryGrid.style.display = 'none';
+        if (emptyGallery) {
+            // 根据当前筛选类型更新提示文字
+            const emptyTitle = emptyGallery.querySelector('h3');
+            const emptyDesc = emptyGallery.querySelector('p');
+            if (emptyTitle) emptyTitle.textContent = '今天还没有素材';
+            if (emptyDesc) emptyDesc.textContent = '传几张照片或视频记录下吧';
+            emptyGallery.style.display = 'block';
+        }
+        return;
+    }
+    
+    // 有照片，更新网格（使用缩略图）
+    console.log('[DEBUG] 更新照片网格');
+    if (galleryGrid) {
+        galleryGrid.innerHTML = photos.map(photo => `
+            <div class="gallery-item-uni ${photo.is_video ? 'is-video' : ''}" data-photo-id="${photo.filename}" title="${photo.path || photo.filename}" onclick="${photo.is_video ? `playVideo('${photo.filename}')` : `selectAsFeatured('${photo.filename}')`}">
+                ${photo.is_video ? `
+                    <img src="/video/thumb/${photo.filename}" alt="视频" onerror="this.src='/static/images/video-thumb.jpg'">
+                    <div class="video-play-icon">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                ` : `
+                    <img src="/photo/thumb/${photo.filename}" alt="${photo.caption || ''}" onerror="this.src='/photo/${photo.filename}'">
+                `}
+                <!-- 标签显示 - 底部中央 -->
+                ${photo.tag && photo.tag.tag ? `
+                    <div class="photo-tag-on-image">${photo.tag.tag}</div>
+                ` : ''}
+                <div class="gallery-item-overlay">
+                    <div class="gallery-item-actions" onclick="event.stopPropagation();">
+                        ${photo.is_video ? `
+                            <button class="btn-gallery-action" onclick="playVideo('${photo.filename}')" title="播放">
+                                <i class="fas fa-play"></i>
+                            </button>
+                        ` : `
+                            <button class="btn-gallery-action" onclick="openFullscreen('${photo.filename}', false)" title="全屏查看">
+                                <i class="fas fa-expand"></i>
+                            </button>
+                        `}
+<div style="position:relative;display:inline-block;">
+                             <button class="btn-gallery-action" onclick="showPhotoShareMenu(event, '${photo.filename}', ${photo.is_video ? 'true' : 'false'})" title="分享">
+                                 <i class="fas fa-share-alt"></i>
+                             </button>
+                         </div>
+                         <button class="btn-gallery-action" onclick="openPhotoTagModal('${photo.filename}')" title="标签">
+                             <i class="fas fa-tag"></i>
+                         </button>
+                         <button class="btn-gallery-action" onclick="openAIAnalysis('${photo.filename}')" title="AI分析" style="color:#8A9A82;">
+                             <i class="fas fa-robot"></i>
+                         </button>
+                         <button class="btn-gallery-action" onclick="deletePhoto('${photo.filename}')" title="删除" style="color:#e74c3c;">
+                             <i class="fas fa-trash"></i>
+                         </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        galleryGrid.style.display = 'grid';
+    }
+    
+    if (emptyGallery) emptyGallery.style.display = 'none';
+    
+    // 更新 currentFeaturedPhoto 变量
+    if (photos.length > 0) {
+        currentFeaturedPhoto = photos[0].filename;
+    }
+}
+
+// 更新代表照片（大照片框）
+function updateFeaturedPhoto(photos, featuredPhoto, featuredPhotoHash) {
+    const featuredWrapper = document.getElementById('featuredPhotoWrapper');
+    const todayBadge = document.getElementById('todayBadge');
+    const photoFrameInner = document.getElementById('photoFrameInner');
+    const frameEmptyState = document.getElementById('frameEmptyState');
+    const photoActionButtons = document.getElementById('photoActionButtons');
+    
+    console.log('[FeaturedPhoto] updateFeaturedPhoto called:', {
+        photosCount: photos?.length,
+        featuredPhoto: featuredPhoto,
+        featuredPhotoHash: featuredPhotoHash,
+        hasFeatured: !!(featuredPhotoHash || featuredPhoto)
+    });
+    
+    // 更新 Today 徽章显示状态
+    const today = new Date();
+    const isToday = window.currentCalendarDate.toDateString() === today.toDateString();
+    if (todayBadge) {
+        todayBadge.style.display = (isToday && photos && photos.length > 0) ? 'block' : 'none';
+    }
+    
+    // 辅助函数：显示相框，隐藏空状态
+    function showPhotoFrame() {
+        if (photoFrameInner) photoFrameInner.style.display = 'block';
+        if (frameEmptyState) frameEmptyState.style.display = 'none';
+        if (photoActionButtons) photoActionButtons.style.display = 'block';
+    }
+    
+    // 辅助函数：显示空状态，隐藏相框
+    function showEmptyState() {
+        if (photoFrameInner) photoFrameInner.style.display = 'none';
+        if (frameEmptyState) frameEmptyState.style.display = 'flex';
+        if (photoActionButtons) photoActionButtons.style.display = 'none';
+    }
+    
+    // 优先使用精选照片（即使 photos 为空，只要有精选照片就显示）
+    if (featuredPhotoHash || featuredPhoto) {
+        console.log('[FeaturedPhoto] Using featured photo:');
+        console.log('  - featuredPhotoHash:', featuredPhotoHash);
+        console.log('  - featuredPhoto:', featuredPhoto);
+        console.log('  - featuredWrapper exists:', !!featuredWrapper);
+        
+        if (featuredWrapper) {
+            const imgUrl = featuredPhotoHash ? 
+                `/photo/hash/${featuredPhotoHash}` :
+                `/photo/${featuredPhoto}`;
+            
+            console.log('[FeaturedPhoto] Image URL:', imgUrl);
+            
+            // 创建图片元素并添加事件监听
+            const img = document.createElement('img');
+            img.src = imgUrl;
+            img.alt = '今日精选';
+            img.id = 'featuredPhoto';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            
+            img.onload = function() {
+                console.log('[FeaturedPhoto] Image loaded successfully:', imgUrl);
+                showPhotoFrame();
+            };
+            
+            img.onerror = function() {
+                console.error('[FeaturedPhoto] Image failed to load:', imgUrl);
+                if (photos && photos.length > 0) {
+                    fallbackToFirstPhoto(img);
+                    showPhotoFrame();
+                } else {
+                    showEmptyState();
+                }
+            };
+            
+            featuredWrapper.innerHTML = '';
+            featuredWrapper.appendChild(img);
+            console.log('[FeaturedPhoto] Image element added to wrapper');
+        } else {
+            console.error('[FeaturedPhoto] ERROR: featuredWrapper is null!');
+        }
+        return;
+    }
+    
+    // 没有精选照片且没有素材时，显示空状态
+    if (!photos || photos.length === 0) {
+        showEmptyState();
+        return;
+    }
+    
+    // 没有精选照片时，找第一张图片，如果全是视频则用第一个视频的缩略图
+    let displayPhoto = null;
+    let isVideo = false;
+    for (const p of photos) {
+        if (!p.is_video) {
+            displayPhoto = p;
+            break;
+        }
+    }
+    if (!displayPhoto && photos.length > 0) {
+        displayPhoto = photos[0];
+        isVideo = true;
+    }
+    
+    if (featuredWrapper && displayPhoto) {
+        const photoHash = displayPhoto.hash;
+        if (isVideo) {
+            featuredWrapper.innerHTML = `<img src="/video/thumb/${displayPhoto.filename}" alt="视频缩略图" id="featuredPhoto" onerror="this.src='/static/images/video-thumb.jpg'">`;
+        } else if (photoHash) {
+            featuredWrapper.innerHTML = `<img src="/photo/hash/${photoHash}" alt="今日精选" id="featuredPhoto">`;
+        } else {
+            featuredWrapper.innerHTML = `<img src="/photo/${displayPhoto.filename}" alt="今日精选" id="featuredPhoto">`;
+        }
+        showPhotoFrame();
+    }
+}
+
+// 精选照片加载失败时，回退到第一张照片
+function fallbackToFirstPhoto(imgElement) {
+    console.log('[FeaturedPhoto] Hash load failed, falling back to first photo');
+    const photos = window.cachedPhotos || [];
+    if (photos.length > 0) {
+        const firstPhoto = photos[0];
+        if (firstPhoto.hash) {
+            imgElement.src = `/photo/hash/${firstPhoto.hash}`;
+        } else {
+            imgElement.src = `/photo/${firstPhoto.filename}`;
+        }
+    } else {
+        imgElement.style.display = 'none';
+        imgElement.parentElement.innerHTML = `
+            <div class="frame-empty-state">
+                <i class="fas fa-image"></i>
+                <span class="frame-empty-text">精选照片文件不存在</span>
+            </div>
+        `;
+    }
+}
+
+// Tab 切换功能
+let currentGalleryFilter = 'all';
+// 从服务器渲染的数据初始化缓存
+let cachedPhotos = {{ today_photos | tojson }} || [];
+
+// AI自动选择精选照片
+function autoSelectFeatured() {
+    const clientId = window.currentClientId || '';
+    const dateStr = formatDate(window.currentCalendarDate || new Date());
+    
+    showNotification('AI正在选择最佳照片...', 'info');
+    
+    fetch('/api/photo/select-best', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            client_id: clientId,
+            date: dateStr
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.photo) {
+            // 更新照片框
+            const featuredWrapper = document.getElementById('featuredPhotoWrapper');
+            if (featuredWrapper) {
+                featuredWrapper.innerHTML = `<img src="/photo/${data.photo}" alt="今日精选" id="featuredPhoto">`;
+            }
+            currentFeaturedPhoto = data.photo;
+            
+            // 显示模糊和重复照片
+            const blurryCount = (data.blurry || []).length;
+            const duplicateGroups = data.duplicates || [];
+            const duplicateCount = duplicateGroups.reduce((sum, g) => sum + g.length, 0);
+            
+            if (blurryCount > 0 || duplicateCount > 0) {
+                // 高亮显示问题照片
+                highlightProblemPhotos(data.blurry || [], duplicateGroups);
+                
+                // 只提示，不确认删除
+                let msg = `AI已选择精选照片：${data.photo}\n\n`;
+                msg += `检测到 ${blurryCount} 张模糊照片，${duplicateGroups.length} 组重复照片。\n`;
+                msg += `已用红色(模糊)、黄色(重复)边框标记。\n\n`;
+                msg += `如需移除，请点击照片工具栏的删除按钮。\n`;
+                msg += `（删除只移除索引，不会删除原照片）`;
+                
+                alert(msg);
+            } else {
+                showNotification(`AI已选择最佳照片：${data.photo}`, 'success');
+            }
+        } else {
+            showNotification(data.message || '选择失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('选择失败: ' + err.message, 'error');
+    });
+}
+
+// 清理照片（已合并到AI精选）
+function cleanupPhotos() {
+    alert('清理功能已合并到「挑选精选照片」。\n\n点击「精选」按钮可同时完成：\n1. 选择最佳照片\n2. 识别模糊照片\n3. 识别重复照片\n\nAI识别更精准，误杀率更低。');
+}
+
+// 高亮显示问题照片
+function highlightProblemPhotos(blurryList, duplicateGroups) {
+    clearPhotoHighlights();
+    
+    // 高亮模糊照片（红色边框）
+    blurryList.forEach(filename => {
+        const el = document.querySelector(`[data-photo-id="${filename}"]`);
+        if (el) {
+            el.classList.add('photo-blurry');
+        }
+    });
+    
+    // 高亮重复照片（黄色边框）
+    duplicateGroups.forEach((group, idx) => {
+        group.forEach(filename => {
+            const el = document.querySelector(`[data-photo-id="${filename}"]`);
+            if (el) {
+                el.classList.add('photo-duplicate');
+            }
+        });
+    });
+}
+
+// 清除照片高亮
+function clearPhotoHighlights() {
+    document.querySelectorAll('.photo-blurry, .photo-duplicate').forEach(el => {
+        el.classList.remove('photo-blurry', 'photo-duplicate');
+        el.title = '';
+    });
+}
+
+// 从索引移除照片
+function removePhotosFromIndex(filenames, dateStr) {
+    if (!filenames || filenames.length === 0) return;
+    
+    fetch('/api/photos/remove-from-index', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({filenames: filenames, date: dateStr})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(`已从索引移除 ${filenames.length} 张照片，原文件未删除。如需恢复，请在设置中重新扫描媒体文件夹。`, 'success');
+            loadDateData(dateStr);
+        } else {
+            showNotification(data.message || '移除失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('移除失败: ' + err.message, 'error');
+    });
+}
+
+function switchGalleryTab(type) {
+    currentGalleryFilter = type;
+    
+    // 更新按钮状态
+    document.querySelectorAll('.gallery-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.getElementById('tab' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
+    
+    // 使用缓存数据过滤，不再请求服务器
+    let filteredPhotos = cachedPhotos || [];
+    if (type === 'photo') {
+        filteredPhotos = filteredPhotos.filter(p => !p.is_video);
+    } else if (type === 'video') {
+        filteredPhotos = filteredPhotos.filter(p => p.is_video);
+    }
+    
+    // 更新照片墙显示
+    const dateStr = formatDate(window.currentCalendarDate);
+    updatePhotoGallery(filteredPhotos, dateStr);
+}
+
+// 更新天气显示
+function updateWeatherDisplay(weather) {
+    const weatherEl = document.querySelector('.weather-tag');
+    if (weatherEl && weather) {
+        const icon = weather.icon || '🌤️';
+        const temp = weather.temperature || '--';
+        const condition = weather.condition || '';
+        const city = weather.city || '';
+        weatherEl.innerHTML = `<span class="weather-icon-small">${icon}</span><span>${city} ${temp}° ${condition}</span>`;
+    }
+}
+
+function initCalendar() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const dateParam = urlParams.get('date');
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+        const parsed = new Date(dateParam);
+        if (!isNaN(parsed.getTime())) {
+            window.currentCalendarDate = parsed;
+        }
+    }
+    updateCalendarDisplay();
+    
+    // 初始加载当前日期的留言
+    const dateStr = formatDate(window.currentCalendarDate);
+    loadMessages(dateStr);
+}
+
+// 选择代表照片
+function selectAsFeatured(filename) {
+    if (!filename) return;
+    
+    const featuredWrapper = document.getElementById('featuredPhotoWrapper');
+    const featuredPhoto = document.getElementById('featuredPhoto');
+    
+    if (featuredWrapper && featuredPhoto) {
+        // 通过哈希查找照片
+        const photoEntry = cachedPhotos.find(p => p.filename === filename);
+        const fileHash = photoEntry ? photoEntry.hash : null;
+        
+        if (fileHash) {
+            featuredPhoto.src = `/photo/hash/${fileHash}`;
+        } else {
+            featuredPhoto.src = `/photo/${filename}`;
+        }
+        currentFeaturedPhoto = filename;
+        
+        const hint = document.getElementById('regenerateHint');
+        if (hint) {
+            hint.style.display = 'flex';
+        }
+        
+        // 保存到服务端
+        const clientId = window.currentClientId || '';
+        const dateStr = formatDate(window.currentCalendarDate || new Date());
+        fetch('/api/photo/featured', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                client_id: clientId,
+                date: dateStr,
+                file_hash: fileHash,
+                filename: filename
+            })
+        }).then(r => r.json())
+          .then(data => {
+              if (data.success) {
+                  showNotification('已更换代表照片', 'success');
+              }
+          });
+    }
+}
+
+function openPhotoSelector() {
+    document.querySelector('.gallery-section-uni').scrollIntoView({ behavior: 'smooth' });
+    showNotification('点击照片墙中的照片即可更换', 'info');
+}
+
+// 分享功能
+function toggleShareMenu() {
+    const menu = document.getElementById('shareMenu');
+    menu.classList.toggle('active');
+}
+
+function shareToWechat() {
+    showNotification('请点击右上角 "···" → "发送给朋友" 或 "分享到朋友圈"', 'info');
+    toggleShareMenu();
+}
+
+function shareToWeibo() {
+    const url = encodeURIComponent(window.location.href);
+    const title = encodeURIComponent('{{ baby_name }}的成长日记');
+    window.open(`https://service.weibo.com/share/share.php?url=${url}&title=${title}`, '_blank');
+    toggleShareMenu();
+}
+
+function shareToXiaohongshu() {
+    // 使用新的分享模态框
+    shareContent({
+        title: '{{ baby_name }}的成长日记',
+        text: '来看看{{ baby_name }}的成长记录！#宝宝成长 #成长日记',
+        url: window.location.href,
+        type: 'log'
+    });
+    toggleShareMenu();
+}
+
+function shareToQQ() {
+    const url = encodeURIComponent(window.location.href);
+    const title = encodeURIComponent('{{ baby_name }}的成长日记');
+    window.open(`https://connect.qq.com/widget/shareqq/index.html?url=${url}&title=${title}`, '_blank');
+    toggleShareMenu();
+}
+
+function copyLink() {
+    const url = window.shareUrl || window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+        showNotification('链接已复制', 'success');
+    });
+    toggleShareMenu();
+}
+
+// 照片墙分享功能
+let currentPhotoShareFilename = null;
+let currentPhotoShareIsVideo = false;
+
+function showPhotoShareMenu(e, filename, isVideo) {
+    e.stopPropagation();
+    
+    // 关闭已有的菜单
+    closePhotoShareMenu();
+    
+    currentPhotoShareFilename = filename;
+    currentPhotoShareIsVideo = isVideo === true || isVideo === 'true';
+    
+    // 创建菜单
+    const menu = document.createElement('div');
+    menu.className = 'photo-share-menu active';
+    menu.id = 'currentPhotoShareMenu';
+    
+    menu.innerHTML = `
+        <div class="photo-share-menu-item" onclick="sharePhotoToWechat()">
+            <div class="photo-share-menu-icon photo-share-wechat"><i class="fab fa-weixin"></i></div>
+            <span>微信</span>
+        </div>
+        <div class="photo-share-menu-item" onclick="sharePhotoToWeibo()">
+            <div class="photo-share-menu-icon photo-share-weibo"><i class="fab fa-weibo"></i></div>
+            <span>微博</span>
+        </div>
+        <div class="photo-share-menu-item" onclick="sharePhotoToXiaohongshu()">
+            <div class="photo-share-menu-icon photo-share-xiaohongshu"><i class="fas fa-book-open"></i></div>
+            <span>小红书</span>
+        </div>
+        <div class="photo-share-menu-item" onclick="sharePhotoToQQ()">
+            <div class="photo-share-menu-icon photo-share-qq"><i class="fab fa-qq"></i></div>
+            <span>QQ</span>
+        </div>
+        <div class="photo-share-menu-item" onclick="copyPhotoLink()">
+            <div class="photo-share-menu-icon photo-share-copy"><i class="fas fa-link"></i></div>
+            <span>复制链接</span>
+        </div>
+    `;
+    
+    document.body.appendChild(menu);
+    
+    // 计算位置
+    const rect = e.target.getBoundingClientRect();
+    const menuWidth = 170;
+    const menuHeight = 220;
+    
+    let left = rect.left + rect.width / 2 - menuWidth / 2;
+    let top = rect.top - menuHeight - 10;
+    
+    // 如果上方空间不够，放在下方
+    if (top < 10) {
+        top = rect.bottom + 10;
+    }
+    
+    // 确保不超出屏幕左右边界
+    left = Math.max(10, Math.min(left, window.innerWidth - menuWidth - 10));
+    
+    // 确保不超出屏幕下边界
+    if (top + menuHeight > window.innerHeight - 10) {
+        top = window.innerHeight - menuHeight - 10;
+    }
+    
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+}
+
+function closePhotoShareMenu() {
+    const menu = document.getElementById('currentPhotoShareMenu');
+    if (menu) {
+        menu.remove();
+    }
+    currentPhotoShareFilename = null;
+}
+
+function sharePhotoToWechat() {
+    showNotification('请点击右上角 "···" → "发送给朋友" 或 "分享到朋友圈"', 'info');
+    closePhotoShareMenu();
+}
+
+function sharePhotoToWeibo() {
+    const type = currentPhotoShareIsVideo ? '视频' : '照片';
+    const url = encodeURIComponent(`${window.location.origin}/${currentPhotoShareIsVideo ? 'video' : 'photo'}/${currentPhotoShareFilename}`);
+    const title = encodeURIComponent(`{{ baby_name }}的成长${type}`);
+    window.open(`https://service.weibo.com/share/share.php?url=${url}&title=${title}`, '_blank');
+    closePhotoShareMenu();
+}
+
+function sharePhotoToXiaohongshu() {
+    showNotification('小红书分享指南：1. 保存图片 2. 打开小红书APP 3. 点击发布', 'info');
+    closePhotoShareMenu();
+}
+
+function sharePhotoToQQ() {
+    const type = currentPhotoShareIsVideo ? '视频' : '照片';
+    const url = encodeURIComponent(`${window.location.origin}/${currentPhotoShareIsVideo ? 'video' : 'photo'}/${currentPhotoShareFilename}`);
+    const title = encodeURIComponent(`{{ baby_name }}的成长${type}`);
+    window.open(`https://connect.qq.com/widget/shareqq/index.html?url=${url}&title=${title}`, '_blank');
+    closePhotoShareMenu();
+}
+
+function copyPhotoLink() {
+    const url = `${window.location.origin}/${currentPhotoShareIsVideo ? 'video' : 'photo'}/${currentPhotoShareFilename}`;
+    navigator.clipboard.writeText(url).then(() => {
+        showNotification('链接已复制', 'success');
+    }).catch(() => {
+        showNotification('复制失败', 'error');
+    });
+    closePhotoShareMenu();
+}
+
+// 点击页面其他区域关闭分享菜单
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('currentPhotoShareMenu');
+    if (menu && !menu.contains(e.target) && !e.target.closest('.btn-gallery-action')) {
+        closePhotoShareMenu();
+    }
+});
+
+// 滚动时关闭分享菜单
+window.addEventListener('scroll', function() {
+    closePhotoShareMenu();
+}, true);
+
+// 留言表单
+function openCommentForm() {
+    document.getElementById('commentFormOverlay').classList.add('active');
+    document.getElementById('leaveCommentTrigger').style.display = 'none';
+}
+
+function closeCommentForm(event) {
+    if (!event || event.target === document.getElementById('commentFormOverlay')) {
+        document.getElementById('commentFormOverlay').classList.remove('active');
+        document.getElementById('leaveCommentTrigger').style.display = 'block';
+    }
+}
+
+function switchTab(type) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.closest('.tab-btn').classList.add('active');
+    
+    if (type === 'text') {
+        document.getElementById('textInputArea').style.display = 'block';
+        document.getElementById('voiceInputArea').classList.remove('active');
+    } else {
+        document.getElementById('textInputArea').style.display = 'none';
+        document.getElementById('voiceInputArea').classList.add('active');
+    }
+}
+
+// 录音功能
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let audioBlob = null;
+
+function toggleRecording() {
+    const btn = document.getElementById('recordBtn');
+    const status = document.getElementById('recordingStatus');
+    
+    if (!isRecording) {
+        // 开始录音
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                
+                mediaRecorder.ondataavailable = event => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = () => {
+                    audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                btn.classList.add('recording');
+                status.style.display = 'block';
+                btn.innerHTML = '<i class="fas fa-stop"></i>';
+            })
+            .catch(error => {
+                showNotification('无法访问麦克风: ' + error.message, 'error');
+            });
+    } else {
+        // 停止录音
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+        }
+        isRecording = false;
+        btn.classList.remove('recording');
+        status.textContent = '录音完成，点击发送';
+        btn.innerHTML = '<i class="fas fa-microphone"></i>';
+        
+        setTimeout(() => {
+            status.style.display = 'none';
+            status.textContent = '正在录音...';
+        }, 1500);
+    }
+}
+
+function submitComment() {
+    const text = document.getElementById('commentText').value;
+    
+    // 如果有录音，先处理录音
+    if (audioBlob) {
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = function() {
+            const base64data = reader.result;
+            
+            const formData = new FormData();
+            formData.append('audio', base64data);
+            formData.append('message', text);
+            formData.append('type', 'voice');
+            
+            fetch('/message', {
+                method: 'POST',
+                body: formData
+            })
+            .then(async response => {
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    throw new Error('服务器返回无效数据，请检查网络连接');
+                }
+            })
+            .then(data => {
+                if (data.success) {
+                    showNotification('语音留言发送成功', 'success');
+                    // 重置状态
+                    audioBlob = null;
+                    document.getElementById('commentText').value = '';
+                    closeCommentForm();
+                    // 刷新留言列表
+                    loadMessages(formatDate(window.currentCalendarDate));
+                } else {
+                    showNotification('发送失败: ' + data.message, 'error');
+                }
+            })
+            .catch(err => {
+                showNotification('发送失败: ' + err.message, 'error');
+            });
+        };
+        return;
+    }
+    
+    // 纯文字留言
+    if (!text.trim()) {
+        showNotification('请输入留言内容', 'error');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('message', text);
+    formData.append('type', 'text');
+    
+    fetch('/message', {
+        method: 'POST',
+        body: formData
+    })
+    .then(async response => {
+        const text = await response.text();
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            throw new Error('服务器返回无效数据，请检查网络连接');
+        }
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('留言发送成功', 'success');
+            document.getElementById('commentText').value = '';
+            closeCommentForm();
+            // 刷新留言列表
+            loadMessages(formatDate(window.currentCalendarDate));
+        } else {
+            showNotification('发送失败: ' + data.message, 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('发送失败: ' + err.message, 'error');
+    });
+}
+
+// 功能函数
+function regenerateLog(dateStr) {
+    // 使用传入的日期或当前万年历选中的日期
+    const targetDate = dateStr || formatDate(window.currentCalendarDate);
+    
+    // 更新隐藏表单字段
+    const logDateInput = document.getElementById('logDate');
+    if (logDateInput) logDateInput.value = targetDate;
+    
+    // 更新日期显示（只读）
+    const logDateDisplay = document.getElementById('logDateDisplay');
+    if (logDateDisplay) {
+        // 格式化显示为中文日期
+        const date = new Date(targetDate);
+        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+        const weekday = weekdays[date.getDay()];
+        logDateDisplay.innerHTML = `${targetDate} <span class="text-muted ms-2">${weekday}</span>`;
+    }
+    
+    // 加载该日期的照片预览
+    loadTodayPhotosForDate(targetDate);
+    
+    new bootstrap.Modal(document.getElementById('aiModal')).show();
+}
+
+// 收集当前页面的元数据（天气、农历等）
+function collectCurrentMetadata() {
+    const weatherEl = document.querySelector('.weather-tag');
+    const weekdayEl = document.getElementById('calendarWeekday');
+    const lunarEl = document.getElementById('calendarLunar');
+    
+    // 从服务器获取城市（通过 weather 对象）
+    const serverCity = {% if weather %}'{{ weather.city }}'{% else %}''{% endif %};
+    
+    let weather = { city: serverCity || '未知', temperature: '--', condition: '未知', icon: '🌤️' };
+    if (weatherEl) {
+        const text = weatherEl.innerText;
+        const match = text.match(/(\d+)°[C\s]*(.+)/);
+        if (match) {
+            weather.temperature = match[1];
+            weather.condition = match[2].trim();
+        }
+        // 从图标 span 获取天气图标
+        const iconSpan = weatherEl.querySelector('.weather-icon-small');
+        if (iconSpan) {
+            weather.icon = iconSpan.innerText.trim() || '🌤️';
+        }
+    }
+    
+    let weekday = '';
+    let lunar = '';
+    if (weekdayEl) {
+        const text = weekdayEl.innerText;
+        const parts = text.split('·');
+        if (parts.length > 0) {
+            weekday = parts[0].trim();
+        }
+    }
+    if (lunarEl) {
+        lunar = lunarEl.innerText.trim();
+    }
+    
+    // 获取今日世界新闻（如果页面中有）
+    const newsEls = document.querySelectorAll('.world-news-item');
+    const news = Array.from(newsEls).map(el => el.innerText.trim()).filter(t => t);
+    
+    return {
+        baby_name: '{{ baby_name }}',
+        weather: weather,
+        temperature: weather.temperature,
+        condition: weather.condition,
+        weather_icon: weather.icon,
+        city: weather.city,
+        lunar: lunar,
+        weekday: weekday,
+        news: news.length > 0 ? news : null,
+        photo_filename: window.currentHeroPhoto || ''
+    };
+}
+
+function editBabyLog(dateStr) {
+    const password = prompt('请输入管理密码以编辑日记：');
+    if (password === null) return;
+    
+    fetch('/api/settings/verify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password})
+    })
+    .then(r => r.json())
+    .then(authData => {
+        if (!authData.success) {
+            showNotification('密码错误', 'error');
+            return;
+        }
+        
+        // 显示编辑模态框
+        const logContent = document.querySelector('.journal-body-uni')?.innerText || '';
+        document.getElementById('editLogDate').value = dateStr;
+        document.getElementById('editLogContent').value = logContent;
+        new bootstrap.Modal(document.getElementById('editLogModal')).show();
+    })
+    .catch(console.error);
+}
+
+// 保存编辑的日志
+function saveEditedLog() {
+    const dateStr = document.getElementById('editLogDate').value;
+    const newContent = document.getElementById('editLogContent').value;
+    
+    if (!newContent || newContent.trim() === '') {
+        showNotification('内容不能为空', 'error');
+        return;
+    }
+    
+    // 收集当前页面的元数据
+    const metadata = collectCurrentMetadata();
+    
+    fetch('/api/log/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            content: newContent.trim(),
+            date: dateStr,
+            metadata: metadata
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editLogModal')).hide();
+            showNotification('日记已保存', 'success');
+            location.reload();
+        } else {
+            showNotification(data.message || '保存失败', 'error');
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        showNotification('保存失败', 'error');
+    });
+}
+
+function viewPhotoDetail(filename) {
+    fetch('/api/photo/' + filename)
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('detailPhoto').src = data.url;
+                document.getElementById('detailCaption').textContent = data.caption || '无标注';
+                document.getElementById('detailDate').textContent = data.date;
+                new bootstrap.Modal(document.getElementById('photoDetailModal')).show();
+            }
+        });
+}
+
+function deletePhoto(filename) {
+    if (confirm('确定要从相册中移除这张照片吗？\n（原文件不会删除）')) {
+        fetch('/api/photo/delete', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({filename: filename})
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showNotification('照片已移除', 'success');
+                loadDateData(formatDate(window.currentCalendarDate));
+            } else {
+                showNotification(data.message || '删除失败', 'error');
+            }
+        })
+        .catch(err => {
+            showNotification('删除失败: ' + err.message, 'error');
+        });
+    }
+}
+
+// 通知管理器 - 支持多个通知铺开显示
+const NotificationManager = {
+    container: null,
+    notifications: [],
+    maxNotifications: 5,
+    
+    init() {
+        if (!this.container) {
+            this.container = document.createElement('div');
+            this.container.id = 'notification-container';
+            this.container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                max-width: 320px;
+                pointer-events: none;
+            `;
+            document.body.appendChild(this.container);
+        }
+    },
+    
+    show(message, type = 'info', duration = 3500) {
+        this.init();
+        
+        // 限制最大通知数量
+        if (this.notifications.length >= this.maxNotifications) {
+            // 移除最早的通知
+            const oldest = this.notifications.shift();
+            if (oldest && oldest.element) {
+                oldest.element.remove();
+            }
+        }
+        
+        const notification = document.createElement('div');
+        notification.className = `alert alert-${type} alert-dismissible fade show`;
+        notification.style.cssText = `
+            min-width: 280px;
+            max-width: 320px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-radius: 12px;
+            border: none;
+            margin: 0;
+            pointer-events: auto;
+            animation: slideInRight 0.3s ease;
+            word-wrap: break-word;
+            font-size: 0.9rem;
+        `;
+        
+        const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle';
+        notification.innerHTML = `
+            <i class="fas fa-${icon} me-2"></i>${message}
+            <button type="button" class="btn-close notification-close-btn" style="padding: 0.5rem;"></button>
+        `;
+        
+        this.container.appendChild(notification);
+        
+        const notifObj = {
+            element: notification,
+            timeout: setTimeout(() => {
+                this.remove(notification);
+            }, duration)
+        };
+        
+        this.notifications.push(notifObj);
+        
+        // 点击关闭按钮
+        const closeBtn = notification.querySelector('.notification-close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                this.remove(notification);
+            });
+        }
+    },
+    
+    remove(element) {
+        const index = this.notifications.findIndex(n => n.element === element);
+        if (index > -1) {
+            clearTimeout(this.notifications[index].timeout);
+            this.notifications.splice(index, 1);
+        }
+        
+        element.style.animation = 'slideOutRight 0.3s ease';
+        setTimeout(() => {
+            element.remove();
+        }, 300);
+    }
+};
+
+// 添加动画样式
+const notificationStyle = document.createElement('style');
+notificationStyle.textContent = `
+    @keyframes slideInRight {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    @keyframes slideOutRight {
+        from {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+    }
+`;
+document.head.appendChild(notificationStyle);
+
+// 兼容原有的 showNotification 函数
+function showNotification(message, type, duration = 3500) {
+    NotificationManager.show(message, type, duration);
+}
+
+// 打开反馈模态框
+function openFeedbackModal() {
+    const modal = new bootstrap.Modal(document.getElementById('contactModal'));
+    modal.show();
+}
+
+// 点击外部关闭分享菜单
+document.addEventListener('click', function(e) {
+    const shareMenu = document.getElementById('shareMenu');
+    const shareBtn = e.target.closest('.btn-ghost-uni');
+    if (shareMenu && !shareMenu.contains(e.target) && (!shareBtn || !shareBtn.querySelector('.fa-share-nodes'))) {
+        shareMenu.classList.remove('active');
+    }
+});
+
+// 播放视频（带自动降级）
+function playVideo(filename, useCompressed = false) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px 20px 60px 20px;
+    `;
+    
+    const videoUrl = useCompressed ? `/video/compressed/${filename}` : `/video/${filename}`;
+    
+    overlay.innerHTML = `
+        <div class="text-center" style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+            <div id="videoLoading" class="text-white mb-2">正在加载视频...</div>
+            <video id="fullscreenVideo" controls autoplay playsinline style="max-width:100%;max-height:100%;object-fit:contain;" onclick="event.stopPropagation()">
+                <source src="${videoUrl}" type="video/mp4">
+                您的浏览器不支持视频播放
+            </video>
+        </div>
+        <button onclick="closeFullscreen()" style="
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(255,255,255,0.2); border: none;
+            color: white; width: 40px; height: 40px;
+            border-radius: 50%; cursor: pointer;
+            font-size: 1.2rem; z-index: 10;
+        "><i class="fas fa-times"></i></button>
+    `;
+    
+    const video = overlay.querySelector('#fullscreenVideo');
+    const loadingText = overlay.querySelector('#videoLoading');
+    
+    // 监听视频元数据加载，调整播放器大小
+    video.addEventListener('loadedmetadata', function() {
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const containerWidth = window.innerWidth - 40;
+        const containerHeight = window.innerHeight - 100;
+        
+        if (videoRatio > 1) {
+            // 横版视频
+            video.style.maxWidth = containerWidth + 'px';
+            video.style.maxHeight = containerHeight + 'px';
+        } else {
+            // 竖版视频
+            video.style.maxHeight = containerHeight + 'px';
+            video.style.maxWidth = containerWidth + 'px';
+        }
+    });
+    
+    // 监听视频错误和超时，自动降级
+    let hasError = false;
+    
+    video.addEventListener('error', function(e) {
+        if (hasError) return;
+        hasError = true;
+        
+        console.log('视频加载失败，尝试切换到压缩版...');
+        loadingText.textContent = '原视频加载失败，正在切换到压缩版...';
+        
+        const compressedUrl = `/video/compressed/${filename}`;
+        video.querySelector('source').src = compressedUrl;
+        video.load();
+    });
+    
+    // 超时降级（5秒）
+    const timeoutId = setTimeout(() => {
+        if (video.readyState < 2 && !hasError) {
+            console.log('视频加载超时，尝试切换到压缩版...');
+            hasError = true;
+            loadingText.textContent = '加载较慢，正在切换到压缩版...';
+            
+            const compressedUrl = `/video/compressed/${filename}`;
+            video.querySelector('source').src = compressedUrl;
+            video.load();
+        }
+    }, 5000);
+    
+    video.addEventListener('canplay', function() {
+        clearTimeout(timeoutId);
+        loadingText.style.display = 'none';
+    });
+    
+    video.addEventListener('loadeddata', function() {
+        clearTimeout(timeoutId);
+        if (loadingText.style.display !== 'none') {
+            loadingText.style.display = 'none';
+        }
+    });
+    
+    overlay.id = 'fullscreenOverlay';
+    overlay.onclick = function(e) {
+        if (e.target === overlay || e.target.id === 'fullscreenVideo') {
+            // 只有点击背景才关闭，点击视频不关闭
+            if (e.target === overlay) closeFullscreen();
+        }
+    };
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+}
+
+// 全屏查看照片（带自动降级）
+function openFullscreen(filename, isVideo) {
+    if (isVideo) {
+        playVideo(filename);
+        return;
+    }
+    
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: zoom-out;
+        padding: 20px;
+    `;
+    
+    const imageUrl = `/photo/${filename}`;
+    
+    overlay.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
+            <div id="imageLoading" class="text-white mb-2">正在加载图片...</div>
+            <img id="fullscreenImage" src="${imageUrl}" style="max-width:100%;max-height:100%;object-fit:contain;" onclick="event.stopPropagation()">
+        </div>
+        <button onclick="closeFullscreen()" style="
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(255,255,255,0.2); border: none;
+            color: white; width: 44px; height: 44px;
+            border-radius: 50%; cursor: pointer;
+            font-size: 1.3rem; z-index: 10;
+        "><i class="fas fa-times"></i></button>
+    `;
+    
+    const img = overlay.querySelector('#fullscreenImage');
+    const loadingText = overlay.querySelector('#imageLoading');
+    
+    let hasError = false;
+    
+    // 监听图片错误
+    img.addEventListener('error', function(e) {
+        if (hasError) return;
+        hasError = true;
+        
+        console.log('图片加载失败，尝试切换到压缩版...');
+        loadingText.textContent = '原图加载失败，正在切换到压缩版...';
+        
+        const compressedUrl = `/image/compressed/${filename}`;
+        img.src = compressedUrl;
+    });
+    
+    // 超时降级（3秒）
+    const timeoutId = setTimeout(() => {
+        if (!img.complete && !hasError) {
+            console.log('图片加载超时，尝试切换到压缩版...');
+            hasError = true;
+            loadingText.textContent = '加载较慢，正在切换到压缩版...';
+            
+            const compressedUrl = `/image/compressed/${filename}`;
+            img.src = compressedUrl;
+        }
+    }, 3000);
+    
+    img.addEventListener('load', function() {
+        clearTimeout(timeoutId);
+        loadingText.style.display = 'none';
+    });
+    
+    overlay.id = 'fullscreenOverlay';
+    overlay.onclick = closeFullscreen;
+    document.body.appendChild(overlay);
+    document.body.style.overflow = 'hidden';
+}
+
+function closeFullscreen() {
+    const overlay = document.getElementById('fullscreenOverlay');
+    if (overlay) {
+        overlay.remove();
+        document.body.style.overflow = '';
+    }
+}
+
+// 分享照片 - 使用与日志分享一样的逻辑
+function sharePhoto(filename) {
+    const isVideo = filename.match(/\.(mp4|mov|avi|webm)$/i);
+    const url = `${window.location.origin}/${isVideo ? 'video' : 'photo'}/${filename}`;
+    
+    // 打开分享菜单
+    toggleShareMenu();
+    
+    // 更新分享链接（保存到全局供分享函数使用）
+    window.shareUrl = url;
+    window.shareTitle = '{{ baby_name }}的成长' + (isVideo ? '视频' : '照片');
+}
+
+// 打开照片标签编辑（简化版）
+function openPhotoTagModal(filename) {
+    // 复用现有的 photo_tags.html 中的函数
+    const url = `/photo/${filename}`;
+    if (typeof openPhotoTagModalFromIndex === 'function') {
+        openPhotoTagModalFromIndex(filename, url);
+    } else {
+        // 如果 photo_tags.html 还没加载，直接显示提示
+        const tag = prompt('为这张照片添加标签：');
+        if (tag && tag.trim()) {
+            fetch('/api/photo/tag', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({filename, tag: tag.trim(), note: ''})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    showNotification('标签添加成功', 'success');
+                    location.reload();
+                }
+            });
+        }
+    }
+}
+
+// 删除留言函数（全局可用）
+function deleteMessage(messageId) {
+    window.pendingDeleteId = messageId;
+    showPasswordVerify('delete_message');
+}
+
+// 显示密码验证模态框
+let pendingAction = null;
+function showPasswordVerify(action) {
+    pendingAction = action;
+    const modal = new bootstrap.Modal(document.getElementById('passwordVerifyModal'));
+    document.getElementById('verifyPassword').value = '';
+    document.getElementById('passwordError').style.display = 'none';
+    modal.show();
+}
+
+// 确认密码验证
+function confirmPasswordVerify() {
+    const password = document.getElementById('verifyPassword').value;
+    const errorEl = document.getElementById('passwordError');
+    
+    fetch('/api/verify-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: password, action: pendingAction})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
+            if (pendingAction === 'delete_message' && window.pendingDeleteId) {
+                doDeleteMessage(window.pendingDeleteId);
+            }
+            pendingAction = null;
+        } else {
+            errorEl.textContent = data.message || '密码错误';
+            errorEl.style.display = 'block';
+        }
+    })
+    .catch(err => {
+        errorEl.textContent = '验证失败: ' + err.message;
+        errorEl.style.display = 'block';
+    });
+}
+
+// 执行删除留言
+function doDeleteMessage(messageId) {
+    fetch(`/api/messages/${messageId}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('留言已删除', 'success');
+            // 刷新留言列表
+            loadDateData(formatDate(window.currentCalendarDate));
+        } else {
+            showNotification('删除失败: ' + (data.message || '未知错误'), 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('删除失败: ' + err.message, 'error');
+    });
+}
+
+// 初始化
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(initCalendar, 100);
+    loadSavedTheme();
+    createGlobalShareModal();
+    checkLogGeneratingState();
+    loadProfileEntry();
+});
+
+function loadProfileEntry() {
+    fetch('/api/ai/profile')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.profile) {
+                const profile = data.profile;
+                
+                const summary = profile.guidance?.summary || '';
+                if (summary && !summary.includes('暂无足够数据')) {
+                    document.getElementById('profileEntrySummary').textContent = summary;
+                } else {
+                    document.getElementById('profileEntrySummary').textContent = 
+                        '点击查看宝宝成长画像详情';
+                }
+            }
+        })
+        .catch(err => {
+            console.log('加载画像入口失败:', err);
+        });
+}
+
+function checkLogGeneratingState() {
+    const stateStr = localStorage.getItem('log_generating');
+    if (!stateStr) return;
+    try {
+        const state = JSON.parse(stateStr);
+        if (state.generating && (Date.now() - state.startTime < 120000)) {
+            let toast = document.getElementById('logGeneratingToast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'logGeneratingToast';
+                toast.className = 'log-generating-toast';
+                toast.innerHTML = '<div class="spinner-border spinner-border-sm text-light" role="status"></div><span>正在生成日志，请稍候...</span>';
+                document.body.appendChild(toast);
+            }
+            toast.style.display = 'flex';
+            
+            fetch(`/api/ai/log-status?date=${state.date}`)
+                .then(r => r.json())
+                .then(data => {
+                    toast.style.display = 'none';
+                    localStorage.removeItem('log_generating');
+                    if (data.success && data.exists) {
+                        if (typeof showNotification === 'function') {
+                            showNotification('日志生成成功！', 'success');
+                        }
+                        setTimeout(() => location.reload(), 500);
+                    }
+                })
+                .catch(() => {
+                    setTimeout(checkLogGeneratingState, 3000);
+                });
+        } else {
+            localStorage.removeItem('log_generating');
+        }
+    } catch(e) {
+        localStorage.removeItem('log_generating');
+    }
+}
+
+// 加载保存的主题
+function loadSavedTheme() {
+    fetch('/api/theme')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.css) {
+                let styleEl = document.getElementById('dynamic-theme');
+                if (!styleEl) {
+                    styleEl = document.createElement('style');
+                    styleEl.id = 'dynamic-theme';
+                    document.head.appendChild(styleEl);
+                }
+                styleEl.textContent = data.css;
+            }
+        })
+        .catch(err => console.log('加载主题失败:', err));
+}
+
+// 创建全局分享模态框
+function createGlobalShareModal() {
+    if (document.getElementById('globalShareModal')) return;
+    
+    const modal = document.createElement('div');
+    modal.id = 'globalShareModal';
+    modal.className = 'modal fade';
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">📤 分享</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div class="d-flex justify-content-center gap-3 flex-wrap">
+                        <button class="btn btn-light share-option-btn" onclick="globalShareToWechat()">
+                            <i class="fab fa-weixin fa-2x text-success"></i>
+                            <div class="small mt-1">微信</div>
+                        </button>
+                        <button class="btn btn-light share-option-btn" onclick="globalShareToWeibo()">
+                            <i class="fab fa-weibo fa-2x text-danger"></i>
+                            <div class="small mt-1">微博</div>
+                        </button>
+                        <button class="btn btn-light share-option-btn" onclick="globalShareToXiaohongshu()">
+                            <span class="fs-2">📔</span>
+                            <div class="small mt-1">小红书</div>
+                        </button>
+                        <button class="btn btn-light share-option-btn" onclick="globalShareToQQ()">
+                            <i class="fab fa-qq fa-2x text-info"></i>
+                            <div class="small mt-1">QQ</div>
+                        </button>
+                        <button class="btn btn-light share-option-btn" onclick="globalCopyLink()">
+                            <i class="fas fa-link fa-2x text-primary"></i>
+                            <div class="small mt-1">复制</div>
+                        </button>
+                    </div>
+                    <div id="globalShareTip" class="mt-3 text-muted small"></div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// 全局分享函数
+function showGlobalShareModal(url, title) {
+    window.currentShareUrl = url || window.location.href;
+    window.currentShareTitle = title || '{{ baby_name }}的成长记录';
+    document.getElementById('globalShareTip').textContent = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('globalShareModal'));
+    modal.show();
+}
+
+function globalShareToWechat() {
+    document.getElementById('globalShareTip').innerHTML = '请点击右上角 "···" → 选择"发送给朋友"或"分享到朋友圈"';
+}
+
+function globalShareToWeibo() {
+    const url = encodeURIComponent(window.currentShareUrl);
+    const title = encodeURIComponent(window.currentShareTitle);
+    window.open(`https://service.weibo.com/share/share.php?url=${url}&title=${title}`, '_blank');
+    bootstrap.Modal.getInstance(document.getElementById('globalShareModal')).hide();
+}
+
+function globalShareToXiaohongshu() {
+    const tip = document.getElementById('globalShareTip');
+    tip.innerHTML = '小红书分享指南:<br>1. 保存图片或截图<br>2. 打开小红书APP<br>3. 点击"发布"选择图片<br>4. 粘贴文案分享<br><br>正在复制文案...';
+    
+    navigator.clipboard.writeText(window.currentShareTitle).then(() => {
+        tip.innerHTML += '<br><span class="text-success">✅ 文案已复制</span>';
+    });
+}
+
+function globalShareToQQ() {
+    const url = encodeURIComponent(window.currentShareUrl);
+    const title = encodeURIComponent(window.currentShareTitle);
+    window.open(`https://connect.qq.com/widget/shareqq/index.html?url=${url}&title=${title}`, '_blank');
+    bootstrap.Modal.getInstance(document.getElementById('globalShareModal')).hide();
+}
+
+function globalCopyLink() {
+    navigator.clipboard.writeText(window.currentShareUrl).then(() => {
+        showNotification('链接已复制', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('globalShareModal')).hide();
+    });
+}
+
+// 覆盖原有的分享函数
+function sharePhoto(filename) {
+    const isVideo = filename.match(/\.(mp4|mov|avi|webm)$/i);
+    const url = `${window.location.origin}/${isVideo ? 'video' : 'photo'}/${filename}`;
+    showGlobalShareModal(url, '{{ baby_name }}的成长' + (isVideo ? '视频' : '照片'));
+}
+
+// AI分析相关功能
+let currentAIPhoto = '';
+let currentAIQuestion = '';
+let currentAIAnswer = '';
+
+function openAIAnalysis(filename) {
+    currentAIPhoto = filename;
+    // 设置预览图片
+    const imgEl = document.getElementById('aiAnalysisPhoto');
+    imgEl.src = `/photo/thumb/${filename}`;
+    imgEl.onerror = () => imgEl.src = `/photo/${filename}`;
+    // 重置表单
+    document.getElementById('aiQuestion').value = '';
+    document.getElementById('aiAnswerContainer').style.display = 'none';
+    document.getElementById('aiLoading').style.display = 'none';
+    document.getElementById('correctionArea').style.display = 'none';
+    // 打开模态框
+    new bootstrap.Modal(document.getElementById('aiAnalysisModal')).show();
+}
+
+function setQuestion(question) {
+    document.getElementById('aiQuestion').value = question;
+}
+
+function submitAIQuestion() {
+    const question = document.getElementById('aiQuestion').value.trim();
+    if (!question) {
+        showNotification('请输入你的问题', 'warning');
+        return;
+    }
+    
+    currentAIQuestion = question;
+    // 显示加载状态
+    document.getElementById('aiSubmitBtn').disabled = true;
+    document.getElementById('aiLoading').style.display = 'block';
+    document.getElementById('aiAnswerContainer').style.display = 'none';
+    
+    // 调用后端AI接口
+    fetch('/api/ai/ask', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            question: question,
+            photo_filename: currentAIPhoto,
+            date: formatDate(window.currentCalendarDate)
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            currentAIAnswer = data.answer;
+            document.getElementById('aiAnswerText').textContent = data.answer;
+            document.getElementById('aiAnswerContainer').style.display = 'block';
+        } else {
+            showNotification('AI分析失败: ' + data.message, 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('请求失败: ' + err.message, 'error');
+    })
+    .finally(() => {
+        document.getElementById('aiSubmitBtn').disabled = false;
+        document.getElementById('aiLoading').style.display = 'none';
+    });
+}
+
+function feedbackAnswer(isCorrect) {
+    if (isCorrect) {
+        // 提交正确反馈
+        fetch('/api/ai/feedback', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                question: currentAIQuestion,
+                answer: currentAIAnswer,
+                is_correct: true,
+                photo_filename: currentAIPhoto
+            })
+        });
+        showNotification('感谢反馈，AI会变得更准确哦', 'success');
+        // 关闭模态框
+        bootstrap.Modal.getInstance(document.getElementById('aiAnalysisModal')).hide();
+    } else {
+        // 显示纠正输入框
+        document.getElementById('correctionArea').style.display = 'block';
+    }
+}
+
+function submitCorrection() {
+    const correction = document.getElementById('aiCorrection').value.trim();
+    if (!correction) {
+        showNotification('请输入正确的答案', 'warning');
+        return;
+    }
+    
+    fetch('/api/ai/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            question: currentAIQuestion,
+            answer: currentAIAnswer,
+            is_correct: false,
+            user_correction: correction,
+            photo_filename: currentAIPhoto
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('纠正已提交，AI已经记住啦', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('aiAnalysisModal')).hide();
+        } else {
+            showNotification('提交失败: ' + data.message, 'error');
+        }
+    });
+}
+</script>
+
+<!-- 编辑日志模态框 -->
+<div class="modal fade" id="editLogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-pen-to-square me-2"></i>编辑成长日记
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editLogDate">
+                <div class="mb-3">
+                    <label class="form-label">
+                        <i class="fas fa-align-left me-1"></i>日记内容
+                    </label>
+                    <textarea id="editLogContent" class="form-control" rows="12" 
+                        placeholder="记录今天的成长点滴..." style="resize: vertical; line-height: 1.8;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="saveEditedLog()">
+                    <i class="fas fa-save me-2"></i>保存修改
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.share-option-btn {
+    width: 65px;
+    height: 65px;
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border: 1px solid #e0e0e0;
+}
+.share-option-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+</style>
+
+{% endblock %}

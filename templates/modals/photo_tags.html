@@ -1,0 +1,471 @@
+<!-- 照片标签管理模态框 -->
+<div class="modal fade" id="photoTagModal" tabindex="-1" aria-labelledby="photoTagModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photoTagModalLabel">
+                    <i class="fas fa-tags me-2"></i>照片标签
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 照片预览 -->
+                <div class="text-center mb-3">
+                    <img id="tagPhotoPreview" src="" alt="照片" 
+                         style="max-width: 100%; max-height: 200px; border-radius: 8px;">
+                </div>
+                
+                <!-- 文件名 -->
+                <div class="text-muted small mb-3" id="tagPhotoFilename"></div>
+                
+                <!-- 标签输入 -->
+                <div class="mb-3">
+                    <label for="photoTagInput" class="form-label">
+                        <i class="fas fa-tag me-1"></i>标签
+                    </label>
+                    <input type="text" class="form-control" id="photoTagInput" 
+                           placeholder="例如：第一次站立、周岁生日、第一次游泳...">
+                    <div class="form-text">添加标签方便日后查找</div>
+                </div>
+                
+                <!-- 常用标签快捷选择 -->
+                <div class="mb-3">
+                    <label class="form-label">快捷标签</label>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="quick-tag-btn" onclick="addQuickTag('第一次站立')">第一次站立</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('周岁生日')">周岁生日</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('第一次游泳')">第一次游泳</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('第一次走路')">第一次走路</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('满月')">满月</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('百天')">百天</span>
+                        <span class="quick-tag-btn" onclick="addQuickTag('笑得很开心')">笑得很开心</span>
+                    </div>
+                </div>
+                
+                <!-- 备注 -->
+                <div class="mb-3">
+                    <label for="photoNoteInput" class="form-label">
+                        <i class="fas fa-sticky-note me-1"></i>备注
+                    </label>
+                    <textarea class="form-control" id="photoNoteInput" rows="2"
+                              placeholder="补充说明..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-danger" id="deleteTagBtn" onclick="deletePhotoTag()">
+                    <i class="fas fa-trash me-1"></i>删除标签
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="savePhotoTag()">
+                    <i class="fas fa-save me-1"></i>保存
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 所有标签照片查看模态框 -->
+<div class="modal fade" id="allTagsModal" tabindex="-1" aria-labelledby="allTagsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="allTagsModalLabel">
+                    <i class="fas fa-tags me-2"></i>标签照片
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 标签筛选 -->
+                <div class="mb-4">
+                    <label class="form-label">按标签筛选</label>
+                    <div id="tagFilterButtons" class="d-flex flex-wrap gap-2">
+                        <span class="tag-filter-btn active" onclick="filterByTag('all')">全部</span>
+                        <!-- 动态加载 -->
+                    </div>
+                </div>
+                
+                <!-- 照片网格 -->
+                <div id="taggedPhotosGrid" class="row g-4">
+                    <!-- 动态加载 -->
+                </div>
+                
+                <!-- 空状态 -->
+                <div id="noTaggedPhotos" class="text-center py-5" style="display: none;">
+                    <i class="fas fa-tags fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">还没有标签照片</p>
+                    <p class="text-muted small">点击照片添加标签</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.cursor-pointer {
+    cursor: pointer;
+}
+.cursor-pointer:hover {
+    opacity: 0.8;
+}
+
+/* 圆润的快捷标签按钮 */
+.quick-tag-btn {
+    display: inline-block;
+    padding: 6px 16px;
+    background: var(--bg-secondary, #EFEBE6);
+    color: var(--text-medium, #5A5A5A);
+    border-radius: 20px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.quick-tag-btn:hover {
+    background: var(--accent-sage, #A8B5A0);
+    color: white;
+}
+
+/* 圆润的标签筛选按钮 */
+.tag-filter-btn {
+    display: inline-block;
+    padding: 8px 20px;
+    background: var(--bg-secondary, #EFEBE6);
+    color: var(--text-medium, #5A5A5A);
+    border-radius: 20px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: none;
+}
+.tag-filter-btn:hover {
+    background: var(--accent-sage, #A8B5A0);
+    color: white;
+}
+.tag-filter-btn.active {
+    background: var(--accent-sage, #A8B5A0);
+    color: white;
+}
+
+/* 更大的照片网格 */
+.tagged-photo-item {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.tagged-photo-item:hover {
+    transform: scale(1.02);
+}
+.tagged-photo-item img {
+    width: 100%;
+    height: 220px;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+/* 照片操作按钮 */
+.tagged-photo-actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+.tagged-photo-item:hover .tagged-photo-actions {
+    opacity: 1;
+}
+.tagged-photo-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.95);
+    color: var(--text-dark);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+.tagged-photo-btn:hover {
+    transform: scale(1.1);
+    background: white;
+}
+
+/* 圆润的标签显示 */
+.photo-tag-badge {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.7);
+    color: white;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+}
+
+.video-play-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    background: rgba(0,0,0,0.6);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.2rem;
+    pointer-events: none;
+}
+</style>
+
+<script>
+let currentPhotoFilename = '';
+let currentPhotoUrl = '';
+let allTaggedPhotos = [];
+
+// 添加快捷标签
+function addQuickTag(tag) {
+    const input = document.getElementById('photoTagInput');
+    const current = input.value.trim();
+    if (current) {
+        input.value = current + '、' + tag;
+    } else {
+        input.value = tag;
+    }
+}
+
+// 打开照片标签编辑
+function openPhotoTagModal(filename, url, existingTag, existingNote) {
+    currentPhotoFilename = filename;
+    currentPhotoUrl = url;
+    
+    document.getElementById('tagPhotoPreview').src = url;
+    document.getElementById('tagPhotoFilename').textContent = filename;
+    document.getElementById('photoTagInput').value = existingTag || '';
+    document.getElementById('photoNoteInput').value = existingNote || '';
+    
+    // 显示/隐藏删除按钮
+    document.getElementById('deleteTagBtn').style.display = existingTag ? 'inline-block' : 'none';
+    
+    const modal = new bootstrap.Modal(document.getElementById('photoTagModal'));
+    modal.show();
+}
+
+// 保存照片标签
+function savePhotoTag() {
+    const tag = document.getElementById('photoTagInput').value.trim();
+    const note = document.getElementById('photoNoteInput').value.trim();
+    
+    fetch('/api/photo/tag', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            filename: currentPhotoFilename,
+            tag: tag,
+            note: note
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('标签保存成功', 'success');
+            
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('photoTagModal'));
+            if (modal) modal.hide();
+            
+            // 刷新照片显示
+            refreshPhotoDisplay();
+        } else {
+            showNotification(data.message || '保存失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('保存失败: ' + err.message, 'error');
+    });
+}
+
+// 删除照片标签
+function deletePhotoTag() {
+    if (!confirm('确定要删除这个标签吗？')) {
+        return;
+    }
+    
+    fetch('/api/photo/tag', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            filename: currentPhotoFilename
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('标签已删除', 'success');
+            
+            const modal = bootstrap.Modal.getInstance(document.getElementById('photoTagModal'));
+            if (modal) modal.hide();
+            
+            refreshPhotoDisplay();
+        } else {
+            showNotification(data.message || '删除失败', 'error');
+        }
+    });
+}
+
+// 打开所有标签照片
+function openAllTagsModal() {
+    loadAllTaggedPhotos();
+    const modal = new bootstrap.Modal(document.getElementById('allTagsModal'));
+    modal.show();
+}
+
+// 加载所有标签照片
+function loadAllTaggedPhotos() {
+    fetch('/api/photos/tagged')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                allTaggedPhotos = data.photos || [];
+                displayTaggedPhotos(allTaggedPhotos);
+                loadTagFilters(allTaggedPhotos);
+            }
+        });
+}
+
+// 显示标签照片（更大，带操作按钮）
+function displayTaggedPhotos(photos) {
+    const container = document.getElementById('taggedPhotosGrid');
+    const emptyState = document.getElementById('noTaggedPhotos');
+    
+    if (photos.length === 0) {
+        container.innerHTML = '';
+        emptyState.style.display = 'block';
+        return;
+    }
+    
+    emptyState.style.display = 'none';
+    container.innerHTML = photos.map(photo => {
+        const displayUrl = photo.thumbnail_url || photo.url;
+        const isVideo = photo.is_video || false;
+        const playIcon = isVideo ? '<div class="video-play-icon"><i class="fas fa-play"></i></div>' : '';
+        
+        return `
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="tagged-photo-item">
+                <img src="${displayUrl}" alt="${photo.tag || (isVideo ? '视频' : '照片')}" onclick="openFullscreenFromTags('${photo.filename}', ${isVideo})">
+                ${playIcon}
+                ${photo.tag ? `<div class="photo-tag-badge">${photo.tag}</div>` : ''}
+                <div class="tagged-photo-actions">
+                    <button class="tagged-photo-btn" onclick="event.stopPropagation(); openFullscreenFromTags('${photo.filename}', ${isVideo})" title="查看">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <button class="tagged-photo-btn" onclick="event.stopPropagation(); sharePhoto('${photo.filename}')" title="分享">
+                        <i class="fas fa-share-alt"></i>
+                    </button>
+                    <button class="tagged-photo-btn" onclick="event.stopPropagation(); deleteTagFromGallery('${photo.filename}')" title="删除标签" style="color:#e74c3c;">
+                        <i class="fas fa-tag"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="text-muted small mt-2">${photo.date}</div>
+        </div>
+    `}).join('');
+}
+
+// 从标签墙打开全屏
+function openFullscreenFromTags(filename, isVideo) {
+    // 关闭标签模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('allTagsModal'));
+    if (modal) modal.hide();
+    
+    // 调用主页面的全屏查看
+    if (typeof openFullscreen === 'function') {
+        openFullscreen(filename, isVideo);
+    } else if (typeof playVideo === 'function' && isVideo) {
+        playVideo(filename);
+    }
+}
+
+// 从标签墙删除标签
+function deleteTagFromGallery(filename) {
+    if (!confirm('确定要删除这个标签吗？')) {
+        return;
+    }
+    
+    fetch('/api/photo/tag', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({filename})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('标签已删除', 'success');
+            // 刷新标签照片列表
+            loadAllTaggedPhotos();
+            // 刷新主页面照片墙
+            if (typeof loadDateData === 'function') {
+                const dateStr = formatDate(window.currentCalendarDate);
+                loadDateData(dateStr);
+            }
+        } else {
+            showNotification(data.message || '删除失败', 'error');
+        }
+    });
+}
+
+// 加载标签筛选按钮（圆润样式）
+function loadTagFilters(photos) {
+    const container = document.getElementById('tagFilterButtons');
+    
+    // 提取所有唯一标签
+    const tags = [...new Set(photos.map(p => p.tag).filter(t => t))];
+    
+    // 获取当前选中的标签
+    const activeTag = document.querySelector('.tag-filter-btn.active');
+    const currentTag = activeTag ? activeTag.textContent : '全部';
+    
+    container.innerHTML = `
+        <span class="tag-filter-btn ${currentTag === '全部' ? 'active' : ''}" onclick="setActiveTagFilter(this); filterByTag('all')">全部</span>
+        ${tags.map(tag => `
+            <span class="tag-filter-btn ${currentTag === tag ? 'active' : ''}" onclick="setActiveTagFilter(this); filterByTag('${tag}')">${tag}</span>
+        `).join('')}
+    `;
+}
+
+// 设置活跃的标签筛选按钮
+function setActiveTagFilter(btn) {
+    document.querySelectorAll('.tag-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+// 按标签筛选
+function filterByTag(tag) {
+    if (tag === 'all') {
+        displayTaggedPhotos(allTaggedPhotos);
+    } else {
+        const filtered = allTaggedPhotos.filter(p => p.tag === tag);
+        displayTaggedPhotos(filtered);
+    }
+}
+
+// 刷新照片显示（页面上的）
+function refreshPhotoDisplay() {
+    // 触发页面刷新或重新加载照片
+    if (typeof loadTodayPhotos === 'function') {
+        loadTodayPhotos();
+    }
+}
+</script>

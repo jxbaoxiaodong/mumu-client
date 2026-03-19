@@ -1,0 +1,1322 @@
+{% extends "base.html" %}
+{% block title %}成长画像 - {{ baby_name }}{% endblock %}
+{% block extra_css %}
+<style>
+.profile-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+.profile-card {
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 32px;
+}
+.profile-avatar {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 48px;
+    font-weight: bold;
+    overflow: hidden;
+}
+.profile-info h1 {
+    margin: 0 0 8px 0;
+    font-size: 32px;
+    color: #333;
+}
+.profile-info p {
+    margin: 4px 0;
+    color: #666;
+    font-size: 16px;
+}
+.progress-section {
+    margin-bottom: 24px;
+}
+.progress-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-weight: 600;
+    color: #333;
+}
+.progress-bar-container {
+    height: 12px;
+    background: #f0f0f0;
+    border-radius: 6px;
+}
+
+/* 底部进度条样式 */
+.ai-progress-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 12px 20px;
+    z-index: 9999;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+    display: none;
+}
+.ai-progress-footer.show {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+.ai-progress-footer .progress-info {
+    flex: 1;
+}
+.ai-progress-footer .progress-text {
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+.ai-progress-footer .progress {
+    height: 8px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 4px;
+    flex: 1;
+}
+.ai-progress-footer .progress-bar {
+    background: white;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+.ai-progress-footer .btn-close-progress {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.ai-progress-footer .btn-close-progress:hover {
+    background: rgba(255,255,255,0.3);
+}
+.ai-progress-footer.completed {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+    overflow: hidden;
+}
+.progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+    border-radius: 6px;
+    transition: width 0.5s ease;
+}
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.metric-card {
+    background: #f8f9fa;
+    padding: 16px;
+    border-radius: 12px;
+    text-align: center;
+}
+.metric-title {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+.metric-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+}
+.radar-container {
+    height: 300px;
+    position: relative;
+    margin: 10px 0;
+}
+.guidance-section {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+.guidance-item {
+    background: white;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    border-left: 4px solid #4facfe;
+}
+.guidance-item.strength {
+    border-left-color: #28a745;
+}
+.guidance-item.nurture {
+    border-left-color: #ffc107;
+}
+.guidance-item.watch {
+    border-left-color: #dc3545;
+}
+.guidance-title {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+.guidance-content {
+    color: #666;
+    font-size: 14px;
+}
+.timeline-section {
+    position: relative;
+    padding-left: 30px;
+}
+.timeline-section::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #e0e0e0;
+}
+.timeline-item {
+    position: relative;
+    padding-bottom: 20px;
+}
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #4facfe;
+    border: 2px solid white;
+}
+.timeline-date {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 4px;
+}
+.timeline-content {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 8px;
+}
+.interest-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    margin: 4px;
+}
+.interest-current {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+.interest-emerging {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+.interest-faded {
+    background: #e0e0e0;
+    color: #666;
+}
+.tag-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+.tag-item {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+}
+.development-score {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+}
+.score-bar {
+    flex: 1;
+    height: 8px;
+    background: #e0e0e0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.score-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+.score-fill.excellent {
+    background: linear-gradient(90deg, #28a745, #20c997);
+}
+.score-fill.good {
+    background: linear-gradient(90deg, #4facfe, #00f2fe);
+}
+.score-fill.normal {
+    background: linear-gradient(90deg, #ffc107, #fd7e14);
+}
+.score-fill.attention {
+    background: linear-gradient(90deg, #dc3545, #fd7e14);
+}
+.activity-card {
+    background: white;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 8px 0;
+    border: 1px solid #e0e0e0;
+}
+.activity-name {
+    font-weight: 600;
+    color: #333;
+}
+.activity-purpose {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+}
+.activity-frequency {
+    font-size: 12px;
+    color: #999;
+    margin-top: 4px;
+}
+.chart-container {
+    height: 280px;
+    margin: 20px 0;
+    position: relative;
+}
+.chart-container canvas {
+    max-height: 280px;
+    width: 100% !important;
+}
+
+.tags-cloud-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.tags-cloud {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    align-items: center;
+    overflow-x: auto;
+    flex: 1;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    padding: 4px 0;
+}
+.tags-cloud::-webkit-scrollbar {
+    display: none;
+}
+.tags-scroll-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #f0f0f0;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.2s;
+    color: #666;
+}
+.tags-scroll-btn:hover {
+    background: #667eea;
+    color: white;
+}
+.tags-scroll-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.tag-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: white;
+    cursor: default;
+    transition: transform 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.tag-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+.tag-item .tag-confidence {
+    font-size: 10px;
+    opacity: 0.8;
+    margin-left: 4px;
+}
+.tag-item .tag-reject-btn {
+    display: none;
+    margin-left: 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    border: none;
+    color: white;
+    font-size: 10px;
+    cursor: pointer;
+    padding: 0;
+    line-height: 16px;
+    text-align: center;
+}
+.tag-item:hover .tag-reject-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.tag-item .tag-reject-btn:hover {
+    background: rgba(255,255,255,0.5);
+}
+.tag-tab {
+    padding: 4px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.tag-tab:hover {
+    background: #f0f0f0;
+}
+.tag-tab.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: transparent;
+}
+.feedback-input-area textarea {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    resize: none;
+}
+.feedback-input-area textarea:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+.feedback-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+.feedback-item {
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+.feedback-text {
+    font-size: 13px;
+    color: #333;
+    line-height: 1.4;
+}
+.feedback-meta {
+    font-size: 11px;
+    color: #999;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="profile-container">
+    <div class="profile-card">
+        <div class="profile-header">
+            <div class="profile-avatar">
+                <img src="{{ avatar_url|default('/static/images/default-avatar.png') }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+            </div>
+            <div class="profile-info">
+                <h1>{{ baby_name }} 的成长画像</h1>
+                <p>当前年龄：<span id="currentAge">{{ age_text if age_text else '未设置生日' }}</span>
+                    <button id="aiReviewBtn" class="btn btn-sm btn-outline-primary ms-2" onclick="startAIReview()" title="AI强制重新处理所有照片和日志，加深对宝宝的了解">
+                        <i class="fas fa-brain me-1"></i>AI重新认识
+                    </button>
+                </p>
+                <p id="guidanceSummary" class="text-muted" style="font-style: italic;"></p>
+            </div>
+        </div>
+        
+        <div class="profile-card" style="margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h5 style="margin: 0; color: #333;"><i class="fas fa-tags me-2"></i>宝宝标签</h5>
+                <div id="tagTabs" style="display: flex; gap: 8px;">
+                    <button class="tag-tab active" data-type="all" onclick="switchTagType('all')">全部</button>
+                    <button class="tag-tab" data-type="personality" onclick="switchTagType('personality')">性格</button>
+                    <button class="tag-tab" data-type="interest" onclick="switchTagType('interest')">兴趣</button>
+                    <button class="tag-tab" data-type="other" onclick="switchTagType('other')">其他</button>
+                </div>
+            </div>
+            <div class="tags-cloud-wrapper">
+                <button class="tags-scroll-btn" id="tagsScrollLeft" onclick="scrollTags(-1)"><i class="fas fa-chevron-left"></i></button>
+                <div id="tagsCloud" class="tags-cloud" style="min-height: 32px;">
+                    <span style="color: #999;">加载中...</span>
+                </div>
+                <button class="tags-scroll-btn" id="tagsScrollRight" onclick="scrollTags(1)"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="profile-card">
+                <h4><i class="fas fa-chart-radar me-2"></i>性格维度雷达图</h4>
+                <div class="radar-container">
+                    <canvas id="radarChart"></canvas>
+                </div>
+                <div id="traitEvidence" class="mt-3"></div>
+            </div>
+            
+            <div class="profile-card">
+                <h4><i class="fas fa-child me-2"></i>发育评估</h4>
+                <div class="radar-container">
+                    <canvas id="developmentChart"></canvas>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <h4><i class="fas fa-star me-2"></i>兴趣追踪</h4>
+                <div class="radar-container">
+                    <canvas id="interestChart"></canvas>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <h4><i class="fas fa-chart-line me-2"></i>数据增长曲线</h4>
+                <p class="text-muted small mb-2">按素材日期统计标签和素材的累计数量</p>
+                <div class="chart-container"><canvas id="growthChart"></canvas></div>
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">累计标签</div>
+                        <div class="metric-value" id="tagCount">0</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">累计素材</div>
+                        <div class="metric-value" id="eventCount">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="profile-card">
+                <h4><i class="fas fa-lightbulb me-2"></i>因势利导建议</h4>
+                <div class="guidance-section">
+                    <div id="guidanceStrengths" class="mb-3"></div>
+                    <div id="guidanceNurture" class="mb-3"></div>
+                    <div id="guidanceWatch" class="mb-3"></div>
+                    <div id="guidanceSuggestions"></div>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <h4><i class="fas fa-tasks me-2"></i>推荐活动</h4>
+                <div id="activitiesSection">
+                    <p class="text-muted">加载中...</p>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <h4><i class="fas fa-history me-2"></i>成长轨迹</h4>
+                <div id="timelineSection" class="timeline-section">
+                    <p class="text-muted">加载中...</p>
+                </div>
+            </div>
+
+            <div class="profile-card">
+                <h4><i class="fas fa-comment-dots me-2"></i>画像纠错</h4>
+                <p class="text-muted small mb-2">画像基于已有素材由AI算法生成，可能存在偏差。欢迎补充宝宝的真实特点，帮助AI更准确地认识宝宝。</p>
+                <div class="feedback-input-area">
+                    <textarea id="feedbackText" class="form-control" rows="3" placeholder="例如：宝宝其实很怕生，不喜欢和陌生人互动；宝宝最近对画画特别感兴趣，每天都要画很久..."></textarea>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <small class="text-muted">提交后不会立即刷新画像，AI会在下次分析时参考您的反馈</small>
+                        <button class="btn btn-primary btn-sm" onclick="submitFeedback()">
+                            <i class="fas fa-paper-plane me-1"></i>提交
+                        </button>
+                    </div>
+                </div>
+                <div id="feedbackHistory" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const currentChildId = '{{ client_id }}';
+let growthChart = null;
+let radarChart = null;
+let developmentChart = null;
+let interestChart = null;
+
+const gradients = [
+    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+    'linear-gradient(135deg, #fc5c7d 0%, #6a82fb 100%)',
+    'linear-gradient(135deg, #f6d365 0%, #fda085 100%)'
+];
+
+function loadProfileData() {
+    Promise.all([
+        fetch('/api/ai/profile').then(r => r.json()),
+        fetch('/api/ai/features').then(r => r.json())
+    ])
+    .then(([profileData, featuresData]) => {
+        if (profileData.success) {
+            const profile = profileData.profile;
+            
+            document.getElementById('currentAge').textContent = profile.age || '暂无数据';
+            const summary = profile.guidance?.summary || '';
+            if (summary && !summary.includes('暂无足够数据')) {
+                document.getElementById('guidanceSummary').textContent = summary;
+            } else {
+                document.getElementById('guidanceSummary').textContent = '';
+            }
+            
+            document.getElementById('tagCount').textContent = profile.total_tags || 0;
+            document.getElementById('eventCount').textContent = profile.total_events || 0;
+            
+            renderGuidance(profile.guidance || {});
+            renderActivities(profile.guidance?.activities || []);
+            renderTimeline(profile.evolution?.recent_changes || []);
+            renderMilestones(profile.milestones || []);
+            renderTagsCloud(profile.tags || []);
+            renderGrowthChart(profile.knowledge_growth);
+            renderTraitEvidence(profile.dimensions?.personality?.evidence || []);
+        }
+        
+        if (featuresData.success) {
+            const features = featuresData.features;
+            renderRadarChart(features?.personality || {});
+            renderDevelopment(features?.development || {});
+            renderInterests(features?.interest || {});
+        }
+    })
+    .catch(err => {
+        console.error('加载画像数据失败:', err);
+        showNotification('加载成长画像失败，请检查AI服务是否正常', 'error');
+    });
+}
+
+let allTags = [];
+function renderTagsCloud(tags) {
+    allTags = tags;
+    displayTagsByType('all');
+}
+
+function switchTagType(type) {
+    document.querySelectorAll('.tag-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelector(`.tag-tab[data-type="${type}"]`).classList.add('active');
+    displayTagsByType(type);
+}
+
+function scrollTags(direction) {
+    const container = document.getElementById('tagsCloud');
+    const scrollAmount = 200;
+    container.scrollBy({ left: direction * scrollAmount, behavior: 'smooth' });
+    setTimeout(updateScrollButtons, 300);
+}
+
+function updateScrollButtons() {
+    const container = document.getElementById('tagsCloud');
+    const leftBtn = document.getElementById('tagsScrollLeft');
+    const rightBtn = document.getElementById('tagsScrollRight');
+    
+    leftBtn.disabled = container.scrollLeft <= 0;
+    rightBtn.disabled = container.scrollLeft >= container.scrollWidth - container.clientWidth - 5;
+}
+
+function displayTagsByType(type) {
+    const container = document.getElementById('tagsCloud');
+    let filteredTags = allTags;
+    
+    if (type !== 'all') {
+        filteredTags = allTags.filter(t => {
+            const category = typeof t === 'object' ? t.category : 'other';
+            return category === type;
+        });
+    }
+    
+    if (filteredTags && filteredTags.length > 0) {
+        const renderTag = (item, index) => {
+            const gradient = gradients[index % gradients.length];
+            const tag = typeof item === 'object' ? item.tag : item;
+            const tagId = typeof item === 'object' ? item.id : null;
+            const confidence = typeof item === 'object' ? item.confidence : null;
+            const confidenceText = confidence ? `<span class="tag-confidence">${Math.round(confidence * 100)}%</span>` : '';
+            const rejectBtn = tagId ? `<button class="tag-reject-btn" onclick="event.stopPropagation(); rejectTag(${tagId}, '${tag.replace(/'/g, "\\'")}')">×</button>` : '';
+            return `<span class="tag-item" style="background: ${gradient};">${tag}${confidenceText}${rejectBtn}</span>`;
+        };
+        
+        container.innerHTML = filteredTags.map((item, index) => renderTag(item, index)).join('');
+        container.scrollLeft = 0;
+        
+        setTimeout(() => {
+            const hasOverflow = container.scrollWidth > container.clientWidth;
+            document.getElementById('tagsScrollLeft').style.display = hasOverflow ? 'flex' : 'none';
+            document.getElementById('tagsScrollRight').style.display = hasOverflow ? 'flex' : 'none';
+            updateScrollButtons();
+        }, 50);
+    } else {
+        container.innerHTML = '<span style="color: #999; padding: 8px;">暂无标签</span>';
+        document.getElementById('tagsScrollLeft').style.display = 'none';
+        document.getElementById('tagsScrollRight').style.display = 'none';
+    }
+}
+
+function rejectTag(tagId, tagName) {
+    if (!confirm(`确定要否决标签"${tagName}"吗？\n\n该标签将被隐藏，不再参与画像分析。`)) {
+        return;
+    }
+    
+    fetch(`/api/ai/children/${currentChildId}/tags/${tagId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            allTags = allTags.filter(t => {
+                const tid = typeof t === 'object' ? t.id : null;
+                return tid !== tagId;
+            });
+            displayTagsByType('all');
+            showNotification(`已否决标签: ${tagName}`, 'success');
+        } else {
+            showNotification('操作失败: ' + (data.message || '未知错误'), 'error');
+        }
+    })
+    .catch(err => {
+        console.error('Reject tag error:', err);
+        showNotification('操作失败，请稍后重试', 'error');
+    });
+}
+
+function showNotification(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 200px;';
+    toast.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'} me-2"></i>${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function renderRadarChart(scores) {
+    const ctx = document.getElementById('radarChart').getContext('2d');
+    
+    if (radarChart) {
+        radarChart.destroy();
+    }
+    
+    const labels = ['活跃度', '好奇心', '社交性', '专注力', '情绪稳定', '适应力'];
+    const keys = ['activity', 'curiosity', 'social', 'focus', 'emotion_stability', 'adaptability'];
+    const data = keys.map(k => scores[k] || 5);
+    
+    radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '性格维度',
+                data: data,
+                backgroundColor: 'rgba(79, 172, 254, 0.2)',
+                borderColor: 'rgba(79, 172, 254, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(79, 172, 254, 1)',
+                pointBorderColor: '#fff',
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: 'rgba(79, 172, 254, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 10,
+                    ticks: {
+                        stepSize: 2
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderTraitEvidence(evidence) {
+    const container = document.getElementById('traitEvidence');
+    if (evidence && evidence.length > 0) {
+        container.innerHTML = `
+            <p class="text-muted small mb-1"><i class="fas fa-quote-left me-1"></i>特征依据</p>
+            <ul class="list-unstyled small">
+                ${evidence.slice(0, 3).map(e => `<li class="text-muted">• ${e}</li>`).join('')}
+            </ul>
+        `;
+    } else {
+        container.innerHTML = '';
+    }
+}
+
+function renderDevelopment(development) {
+    const ctx = document.getElementById('developmentChart').getContext('2d');
+    
+    if (developmentChart) {
+        developmentChart.destroy();
+    }
+    
+    const labels = ['大运动', '精细动作', '语言', '认知', '社交情感', '生活自理'];
+    const keys = ['gross_motor', 'fine_motor', 'language', 'cognitive', 'social_emotional', 'self_care'];
+    const data = keys.map(k => development[k] || 5);
+    
+    developmentChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '发育水平',
+                data: data,
+                backgroundColor: 'rgba(255, 152, 0, 0.2)',
+                borderColor: 'rgba(255, 152, 0, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(255, 152, 0, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 10,
+                    ticks: { stepSize: 2 }
+                }
+            }
+        }
+    });
+}
+
+function renderInterests(interest) {
+    const ctx = document.getElementById('interestChart').getContext('2d');
+    
+    if (interestChart) {
+        interestChart.destroy();
+    }
+    
+    const labels = ['音乐', '运动', '阅读', '艺术', '自然', '科技'];
+    const keys = ['music', 'sports', 'reading', 'art', 'nature', 'technology'];
+    const data = keys.map(k => interest[k] || 5);
+    
+    interestChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '兴趣偏好',
+                data: data,
+                backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                borderColor: 'rgba(76, 175, 80, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(76, 175, 80, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 10,
+                    ticks: { stepSize: 2 }
+                }
+            }
+        }
+    });
+}
+
+function renderGuidance(guidance) {
+    const strengthsContainer = document.getElementById('guidanceStrengths');
+    const nurtureContainer = document.getElementById('guidanceNurture');
+    const watchContainer = document.getElementById('guidanceWatch');
+    const suggestionsContainer = document.getElementById('guidanceSuggestions');
+    
+    if (guidance.strengths && guidance.strengths.length > 0) {
+        strengthsContainer.innerHTML = `
+            <div class="guidance-title text-success"><i class="fas fa-thumbs-up me-1"></i>优势领域</div>
+            ${guidance.strengths.map(s => `<div class="guidance-item strength">${s}</div>`).join('')}
+        `;
+    }
+    
+    if (guidance.areas_to_nurture && guidance.areas_to_nurture.length > 0) {
+        nurtureContainer.innerHTML = `
+            <div class="guidance-title text-warning"><i class="fas fa-seedling me-1"></i>培养方向</div>
+            ${guidance.areas_to_nurture.map(s => `<div class="guidance-item nurture">${s}</div>`).join('')}
+        `;
+    }
+    
+    if (guidance.areas_to_watch && guidance.areas_to_watch.length > 0) {
+        watchContainer.innerHTML = `
+            <div class="guidance-title text-danger"><i class="fas fa-eye me-1"></i>关注领域</div>
+            ${guidance.areas_to_watch.map(s => `<div class="guidance-item watch">${s}</div>`).join('')}
+        `;
+    }
+    
+    if (guidance.suggestions && guidance.suggestions.length > 0) {
+        suggestionsContainer.innerHTML = `
+            <div class="guidance-title"><i class="fas fa-lightbulb me-1"></i>具体建议</div>
+            <ul class="list-unstyled mt-2">
+                ${guidance.suggestions.map(s => `<li class="mb-2"><i class="fas fa-check-circle text-primary me-2"></i>${s}</li>`).join('')}
+            </ul>
+        `;
+    }
+}
+
+function renderActivities(activities) {
+    const container = document.getElementById('activitiesSection');
+    
+    if (activities && activities.length > 0) {
+        container.innerHTML = activities.map(a => `
+            <div class="activity-card">
+                <div class="activity-name">${a.activity}</div>
+                <div class="activity-purpose">${a.purpose}</div>
+                <div class="activity-frequency"><i class="fas fa-clock me-1"></i>${a.frequency}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<p class="text-muted">暂无推荐活动</p>';
+    }
+}
+
+function renderTimeline(changes) {
+    const container = document.getElementById('timelineSection');
+    
+    if (changes && changes.length > 0) {
+        const sortedChanges = [...changes].sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        let selectedChanges = [];
+        if (sortedChanges.length <= 6) {
+            selectedChanges = sortedChanges;
+        } else {
+            const step = (sortedChanges.length - 1) / 5;
+            for (let i = 0; i < 6; i++) {
+                const index = Math.round(i * step);
+                selectedChanges.push(sortedChanges[index]);
+            }
+        }
+        
+        container.innerHTML = selectedChanges.map(c => `
+            <div class="timeline-item">
+                <div class="timeline-date">${c.date || ''}</div>
+                <div class="timeline-content">${c.change}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<p class="text-muted">暂无成长轨迹记录</p>';
+    }
+}
+
+function renderMilestones(milestones) {
+}
+
+function renderTagCloud(tags) {
+    const container = document.getElementById('tagCloud');
+    
+    if (tags && tags.length > 0) {
+        container.innerHTML = tags.map((tag, index) => {
+            const gradient = gradients[index % gradients.length];
+            return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+        }).join('');
+    } else {
+        container.innerHTML = '<span class="tag-item" style="background: linear-gradient(135deg, #ccc 0%, #999 100%);">暂无标签</span>';
+    }
+}
+
+function renderGrowthChart(data) {
+    const ctx = document.getElementById('growthChart').getContext('2d');
+    
+    if (growthChart) {
+        growthChart.destroy();
+    }
+    
+    const labels = data?.dates || [];
+    const eventsData = data?.events || [];
+    const tagsData = data?.tags || [];
+    
+    growthChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '累计标签数',
+                    data: tagsData,
+                    borderColor: '#f093fb',
+                    backgroundColor: 'rgba(240, 147, 251, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    borderWidth: 2
+                },
+                {
+                    label: '累计素材数',
+                    data: eventsData,
+                    borderColor: '#43e97b',
+                    backgroundColor: 'rgba(67, 233, 123, 0.1)',
+                    tension: 0.4,
+                    fill: false,
+                    borderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            label += context.parsed.y;
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '累计数量'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: '素材日期'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function startAIReview() {
+    const modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
+    modal.show();
+}
+
+function executeAIReview(force) {
+    const modalEl = document.getElementById('aiReviewModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    modal.hide();
+    
+    const btn = document.getElementById('aiReviewBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>正在处理...';
+    
+    fetch('/api/ai/auto-review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({force: force})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAIReviewProgress(data.task_id);
+        } else {
+            showNotification(data.message || '启动失败', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-brain me-1"></i>AI重新认识';
+        }
+    })
+    .catch(err => {
+        showNotification('请求失败: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-brain me-1"></i>AI重新认识';
+    });
+}
+
+function showAIReviewProgress(taskId) {
+    const footer = document.getElementById('aiProgressFooter');
+    const progressText = document.getElementById('footerProgressText');
+    const progressBar = document.getElementById('footerProgressBar');
+    const btn = document.getElementById('aiReviewBtn');
+    
+    // 显示底部进度条
+    footer.classList.add('show');
+    footer.classList.remove('completed');
+    progressBar.style.width = '0%';
+    progressText.textContent = 'AI重新认识进行中...';
+    
+    // 禁用按钮
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>处理中...';
+    
+    pollReviewProgress(taskId);
+}
+
+function hideProgressFooter() {
+    const footer = document.getElementById('aiProgressFooter');
+    footer.classList.remove('show');
+}
+
+function pollReviewProgress(taskId) {
+    const progressText = document.getElementById('footerProgressText');
+    const progressBar = document.getElementById('footerProgressBar');
+    const footer = document.getElementById('aiProgressFooter');
+    const btn = document.getElementById('aiReviewBtn');
+    
+    const poll = () => {
+        fetch(`/api/ai/auto-review/status/${taskId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) {
+                    progressText.textContent = data.message || '获取状态失败';
+                    return;
+                }
+                
+                const status = data.status;
+                const percent = status.total > 0 ? Math.round(status.processed / status.total * 100) : 0;
+                
+                progressBar.style.width = percent + '%';
+                progressText.textContent = status.message || `正在处理 ${status.processed}/${status.total}`;
+                
+                if (status.completed) {
+                    footer.classList.add('completed');
+                    
+                    if (status.quota_exceeded) {
+                        const friendlyMsg = status.message || 'AI配额已用完';
+                        progressText.innerHTML = `<i class="fas fa-exclamation-triangle me-1"></i>${friendlyMsg}`;
+                        if (typeof showNotification === 'function') {
+                            showNotification(friendlyMsg, 'warning', 5000);
+                        }
+                    } else {
+                        progressText.innerHTML = `<i class="fas fa-check-circle me-1"></i>完成！处理了 ${status.processed} 天`;
+                    }
+                    
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-brain me-1"></i>AI重新认识';
+                    
+                    setTimeout(() => {
+                        loadProfileData();
+                        setTimeout(() => hideProgressFooter(), 5000);
+                    }, 500);
+                } else {
+                    setTimeout(poll, 1000);
+                }
+            })
+            .catch(err => {
+                progressText.textContent = '获取状态失败: ' + err.message;
+                setTimeout(poll, 2000);
+            });
+    };
+    
+    poll();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfileData();
+    loadFeedbackHistory();
+});
+
+function submitFeedback() {
+    const text = document.getElementById('feedbackText').value.trim();
+    if (!text) {
+        showNotification('请输入反馈内容', 'warning');
+        return;
+    }
+    const chineseChars = text.match(/[\u4e00-\u9fa5]/g);
+    if (!chineseChars || chineseChars.length < 2) {
+        showNotification('请至少输入2个中文字符', 'warning');
+        return;
+    }
+    
+    fetch(`/api/ai/children/${currentChildId}/feedback`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({feedback_text: text, feedback_type: 'correction'})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('反馈已提交，AI会在下次分析时参考', 'success');
+            document.getElementById('feedbackText').value = '';
+            loadFeedbackHistory();
+        } else {
+            showNotification('提交失败: ' + (data.message || '未知错误'), 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('提交失败: ' + err.message, 'error');
+    });
+}
+
+function loadFeedbackHistory() {
+    fetch(`/api/ai/children/${currentChildId}/feedback?limit=10`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.feedbacks && data.feedbacks.length > 0) {
+            const container = document.getElementById('feedbackHistory');
+            container.innerHTML = '<div class="feedback-list">' + 
+                data.feedbacks.map(f => `
+                    <div class="feedback-item">
+                        <div class="feedback-text">${escapeHtml(f.feedback_text)}</div>
+                        <div class="feedback-meta">
+                            <span>${f.created_at ? new Date(f.created_at).toLocaleDateString() : ''}</span>
+                            ${f.applied ? '<span class="badge bg-success ms-2">已应用</span>' : '<span class="badge bg-secondary ms-2">待处理</span>'}
+                            <button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="deleteFeedback(${f.id})">删除</button>
+                        </div>
+                    </div>
+                `).join('') + '</div>';
+        } else {
+            document.getElementById('feedbackHistory').innerHTML = '<p class="text-muted small">暂无反馈记录</p>';
+        }
+    })
+    .catch(() => {
+        document.getElementById('feedbackHistory').innerHTML = '<p class="text-muted small">加载失败</p>';
+    });
+}
+
+function deleteFeedback(feedbackId) {
+    if (!confirm('确定要删除这条反馈吗？')) return;
+    
+    fetch(`/api/ai/children/${currentChildId}/feedback/${feedbackId}`, {
+        method: 'DELETE'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('已删除', 'success');
+            loadFeedbackHistory();
+        } else {
+            showNotification('删除失败', 'error');
+        }
+    })
+    .catch(() => {
+        showNotification('删除失败', 'error');
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 页面加载时检查是否有运行中的任务
+function checkRunningTask() {
+    fetch('/api/ai/auto-review/status/latest')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.status && !data.status.completed) {
+                showAIReviewProgress(data.task_id);
+            }
+        })
+        .catch(() => {});
+}
+checkRunningTask();
+</script>
+
+<!-- AI重新认识选择弹窗 -->
+<div class="modal fade" id="aiReviewModal" tabindex="-1" aria-labelledby="aiReviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="aiReviewModalLabel">
+                    <i class="fas fa-brain me-2"></i>AI重新认识
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">选择处理模式，让AI更深入地了解宝宝：</p>
+                
+                <div class="d-grid gap-3">
+                    <button type="button" class="btn btn-outline-primary text-start p-3" onclick="executeAIReview(false)">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-layer-group fa-lg me-3 text-primary"></i>
+                            <div>
+                                <div class="fw-bold">增量认识</div>
+                                <small class="text-muted">只处理没有精选照片和日志的天，节省Token消耗</small>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button type="button" class="btn btn-outline-warning text-start p-3" onclick="executeAIReview(true)">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-sync-alt fa-lg me-3 text-warning"></i>
+                            <div>
+                                <div class="fw-bold">全新认识</div>
+                                <small class="text-muted">重新处理所有数据，覆盖已有内容，Token消耗较多</small>
+                            </div>
+                        </div>
+                    </button>
+                </div>
+                
+                <div class="alert alert-info mt-3 mb-0 py-2">
+                    <small><i class="fas fa-info-circle me-1"></i>
+                    <strong>Token消耗说明：</strong><br>
+                    • 增量认识：仅处理新数据，消耗约 <span class="fw-bold">100-300 Token/天</span><br>
+                    • 全新认识：重处理所有数据，消耗约 <span class="fw-bold">100-300 Token/天 × 总天数</span>
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 底部进度条 -->
+<div id="aiProgressFooter" class="ai-progress-footer">
+    <div class="progress-info">
+        <div class="progress-text" id="footerProgressText">AI重新认识进行中...</div>
+        <div class="progress">
+            <div class="progress-bar" id="footerProgressBar" style="width: 0%"></div>
+        </div>
+    </div>
+    <button class="btn-close-progress" onclick="hideProgressFooter()">
+        <i class="fas fa-times me-1"></i>后台运行
+    </button>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{
+  "_comment": "AI 配置文件示例 - 复制此文件为 ai_config.json 并填入您的 API 密钥",
+  "enabled": true,
+  "ai_provider": "openai",
+  "api_key": "sk-your-api-key-here",
+  "api_url": "https://api.openai.com/v1",
+  "text_model": "gpt-4o",
+  "vision_model": "gpt-4o",
+  "speech_model": "whisper-1"
+}

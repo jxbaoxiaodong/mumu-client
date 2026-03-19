@@ -1,0 +1,340 @@
+<!-- AI 日志生成模态框 -->
+<div class="modal fade" id="aiModal" tabindex="-1" aria-labelledby="aiModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="aiModalLabel">
+                    <i class="fas fa-robot me-2"></i>AI 成长日志生成
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 步骤1：生成选项 -->
+                <div id="step1Options" class="generation-options mb-4">
+                    <h6><i class="fas fa-sliders-h me-2"></i>重新生成日志</h6>
+                    
+                    <!-- 日期显示（只读） -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="fas fa-calendar me-1"></i>日期
+                        </label>
+                        <div class="form-control-plaintext px-2 py-1 border rounded bg-light" id="logDateDisplay">
+                            {{ today }}
+                        </div>
+                        <input type="hidden" id="logDate" value="{{ today }}">
+                    </div>
+                    
+                    <!-- 生成内容提示 -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="fas fa-edit me-1"></i>想记录的内容
+                        </label>
+                        <textarea class="form-control" id="userNote" rows="4" 
+                            placeholder="请大致描述今天想记录的内容，AI会帮你润色成优美的成长日志。例如：&#10;今天带宝宝去了动物园，看到大象和长颈鹿很开心，中午在园区吃了儿童餐，下午回家睡了个好觉..."></textarea>
+                    </div>
+                    
+                    <!-- 选项 -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="fas fa-pen-fancy me-1"></i>日志风格
+                        </label>
+                        <select class="form-select" id="logStyleModal" onchange="toggleCustomStyleModal()">
+                            <option value="简练" selected>简练 - 简洁明了，100字左右</option>
+                            <option value="诗意">诗意 - 文艺清新，诗意比喻</option>
+                            <option value="东北腔">东北腔 - 幽默风趣，东北话口吻</option>
+                            <option value="详细">详细 - 记录细节，200字左右</option>
+                            <option value="童趣">童趣 - 轻松可爱，像讲故事</option>
+                            <option value="深情">深情 - 温暖感人，表达父母之爱</option>
+                            <option value="IT男风格">IT男风格 - 程序员风格，代码注释风</option>
+                            <option value="自定义">自定义 - 输入您想要的风格</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="customStyleModalInput" style="display:none;">
+                        <input type="text" class="form-control" id="customStyleModalText" 
+                               placeholder="例如：用古诗词风格写，每句话都要押韵..."
+                               onchange="saveLogStyleSettings()" onblur="saveLogStyleSettings()">
+                        <small class="text-muted">请描述您想要的日志风格</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="includeNews">
+                            <label class="form-check-label" for="includeNews">
+                                <i class="fas fa-newspaper me-1"></i>包含今日新闻
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 照片提示 -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="fas fa-images me-1"></i>照片
+                        </label>
+                        <div class="alert alert-light border py-2 mb-0">
+                            <i class="fas fa-info-circle text-info me-2"></i>
+                            <span class="text-muted">如需更换照片，请先在首页照片墙中选择"今日优选照片"</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="generateBtn" onclick="generateAILogAsync()">
+                    <i class="fas fa-magic me-2"></i>AI润色生成
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.generation-options {
+    background: #f8f9ff;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.photo-preview-item {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid #e0e0e0;
+}
+
+#logDateDisplay {
+    font-weight: 500;
+    color: #333;
+}
+
+.log-generating-toast {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+</style>
+
+<script>
+let currentGeneratedLog = '';
+let currentClientId = '';
+
+document.getElementById('aiModal').addEventListener('show.bs.modal', function() {
+    resetModal();
+    loadLogStyleSettings();
+});
+
+function loadLogStyleSettings() {
+    fetch('/api/settings/current')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const logStyle = data.log_style || '简练';
+                const customStyle = data.custom_style || '';
+                
+                document.getElementById('logStyleModal').value = logStyle;
+                document.getElementById('customStyleModalText').value = customStyle;
+                toggleCustomStyleModal();
+            }
+        })
+        .catch(e => console.error('加载日志风格设置失败:', e));
+}
+
+function saveLogStyleSettings() {
+    const logStyle = document.getElementById('logStyleModal').value;
+    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
+    
+    fetch('/api/settings/log-style', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            log_style: logStyle,
+            custom_style: customStyle
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            console.error('保存日志风格失败:', data.message);
+        }
+    })
+    .catch(e => console.error('保存日志风格失败:', e));
+}
+
+function resetModal() {
+    document.getElementById('step1Options').style.display = 'block';
+    document.getElementById('generateBtn').disabled = false;
+    currentGeneratedLog = '';
+}
+
+function toggleCustomStyleModal() {
+    const logStyle = document.getElementById('logStyleModal').value;
+    const customInput = document.getElementById('customStyleModalInput');
+    if (logStyle === '自定义') {
+        customInput.style.display = 'block';
+    } else {
+        customInput.style.display = 'none';
+    }
+    saveLogStyleSettings();
+}
+
+function showGeneratingToast() {
+    let toast = document.getElementById('logGeneratingToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'logGeneratingToast';
+        toast.className = 'log-generating-toast';
+        toast.innerHTML = '<div class="spinner-border spinner-border-sm text-light" role="status"></div><span>正在生成日志，请稍候...</span>';
+        document.body.appendChild(toast);
+    }
+    toast.style.display = 'flex';
+    return toast;
+}
+
+function hideGeneratingToast() {
+    const toast = document.getElementById('logGeneratingToast');
+    if (toast) {
+        toast.style.display = 'none';
+    }
+}
+
+function saveGeneratingState(date) {
+    localStorage.setItem('log_generating', JSON.stringify({
+        generating: true,
+        date: date,
+        startTime: Date.now()
+    }));
+}
+
+function clearGeneratingState() {
+    localStorage.removeItem('log_generating');
+}
+
+function checkGeneratingState() {
+    const stateStr = localStorage.getItem('log_generating');
+    if (!stateStr) return null;
+    try {
+        const state = JSON.parse(stateStr);
+        if (state.generating && (Date.now() - state.startTime < 120000)) {
+            return state;
+        } else {
+            clearGeneratingState();
+        }
+    } catch(e) {}
+    return null;
+}
+
+async function generateAILogAsync() {
+    const date = document.getElementById('logDate').value;
+    const userNote = document.getElementById('userNote').value.trim();
+    const clientId = window.currentClientId || '';
+    const logStyle = document.getElementById('logStyleModal').value;
+    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
+    
+    if (!clientId) {
+        alert('未找到客户端ID');
+        return;
+    }
+    
+    const modal = bootstrap.Modal.getInstance(document.getElementById('aiModal'));
+    modal.hide();
+    
+    saveGeneratingState(date);
+    const toast = showGeneratingToast();
+    
+    const includeNews = document.getElementById('includeNews').checked;
+    
+    try {
+        const response = await fetch('/api/ai/generate-log', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                client_id: clientId,
+                date: date,
+                user_note: userNote,
+                featured_photo: (typeof currentFeaturedPhoto !== 'undefined' ? currentFeaturedPhoto : null),
+                include_news: includeNews,
+                log_style: logStyle,
+                custom_style: customStyle,
+                auto_save: true
+            })
+        });
+        
+        const data = await response.json();
+        
+        hideGeneratingToast();
+        clearGeneratingState();
+        
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification('日志生成成功！', 'success');
+            } else {
+                alert('日志生成成功！');
+            }
+            setTimeout(() => location.reload(), 500);
+        } else {
+            if (typeof showNotification === 'function') {
+                showNotification('生成失败: ' + (data.message || '未知错误'), 'error');
+            } else {
+                alert('生成失败: ' + (data.message || '未知错误'));
+            }
+        }
+    } catch (error) {
+        hideGeneratingToast();
+        clearGeneratingState();
+        if (typeof showNotification === 'function') {
+            showNotification('生成失败: ' + error.message, 'error');
+        } else {
+            alert('生成失败: ' + error.message);
+        }
+    }
+}
+
+async function loadTodayPhotosForDate(date) {
+    const container = document.getElementById('todayPhotosPreview');
+    if (!container) return;
+    
+    try {
+        const response = await fetch(`/api/photos/by_date/${date}`);
+        const data = await response.json();
+        
+        if (data.success && data.photos && data.photos.length > 0) {
+            container.innerHTML = data.photos.slice(0, 6).map(photo => `
+                <img src="/photo/${photo.filename}" class="photo-preview-item" alt="照片">
+            `).join('') + (data.photos.length > 6 ? `<span class="text-muted small align-self-center">+${data.photos.length - 6}</span>` : '');
+        } else {
+            container.innerHTML = '<span class="text-muted small">该日期暂无照片</span>';
+        }
+    } catch (error) {
+        container.innerHTML = '<span class="text-muted small">加载失败</span>';
+    }
+}
+
+async function loadTodayPhotos() {
+    const date = document.getElementById('logDate').value;
+    const container = document.getElementById('todayPhotosPreview');
+    
+    try {
+        const response = await fetch(`/api/photos/by_date/${date}`);
+        const data = await response.json();
+        
+        if (data.success && data.photos && data.photos.length > 0) {
+            container.innerHTML = data.photos.slice(0, 6).map(photo => `
+                <img src="/photo/${photo.filename}" class="photo-preview-item" alt="照片">
+            `).join('') + (data.photos.length > 6 ? `<span class="text-muted small align-self-center">+${data.photos.length - 6}</span>` : '');
+        } else {
+            container.innerHTML = '<span class="text-muted small">今日暂无照片</span>';
+        }
+    } catch (error) {
+        container.innerHTML = '<span class="text-muted small">加载失败</span>';
+    }
+}
+</script>
