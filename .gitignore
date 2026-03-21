@@ -57,6 +57,7 @@ desktop.ini
 # 打包输出
 *.exe
 *.spec
+!czrz_client.spec
 build/
 dist/
 # 淘宝产品相关
