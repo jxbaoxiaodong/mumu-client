@@ -7295,21 +7295,14 @@ def material_process_scheduler():
 
 
 def show_welcome_dialog():
-    """显示欢迎对话框（仅 Windows 打包环境）"""
-    # 只在 Windows 打包环境下显示
-    if sys.platform != "win32" or not hasattr(sys, "_MEIPASS"):
+    """显示欢迎对话框（支持 Windows/macOS/Linux 打包环境）"""
+    # 只在打包环境下显示
+    if not hasattr(sys, "_MEIPASS"):
         return
 
-    try:
-        # 使用 Windows API MessageBox
-        # MB_OK = 0, MB_ICONINFORMATION = 64, MB_SETFOREGROUND = 0x10000
-        MB_OK = 0
-        MB_ICONINFORMATION = 64
-        MB_SETFOREGROUND = 0x10000
+    title = "宝宝成长记录系统"
 
-        title = "宝宝成长记录系统"
-
-        message = """欢迎使用宝宝成长记录系统！
+    message = """欢迎使用宝宝成长记录系统！
 
 【系统简介】
 这是一款专为记录宝宝成长点滴设计的智能系统，
@@ -7335,9 +7328,43 @@ def show_welcome_dialog():
 
 点击"确定"开始使用！"""
 
-        ctypes.windll.user32.MessageBoxW(
-            0, message, title, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
-        )
+    try:
+        if sys.platform == "win32":
+            # Windows: 使用 Windows API MessageBox
+            MB_OK = 0
+            MB_ICONINFORMATION = 64
+            MB_SETFOREGROUND = 0x10000
+            ctypes.windll.user32.MessageBoxW(
+                0, message, title, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
+            )
+        elif sys.platform == "darwin":
+            # macOS: 使用 osascript (AppleScript)
+            import subprocess
+            # AppleScript 语法显示对话框
+            applescript = f'display dialog "{message}" with title "{title}" buttons {{"确定"}} default button "确定" with icon note'
+            subprocess.run(["osascript", "-e", applescript], check=False)
+        else:
+            # Linux: 使用 zenity (GNOME) 或 kdialog (KDE)
+            import subprocess
+            # 优先尝试 zenity
+            try:
+                subprocess.run(
+                    ["zenity", "--info", f"--title={title}", f"--text={message}"],
+                    check=False,
+                    capture_output=True
+                )
+            except FileNotFoundError:
+                # 如果 zenity 不存在，尝试 kdialog
+                try:
+                    subprocess.run(
+                        ["kdialog", f"--title={title}", f"--msgbox={message}"],
+                        check=False,
+                        capture_output=True
+                    )
+                except FileNotFoundError:
+                    # 都不存在，跳过对话框
+                    print("提示: 安装 zenity 或 kdialog 可显示图形欢迎对话框")
+                    print(message)
     except Exception as e:
         print(f"显示欢迎对话框失败: {e}")
 
