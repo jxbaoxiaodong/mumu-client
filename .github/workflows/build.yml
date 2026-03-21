@@ -30,7 +30,7 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --name="CZRZClient" --onefile --windowed --uac-admin --add-data="templates;templates" --add-data="static;static" --add-data="cloudflare.exe;." --hidden-import=tkinter --hidden-import=tkinter.ttk --clean --noconfirm client.py
+        pyinstaller czrz_client.spec --clean
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -61,7 +61,7 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --name="CZRZClient" --onefile --windowed --add-data="templates:templates" --add-data="static:static" --add-data="cloudflared:." --hidden-import=tkinter --hidden-import=tkinter.ttk --clean --noconfirm client.py
+        pyinstaller czrz_client.spec --clean
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -97,7 +97,7 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --name="CZRZClient" --onefile --add-data="templates:templates" --add-data="static:static" --add-data="cloudflared:." --hidden-import=tkinter --hidden-import=tkinter.ttk --clean --noconfirm client.py
+        pyinstaller czrz_client.spec --clean
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
