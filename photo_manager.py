@@ -160,7 +160,7 @@ class PhotoManager:
             日期字符串列表 YYYY-MM-DD
         """
         return self.index_manager.get_all_dates()
-    
+
     def get_dates_by_month(self, year: int, month: int) -> list:
         """
         获取指定月份的所有有照片的日期 - 优化版本
@@ -174,14 +174,20 @@ class PhotoManager:
         """
         return self.index_manager.get_dates_by_month(year, month)
 
-    def scan_existing_photos(self, progress_callback=None):
+    def scan_existing_photos(
+        self, progress_callback=None, start_date=None, end_date=None
+    ):
         """
         扫描源文件夹中的照片，更新索引
 
         Args:
             progress_callback: 进度回调函数 (current, total, message)
+            start_date: 起始日期字符串 (YYYY-MM-DD)，只保留此日期之后的索引
+            end_date: 结束日期字符串 (YYYY-MM-DD)，只保留此日期之前的索引
         """
-        return self.index_manager.scan_source_folders(progress_callback)
+        return self.index_manager.scan_source_folders(
+            progress_callback, start_date, end_date
+        )
 
     def get_photo_by_filename(self, filename: str) -> dict:
         """
@@ -247,3 +253,33 @@ class PhotoManager:
 # 向后兼容：保持旧的导入方式
 PhotoIndexManager = None  # 将在下面导入
 
+if __name__ == "__main__":
+    # 测试
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 创建测试文件夹结构
+        test_dir = Path(tmpdir) / "photos"
+        test_dir.mkdir()
+
+        pm = PhotoManager([str(test_dir)], Path(tmpdir))
+
+        # 测试文件名日期解析
+        test_cases = [
+            "IMG_20240307_123456.jpg",
+            "2024-03-07_birthday.png",
+            "VID_20240307_123456.mp4",
+            "random_name.jpg",
+        ]
+
+        for name in test_cases:
+            date = pm.extract_date_from_filename(name)
+            print(f"{name} -> {date or '使用文件时间'}")
+
+        # 扫描
+        result = pm.scan_existing_photos()
+        print(f"\n扫描结果: {result}")
+
+        # 统计
+        stats = pm.get_stats()
+        print(f"\n统计: {stats}")

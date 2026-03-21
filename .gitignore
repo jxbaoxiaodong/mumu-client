@@ -59,3 +59,5 @@ desktop.ini
 *.spec
 build/
 dist/
+# 淘宝产品相关
+static/taobao_product/

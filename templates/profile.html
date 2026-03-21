@@ -449,13 +449,13 @@
     <div class="profile-card">
         <div class="profile-header">
             <div class="profile-avatar">
-                <img src="{{ avatar_url|default('/static/images/default-avatar.png') }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
+                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%;">
             </div>
             <div class="profile-info">
                 <h1>{{ baby_name }} 的成长画像</h1>
                 <p>当前年龄：<span id="currentAge">{{ age_text if age_text else '未设置生日' }}</span>
                     <button id="aiReviewBtn" class="btn btn-sm btn-outline-primary ms-2" onclick="startAIReview()" title="AI强制重新处理所有照片和日志，加深对宝宝的了解">
-                        <i class="fas fa-brain me-1"></i>AI重新认识
+                        <i class="fas fa-brain me-1"></i>刷新画像
                     </button>
                 </p>
                 <p id="guidanceSummary" class="text-muted" style="font-style: italic;"></p>
@@ -1119,7 +1119,9 @@ function pollReviewProgress(taskId) {
                 const percent = status.total > 0 ? Math.round(status.processed / status.total * 100) : 0;
                 
                 progressBar.style.width = percent + '%';
-                progressText.textContent = status.message || `正在处理 ${status.processed}/${status.total}`;
+                const successCount = status.success_count || 0;
+                const skippedCount = status.skipped || 0;
+                progressText.textContent = status.message || `扫描 ${status.processed}/${status.total}（处理 ${successCount}，跳过 ${skippedCount}）`;
                 
                 if (status.completed) {
                     footer.classList.add('completed');
@@ -1131,7 +1133,7 @@ function pollReviewProgress(taskId) {
                             showNotification(friendlyMsg, 'warning', 5000);
                         }
                     } else {
-                        progressText.innerHTML = `<i class="fas fa-check-circle me-1"></i>完成！处理了 ${status.processed} 天`;
+                        progressText.innerHTML = `<i class="fas fa-check-circle me-1"></i>完成！成功处理 ${successCount} 天，跳过 ${skippedCount} 天`;
                     }
                     
                     btn.disabled = false;

@@ -1386,15 +1386,15 @@
             {% if weather %}
             <div class="weather-tag">
                 <span class="weather-icon-small">
-                    {% if '晴' in weather.condition %}☀️
-                    {% elif '多云' in weather.condition %}⛅
-                    {% elif '阴' in weather.condition %}☁️
-                    {% elif '雨' in weather.condition %}🌧️
-                    {% elif '雪' in weather.condition %}❄️
+                    {% if weather.condition and '晴' in weather.condition %}☀️
+                    {% elif weather.condition and '多云' in weather.condition %}⛅
+                    {% elif weather.condition and '阴' in weather.condition %}☁️
+                    {% elif weather.condition and '雨' in weather.condition %}🌧️
+                    {% elif weather.condition and '雪' in weather.condition %}❄️
                     {% else %}🌤️
                     {% endif %}
                 </span>
-                <span>{{ weather.city }} {{ weather.temperature }}° {{ weather.condition }}</span>
+                <span>{{ weather.city or '' }} {{ weather.temperature or '--' }}° {{ weather.condition or '' }}</span>
             </div>
             {% endif %}
         </div>
@@ -1522,10 +1522,7 @@
             </button>
         </div>
         
-        <div class="hint-bar" id="regenerateHint" style="display:none;">
-            <i class="fas fa-lightbulb" style="color:var(--accent-coral);"></i>
-            <span>照片已更换，<a href="#" onclick="regenerateLog('{{ today }}');return false;">点击重新生成日记</a></span>
-        </div>
+        <!-- 提示栏已移除 -->
     </div>
 </section>
 
@@ -1595,9 +1592,10 @@
                          <button class="btn-gallery-action" onclick="openPhotoTagModal('{{ photo.filename }}')" title="设置标签">
                              <i class="fas fa-tag"></i>
                          </button>
-                         <button class="btn-gallery-action" onclick="openAIAnalysis('{{ photo.filename }}')" title="AI分析" style="color:#8A9A82;">
+                         <!-- AI分析按钮暂时隐藏 -->
+                         <!-- <button class="btn-gallery-action" onclick="openAIAnalysis('{{ photo.filename }}')" title="AI分析" style="color:#8A9A82;">
                              <i class="fas fa-robot"></i>
-                         </button>
+                         </button> -->
                          <button class="btn-gallery-action" onclick="deletePhoto('{{ photo.filename }}')" title="删除" style="color:#e74c3c;">
                              <i class="fas fa-trash"></i>
                          </button>
@@ -1815,8 +1813,8 @@
         <button class="btn-quick-uni btn-quick-rose" data-bs-toggle="modal" data-bs-target="#uploadModal">
             <i class="fas fa-camera"></i>
         </button>
-        <button class="btn-quick-uni btn-quick-sage" onclick="openCommentForm()">
-            <i class="fas fa-pen"></i>
+        <button class="btn-quick-uni btn-quick-sage" data-bs-toggle="modal" data-bs-target="#allTagsModal">
+            <i class="fas fa-tags"></i>
         </button>
     </div>
 </div>
@@ -1829,7 +1827,7 @@
 let currentFeaturedPhoto = '{{ featured_photo if featured_photo else "" }}';
 
 // 当前客户端ID（用于AI生成日志）
-window.currentClientId = '{{ client_id|default("") }}';
+window.currentClientId = '{{ client_id or "" }}';
 
 // 日历切换函数（需要在HTML使用之前定义）
 function changeDate(days) {
@@ -2232,8 +2230,12 @@ function updatePhotoGallery(photos, dateStr) {
             if (emptyDesc) emptyDesc.textContent = '传几张照片或视频记录下吧';
             emptyGallery.style.display = 'block';
         }
+        window.currentPhotos = [];
         return;
     }
+    
+    // 保存当前照片列表供大图浏览使用
+    window.currentPhotos = photos;
     
     // 有照片，更新网格（使用缩略图）
     console.log('[DEBUG] 更新照片网格');
@@ -2271,9 +2273,7 @@ function updatePhotoGallery(photos, dateStr) {
                          <button class="btn-gallery-action" onclick="openPhotoTagModal('${photo.filename}')" title="标签">
                              <i class="fas fa-tag"></i>
                          </button>
-                         <button class="btn-gallery-action" onclick="openAIAnalysis('${photo.filename}')" title="AI分析" style="color:#8A9A82;">
-                             <i class="fas fa-robot"></i>
-                         </button>
+                         <!-- AI分析按钮暂时隐藏 -->
                          <button class="btn-gallery-action" onclick="deletePhoto('${photo.filename}')" title="删除" style="color:#e74c3c;">
                              <i class="fas fa-trash"></i>
                          </button>
@@ -2573,12 +2573,28 @@ function switchGalleryTab(type) {
 // 更新天气显示
 function updateWeatherDisplay(weather) {
     const weatherEl = document.querySelector('.weather-tag');
-    if (weatherEl && weather) {
-        const icon = weather.icon || '🌤️';
+    if (!weatherEl) return;
+    
+    if (weather && (weather.temperature || weather.condition || weather.city)) {
+        // 根据天气状况选择图标
+        let icon = '🌤️';
+        const cond = weather.condition || '';
+        if (cond.includes('晴')) icon = '☀️';
+        else if (cond.includes('多云')) icon = '⛅';
+        else if (cond.includes('阴')) icon = '☁️';
+        else if (cond.includes('雨')) icon = '🌧️';
+        else if (cond.includes('雪')) icon = '❄️';
+        else if (cond.includes('雾')) icon = '🌫️';
+        
         const temp = weather.temperature || '--';
         const condition = weather.condition || '';
         const city = weather.city || '';
+        
         weatherEl.innerHTML = `<span class="weather-icon-small">${icon}</span><span>${city} ${temp}° ${condition}</span>`;
+        weatherEl.style.display = 'inline-flex';
+    } else {
+        // 没有天气数据时隐藏
+        weatherEl.style.display = 'none';
     }
 }
 
@@ -2636,9 +2652,7 @@ function selectAsFeatured(filename) {
             })
         }).then(r => r.json())
           .then(data => {
-              if (data.success) {
-                  showNotification('已更换代表照片', 'success');
-              }
+              // 更换成功，不显示提示
           });
     }
 }
@@ -3401,14 +3415,26 @@ function playVideo(filename, useCompressed = false) {
     document.body.style.overflow = 'hidden';
 }
 
-// 全屏查看照片（带自动降级）
+// 全屏查看照片（带左右切换）
+let fullscreenPhotoIndex = 0;
+let fullscreenPhotoList = [];
+
 function openFullscreen(filename, isVideo) {
     if (isVideo) {
         playVideo(filename);
         return;
     }
     
+    // 获取当前照片列表（只取非视频的照片）
+    fullscreenPhotoList = (window.currentPhotos || []).filter(p => !p.is_video);
+    
+    // 找到当前照片的索引
+    fullscreenPhotoIndex = fullscreenPhotoList.findIndex(p => p.filename === filename);
+    if (fullscreenPhotoIndex === -1) fullscreenPhotoIndex = 0;
+    
+    // 创建全屏覆盖层
     const overlay = document.createElement('div');
+    overlay.id = 'fullscreenOverlay';
     overlay.style.cssText = `
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -3421,12 +3447,31 @@ function openFullscreen(filename, isVideo) {
         padding: 20px;
     `;
     
-    const imageUrl = `/photo/${filename}`;
-    
     overlay.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;position:relative;">
             <div id="imageLoading" class="text-white mb-2">正在加载图片...</div>
-            <img id="fullscreenImage" src="${imageUrl}" style="max-width:100%;max-height:100%;object-fit:contain;" onclick="event.stopPropagation()">
+            <img id="fullscreenImage" src="" style="max-width:100%;max-height:100%;object-fit:contain;" onclick="event.stopPropagation()">
+            
+            <!-- 左箭头 -->
+            <button id="prevBtn" onclick="event.stopPropagation();navigateFullscreen(-1)" style="
+                position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
+                background: rgba(255,255,255,0.2); border: none;
+                color: white; width: 50px; height: 50px;
+                border-radius: 50%; cursor: pointer;
+                font-size: 1.2rem; z-index: 10;
+            "><i class="fas fa-chevron-left"></i></button>
+            
+            <!-- 右箭头 -->
+            <button id="nextBtn" onclick="event.stopPropagation();navigateFullscreen(1)" style="
+                position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+                background: rgba(255,255,255,0.2); border: none;
+                color: white; width: 50px; height: 50px;
+                border-radius: 50%; cursor: pointer;
+                font-size: 1.2rem; z-index: 10;
+            "><i class="fas fa-chevron-right"></i></button>
+            
+            <!-- 计数器 -->
+            <div id="photoCounter" style="position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.7);font-size:0.9rem;"></div>
         </div>
         <button onclick="closeFullscreen()" style="
             position: absolute; top: 20px; right: 20px;
@@ -3437,44 +3482,75 @@ function openFullscreen(filename, isVideo) {
         "><i class="fas fa-times"></i></button>
     `;
     
-    const img = overlay.querySelector('#fullscreenImage');
-    const loadingText = overlay.querySelector('#imageLoading');
-    
-    let hasError = false;
-    
-    // 监听图片错误
-    img.addEventListener('error', function(e) {
-        if (hasError) return;
-        hasError = true;
-        
-        console.log('图片加载失败，尝试切换到压缩版...');
-        loadingText.textContent = '原图加载失败，正在切换到压缩版...';
-        
-        const compressedUrl = `/image/compressed/${filename}`;
-        img.src = compressedUrl;
-    });
-    
-    // 超时降级（3秒）
-    const timeoutId = setTimeout(() => {
-        if (!img.complete && !hasError) {
-            console.log('图片加载超时，尝试切换到压缩版...');
-            hasError = true;
-            loadingText.textContent = '加载较慢，正在切换到压缩版...';
-            
-            const compressedUrl = `/image/compressed/${filename}`;
-            img.src = compressedUrl;
-        }
-    }, 3000);
-    
-    img.addEventListener('load', function() {
-        clearTimeout(timeoutId);
-        loadingText.style.display = 'none';
-    });
-    
-    overlay.id = 'fullscreenOverlay';
     overlay.onclick = closeFullscreen;
     document.body.appendChild(overlay);
     document.body.style.overflow = 'hidden';
+    
+    // 显示当前照片
+    showFullscreenPhoto();
+    
+    // 添加键盘事件
+    document.addEventListener('keydown', handleFullscreenKeydown);
+}
+
+function showFullscreenPhoto() {
+    if (fullscreenPhotoList.length === 0) return;
+    
+    const photo = fullscreenPhotoList[fullscreenPhotoIndex];
+    const img = document.getElementById('fullscreenImage');
+    const loadingText = document.getElementById('imageLoading');
+    const counter = document.getElementById('photoCounter');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    
+    // 显示加载提示
+    loadingText.style.display = 'block';
+    loadingText.textContent = '正在加载图片...';
+    
+    // 设置图片源
+    const imageUrl = photo.url || `/photo/${photo.filename}`;
+    img.src = imageUrl;
+    
+    // 更新计数器
+    counter.textContent = `${fullscreenPhotoIndex + 1} / ${fullscreenPhotoList.length}`;
+    
+    // 更新按钮状态
+    prevBtn.style.visibility = fullscreenPhotoIndex === 0 ? 'hidden' : 'visible';
+    nextBtn.style.visibility = fullscreenPhotoIndex === fullscreenPhotoList.length - 1 ? 'hidden' : 'visible';
+    
+    // 图片加载完成
+    img.onload = function() {
+        loadingText.style.display = 'none';
+    };
+    
+    // 图片加载失败，尝试压缩版
+    img.onerror = function() {
+        if (!img.src.includes('/photo/thumb/')) {
+            img.src = `/photo/thumb/${photo.filename}`;
+        } else {
+            loadingText.textContent = '图片加载失败';
+        }
+    };
+}
+
+function navigateFullscreen(direction) {
+    const newIndex = fullscreenPhotoIndex + direction;
+    if (newIndex >= 0 && newIndex < fullscreenPhotoList.length) {
+        fullscreenPhotoIndex = newIndex;
+        showFullscreenPhoto();
+    }
+}
+
+function handleFullscreenKeydown(e) {
+    if (document.getElementById('fullscreenOverlay')) {
+        if (e.key === 'ArrowLeft') {
+            navigateFullscreen(-1);
+        } else if (e.key === 'ArrowRight') {
+            navigateFullscreen(1);
+        } else if (e.key === 'Escape') {
+            closeFullscreen();
+        }
+    }
 }
 
 function closeFullscreen() {
@@ -3483,6 +3559,8 @@ function closeFullscreen() {
         overlay.remove();
         document.body.style.overflow = '';
     }
+    // 移除键盘事件
+    document.removeEventListener('keydown', handleFullscreenKeydown);
 }
 
 // 分享照片 - 使用与日志分享一样的逻辑

@@ -33,11 +33,9 @@ def add_signature_headers(headers, client_id, secret_key, method, path, body="")
 
 
 def get_data_dir():
-    """获取数据目录（兼容 PyInstaller 和普通运行）"""
-    if hasattr(sys, "_MEIPASS"):
-        data_dir = Path.home() / "Documents" / "CZRZ" / "data"
-    else:
-        data_dir = Path(__file__).parent / "data"
+    """获取数据目录（客户端始终使用用户文档目录）"""
+    # 客户端数据始终存储在用户文档目录
+    data_dir = Path.home() / "Documents" / "CZRZ" / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
@@ -197,6 +195,8 @@ body, .page-background {{
 
 def get_theme_file(client_id: str) -> Path:
     """获取主题文件路径"""
+    if not client_id:
+        client_id = "default"
     return THEMES_DIR / f"{client_id}.json"
 
 
@@ -815,7 +815,7 @@ def get_or_create_theme(
     """
     if force_new:
         # 删除旧主题文件
-        theme_file = THEMES_DIR / f"{client_id}.json"
+        theme_file = get_theme_file(client_id)
         if theme_file.exists():
             theme_file.unlink()
         return generate_theme_locally(baby_name, "温暖阳光风格")
@@ -837,14 +837,14 @@ def update_theme(client_id: str, user_prompt: str, api_key: str = None) -> dict:
     baby_name = theme.get("baby_name", "宝宝") if theme else "宝宝"
 
     # 使用AI生成新主题（配置从文件读取）
-    new_theme = generate_custom_theme_by_ai(baby_name, user_prompt, theme, api_key)
+    new_theme = generate_custom_theme_by_ai(baby_name, user_prompt, theme, api_key, client_id=client_id)
 
     save_theme(client_id, new_theme)
     return new_theme
 
 
 def generate_custom_theme_by_ai(
-    baby_name: str, user_prompt: str, current_theme: dict = None, api_key: str = None
+    baby_name: str, user_prompt: str, current_theme: dict = None, api_key: str = None, client_id: str = None
 ) -> dict:
     """
     使用AI根据用户描述生成自定义主题 - 完全由AI自由发挥创意
@@ -857,7 +857,9 @@ def generate_custom_theme_by_ai(
     """
     client_config = get_client_config()
     server_url = client_config.get("server_url", "")
-    client_id = client_config.get("client_id", "")
+    # 优先使用传入的 client_id
+    if not client_id:
+        client_id = client_config.get("client_id", "")
     secret_key = client_config.get("secret_key", "")
 
     if not server_url or not client_id:
@@ -1078,3 +1080,12 @@ def generate_theme_with_decorations(
 PRESET_THEMES = {}
 
 
+if __name__ == "__main__":
+    # 测试
+    print("测试本地主题生成:")
+    theme = generate_theme_locally("小宝宝", "想要星空主题，深蓝色")
+    print(f"主题: {theme['name']}")
+    print(f"描述: {theme['description']}")
+    print(f"装饰: {theme['decoration']}")
+    print("\n生成的CSS:")
+    print(generate_css(theme))

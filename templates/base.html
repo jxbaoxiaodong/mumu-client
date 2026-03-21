@@ -81,7 +81,7 @@
     <nav class="navbar navbar-expand-lg navbar-light fixed-top">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <img src="{{ avatar_url|default('/static/images/default-avatar.png') }}" alt="头像" class="navbar-avatar rounded-circle me-2">
+                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" class="navbar-avatar rounded-circle me-2">
                 <span class="brand-text">{{ baby_name }}的成长记录</span>
             </a>
             
@@ -165,7 +165,7 @@
             <div class="row">
                 <div class="col-12 text-center">
                     <small class="text-muted">
-                        宝宝成长日志系统 v{{ client_version|default('2.0.0') }} &copy; mumu
+                        宝宝成长日志系统 v{{ client_version or '2.0.0' }} &copy; mumu
                     </small>
                 </div>
             </div>
@@ -215,7 +215,7 @@
                             <p class="small mb-2"><strong>关于调用AI的token额度：</strong></p>
                             <p class="small text-muted mb-0">
                                 作者提供一定免费额度，日常自动生成日志基本够用。<br>
-                                如需画像生成需批量处理大量照片素材，额度可能不足，可联系作者补充。
+                                如需画像生成需批量处理大量照片素材，额度可能不足，可联系作者补充。<br>
                                 有技术基础的用户可从Github下载源码自行配置 AI 接口，不受额度限制。
                             </p>
                         </div>
@@ -231,6 +231,18 @@
                             <li>远程分享给家人，省去微信传图麻烦</li>
                             <li>数据完全本地托管，隐私自主可控</li>
                         </ul>
+                        
+                        <!-- 索引说明 -->
+                        <div class="alert alert-light border mt-3">
+                            <h6 class="fw-bold mb-2">📋 关于照片索引</h6>
+                            <p class="small text-muted mb-2">系统通过<strong>索引</strong>来管理您的照片，了解索引机制有助于更好地使用本系统：</p>
+                            <ul class="small text-muted mb-0">
+                                <li><strong>什么是索引：</strong>索引是照片的"目录"，记录照片的位置、日期等信息，用于快速检索和展示</li>
+                                <li><strong>索引与原照片：</strong>网页上删除照片只是删除索引记录，不会删除原照片文件，您随时可以重新扫描恢复</li>
+                                <li><strong>何时重建索引：</strong>如果您在媒体文件夹中进行了大量增删改操作（如批量删除、移动、重命名照片），建议在设置页面重建索引</li>
+                                <li><strong>日期范围重建：</strong>如需只重建某段时间的索引，可在设置页面选择起始和结束日期</li>
+                            </ul>
+                        </div>
                     </div>
                     
                     <!-- 自行部署 -->
@@ -240,7 +252,7 @@
                             客户端采用Python编写，可从GitHub 获取源码自行部署，或进行代码审查。
                         </p>
                         <div class="d-flex gap-2 mt-2">
-                            <a href="https://github.com/你的用户名/仓库名" target="_blank" class="btn btn-sm btn-outline-dark">
+                            <a href="https://github.com/jxbaoxiaodong/mumu-client" target="_blank" class="btn btn-sm btn-outline-dark">
                                 <i class="fab fa-github me-1"></i>GitHub 仓库
                             </a>
                         </div>

@@ -1142,3 +1142,11 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
         print(f"[WARN] 保存照片描述异常: {e}")
 
 
+# =====================
+# CLI
+# =====================
+
+if __name__ == "__main__":
+    result = select_best_photo()
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -23,7 +23,7 @@
                                     <h6 class="mb-1 text-muted small">客户端ID</h6>
                                     <div class="d-flex align-items-center">
                                         <code class="font-monospace text-break" id="modalClientIdDisplay" style="font-size: 0.85rem;">
-                                            {{ client_id|default('未注册') }}
+                                            {{ client_id or '未注册' }}
                                         </code>
                                         <button class="btn btn-sm btn-link text-muted ms-2 px-1 py-0" onclick="copyModalClientId()" title="复制ID">
                                             <i class="fas fa-copy"></i>
@@ -40,10 +40,10 @@
                                 <div class="flex-grow-1">
                                     <h6 class="mb-1 text-muted small">AI 配额</h6>
                                     <div class="d-flex align-items-center">
-                                        <span class="me-2" style="font-size: 0.95rem;">{{ "{:,}".format(quota_used|default(0)) }}/{{ "{:,}".format(quota_total|default(50000)) }}</span>
+                                        <span class="me-2" style="font-size: 0.95rem;">{{ "{:,}".format(quota_used or 0) }}/{{ "{:,}".format(quota_total or 50000) }}</span>
                                         <div class="flex-grow-1" style="max-width: 120px;">
                                             <div class="progress" style="height: 6px;">
-                                                {% set quota_pct = quota_percent|default(0) %}
+                                                {% set quota_pct = quota_percent or 0 %}
                                                 <div class="progress-bar {% if quota_pct > 80 %}bg-danger{% elif quota_pct > 50 %}bg-warning{% else %}bg-success{% endif %}" 
                                                      role="progressbar" 
                                                      style="width: {{ quota_pct }}%">
@@ -82,8 +82,8 @@
                                     <div class="col-12">
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-white" style="font-size: 0.75rem;">局域网</span>
-                                            <input type="text" class="form-control form-control-sm" value="{{ local_url|default('') }}" readonly style="font-size: 0.75rem;">
-                                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('{{ local_url|default('') }}')" style="font-size: 0.75rem;">
+                                            <input type="text" class="form-control form-control-sm" value="{{ local_url or '' }}" readonly style="font-size: 0.75rem;">
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('{{ local_url or '' }}')" style="font-size: 0.75rem;">
                                                 <i class="fas fa-copy"></i>
                                             </button>
                                         </div>
@@ -157,7 +157,7 @@
                         <div class="card-body text-center">
                             <div class="mb-3">
                                 <div class="avatar-upload-settings" onclick="document.getElementById('settingsAvatarInput').click()">
-                                    <img id="settingsAvatarPreview" src="{{ avatar_url|default('/static/images/default-avatar.png') }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                    <img id="settingsAvatarPreview" src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
                                     <div class="avatar-overlay-settings">
                                         <i class="fas fa-camera"></i>
                                     </div>
@@ -189,7 +189,7 @@
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">宝宝生日</label>
-                                    <input type="date" class="form-control" id="modalBirthday" value="{{ baby_birthday|default('') }}">
+                                    <input type="date" class="form-control" id="modalBirthday" value="{{ baby_birthday or '' }}">
                                 </div>
                             </div>
                             <div class="mb-3">
@@ -378,10 +378,16 @@
                             <div class="card-body">
                                 <!-- 重建素材索引 -->
                                 <div class="mb-3">
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-12">
+                                            <label class="form-label small text-muted mb-1">只显示此日期之后的照片（设置后不会删除新加入的照片）</label>
+                                            <input type="date" class="form-control form-control-sm" id="rebuildIndexStartDate">
+                                        </div>
+                                    </div>
                                     <button type="button" class="btn btn-info w-100 mb-2" id="rebuildIndexBtn" onclick="rebuildPhotoIndex()">
                                         <i class="fas fa-sync-alt me-2"></i>重建素材索引
                                     </button>
-                                    <small class="text-muted">当进行大量文件增删操作后，或发现照片显示异常时使用此功能重新扫描媒体文件夹</small>
+                                    <small class="text-muted">设置起始日期后，将删除该日期之前的索引。新加入的照片会在客户端启动时自动索引，无需手动重建。</small>
                                 </div>
                                 
                                 <!-- 提示信息 -->
@@ -638,7 +644,8 @@ function saveModalSettings() {
         user_city: fullCity,
         media_folders: folders,
         log_style: document.getElementById('logStyle').value,
-        custom_style: document.getElementById('logStyle').value === '自定义' ? document.getElementById('customStyleText').value : ''
+        custom_style: document.getElementById('logStyle').value === '自定义' ? document.getElementById('customStyleText').value : '',
+        index_after_date: document.getElementById('rebuildIndexStartDate').value
     };
     
     if (newPassword) {
@@ -979,17 +986,31 @@ function regenerateCompression() {
 
 // 当设置面板打开时加载压缩状态
 document.getElementById('settingsModal').addEventListener('shown.bs.modal', function () {
-    checkFFmpegStatus();
-    loadCompressionStatus();
+     checkFFmpegStatus();
+     loadCompressionStatus();
+     // 初始化索引起始日期输入框
+     const indexAfterDate = '{{ index_after_date|default("") }}';
+     if (indexAfterDate) {
+         document.getElementById('rebuildIndexStartDate').value = indexAfterDate;
+     }
 });
 
 // 重建素材索引
 function rebuildPhotoIndex() {
     const btn = document.getElementById('rebuildIndexBtn');
+    const startDate = document.getElementById('rebuildIndexStartDate').value;
+    
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在启动扫描...';
     
-    fetch('/api/photos/scan', { method: 'POST' })
+    const payload = {};
+    if (startDate) payload.start_date = startDate;
+    
+    fetch('/api/photos/scan', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
         .then(r => r.json())
         .then(data => {
             if (data.success) {

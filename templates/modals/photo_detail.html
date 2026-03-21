@@ -1,105 +1,116 @@
 <!-- 照片详情模态框 -->
 <div class="modal fade" id="photoDetailModal" tabindex="-1" aria-labelledby="photoDetailModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="photoDetailModalLabel">照片详情</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="text-center mb-3">
-                    <img id="detailPhotoImg" src="" alt="照片" class="img-fluid rounded" style="max-height: 400px;">
+                <div class="text-center mb-3 position-relative">
+                    <!-- 左切换按钮 -->
+                    <button type="button" class="btn btn-light position-absolute start-0 top-50 translate-middle-y" 
+                            onclick="navigatePhoto(-1)" id="prevPhotoBtn" style="z-index:10; opacity:0.8;">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    
+                    <img id="detailPhoto" src="" alt="照片" class="img-fluid rounded" style="max-height: 60vh;">
+                    
+                    <!-- 右切换按钮 -->
+                    <button type="button" class="btn btn-light position-absolute end-0 top-50 translate-middle-y" 
+                            onclick="navigatePhoto(1)" id="nextPhotoBtn" style="z-index:10; opacity:0.8;">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
                 </div>
-                
+
+                <div class="mb-2">
+                    <small class="text-muted" id="photoCounter"></small>
+                </div>
+
                 <div class="mb-3">
                     <label class="form-label">描述</label>
-                    <textarea id="detailCaption" class="form-control" rows="3" placeholder="添加描述..."></textarea>
+                    <div id="detailCaption" class="form-control-plaintext">无标注</div>
                 </div>
-                
-                <div class="mb-3">
-                    <label class="form-label">标签</label>
-                    <input type="text" id="detailTags" class="form-control" placeholder="用逗号分隔标签">
-                </div>
-                
+
                 <div class="mb-3">
                     <label class="form-label">日期</label>
-                    <input type="date" id="detailDate" class="form-control">
+                    <div id="detailDate" class="form-control-plaintext"></div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
-                <button type="button" class="btn btn-primary" onclick="savePhotoDetails()">保存</button>
-                <button type="button" class="btn btn-danger" onclick="deletePhoto()">删除</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-let currentPhotoId = null;
+// 照片浏览相关变量
+let currentPhotoIndex = 0;
+let currentPhotoList = [];
 
-function showPhotoDetail(photoId) {
-    currentPhotoId = photoId;
+function viewPhotoDetail(filename) {
+    // 获取当前日期的所有照片列表
+    currentPhotoList = window.currentPhotos || [];
     
-    // 获取照片详情
-    fetch(`/api/photos/${photoId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const photo = data.photo;
-                
-                // 显示照片
-                document.getElementById('detailPhotoImg').src = `/photos/${photo.filename}`;
-                document.getElementById('detailCaption').value = photo.caption || '';
-                document.getElementById('detailTags').value = photo.tags ? photo.tags.join(', ') : '';
-                document.getElementById('detailDate').value = photo.date || '';
-                
-                // 显示模态框
-                const modal = new bootstrap.Modal(document.getElementById('photoDetailModal'));
-                modal.show();
-            }
-        });
+    // 找到当前照片的索引
+    currentPhotoIndex = currentPhotoList.findIndex(p => p.filename === filename);
+    if (currentPhotoIndex === -1) currentPhotoIndex = 0;
+    
+    // 显示照片
+    showCurrentPhoto();
+    
+    // 显示模态框
+    new bootstrap.Modal(document.getElementById('photoDetailModal')).show();
 }
 
-function savePhotoDetails() {
-    if (!currentPhotoId) return;
+function showCurrentPhoto() {
+    if (currentPhotoList.length === 0) return;
     
-    const caption = document.getElementById('detailCaption').value;
-    const tags = document.getElementById('detailTags').value.split(',').map(tag => tag.trim()).filter(tag => tag);
-    const date = document.getElementById('detailDate').value;
+    const photo = currentPhotoList[currentPhotoIndex];
     
-    fetch(`/api/photos/${currentPhotoId}`, {
-        method: 'PUT',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ caption, tags, date })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('保存成功');
-            location.reload();
-        } else {
-            alert('保存失败: ' + data.message);
+    // 设置图片
+    const img = document.getElementById('detailPhoto');
+    if (photo.url) {
+        img.src = photo.url;
+    } else {
+        img.src = '/photo/' + photo.filename;
+    }
+    
+    // 设置描述和日期
+    document.getElementById('detailCaption').textContent = photo.caption || photo.tag || '无标注';
+    document.getElementById('detailDate').textContent = photo.date || '';
+    
+    // 更新计数器
+    document.getElementById('photoCounter').textContent = 
+        `${currentPhotoIndex + 1} / ${currentPhotoList.length}`;
+    
+    // 更新按钮状态
+    document.getElementById('prevPhotoBtn').disabled = currentPhotoIndex === 0;
+    document.getElementById('nextPhotoBtn').disabled = currentPhotoIndex === currentPhotoList.length - 1;
+    
+    // 隐藏/显示按钮
+    document.getElementById('prevPhotoBtn').style.visibility = currentPhotoIndex === 0 ? 'hidden' : 'visible';
+    document.getElementById('nextPhotoBtn').style.visibility = currentPhotoIndex === currentPhotoList.length - 1 ? 'hidden' : 'visible';
+}
+
+function navigatePhoto(direction) {
+    const newIndex = currentPhotoIndex + direction;
+    if (newIndex >= 0 && newIndex < currentPhotoList.length) {
+        currentPhotoIndex = newIndex;
+        showCurrentPhoto();
+    }
+}
+
+// 键盘左右键切换
+document.addEventListener('keydown', function(e) {
+    const modal = document.getElementById('photoDetailModal');
+    if (modal.classList.contains('show')) {
+        if (e.key === 'ArrowLeft') {
+            navigatePhoto(-1);
+        } else if (e.key === 'ArrowRight') {
+            navigatePhoto(1);
         }
-    });
-}
-
-function deletePhoto() {
-    if (!currentPhotoId || !confirm('确定要删除这张照片吗？')) return;
-    
-    fetch(`/api/photos/${currentPhotoId}`, {
-        method: 'DELETE'
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('删除成功');
-            location.reload();
-        } else {
-            alert('删除失败: ' + data.message);
-        }
-    });
-}
+    }
+});
 </script>

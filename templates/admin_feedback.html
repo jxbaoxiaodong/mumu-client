@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_title }} - 用户反馈</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin-style.css">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            width: 250px; z-index: 1000; transition: transform 0.3s ease;
+            padding-top: 20px;
+        }
+        .sidebar-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .sidebar-header h3 {
+            margin: 0;
+            font-weight: bold;
+        }
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+            text-align: center;
+        }
+        .main-content {
+            margin-left: 250px; transition: margin-left 0.3s ease;
+            padding: 20px;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        .header h1 {
+            color: #333;
+            margin: 0;
+            font-weight: bold;
+        }
+        .header p {
+            color: #666;
+            margin: 5px 0 0 0;
+        }
+        .feedback-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s;
+            border-left: 4px solid #667eea;
+        }
+        .feedback-card.unread {
+            border-left-color: #dc3545;
+            background: #fff8f8;
+        }
+        .feedback-card.read {
+            border-left-color: #28a745;
+        }
+        .feedback-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .feedback-author {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .feedback-author .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .feedback-meta {
+            color: #666;
+            font-size: 0.85rem;
+        }
+        .feedback-content {
+            color: #333;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            margin-bottom: 15px;
+        }
+        .feedback-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .badge-status {
+            font-size: 0.75rem;
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+        .badge-unread {
+            background: #dc3545;
+            color: white;
+        }
+        .badge-read {
+            background: #28a745;
+            color: white;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        .empty-state i {
+            font-size: 4rem;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+        .logout-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+        }
+        .stats-bar {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stat-number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+    </style>
+<style>
+        /* 移动端响应式 */
+        .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+        @media (max-width: 768px) { .menu-toggle { display: block; } .sidebar { transform: translateX(-100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-left: 0; padding-top: 70px; } }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="bi bi-shield-lock"></i> {{ site_title }}</h3>
+            <small>管理后台</small>
+        </div>
+        
+        <nav class="nav flex-column mt-4">
+            <a class="nav-link" href="/admin/dashboard">
+                <i class="bi bi-speedometer2"></i> 仪表盘
+            </a>
+            <a class="nav-link" href="/admin/clients">
+                <i class="bi bi-device-ssd"></i> 设备管理
+            </a>
+            <a class="nav-link" href="/admin/credentials">
+                <i class="bi bi-key"></i> 凭证管理
+            </a>
+            <a class="nav-link" href="/admin/tunnel-pool">
+                <i class="bi bi-hdd-network"></i> Tunnel池
+            </a>
+            <a class="nav-link" href="/admin/news-pool">
+                <i class="bi bi-newspaper"></i> 新闻池
+            </a>
+            <a class="nav-link active" href="/admin/feedback">
+                <i class="bi bi-chat-dots"></i> 用户反馈
+                {% if feedback_list | selectattr("status", "equalto", "unread") | list | length > 0 %}
+                <span class="badge bg-danger ms-2">{{ feedback_list | selectattr("status", "equalto", "unread") | list | length }}</span>
+                {% endif %}
+            </a>
+            <a class="nav-link" href="/admin/settings">
+                <i class="bi bi-gear"></i> 系统设置
+            </a>
+            <a class="nav-link" href="/czrz/health" target="_blank">
+                <i class="bi bi-heart-pulse"></i> 健康检查
+            </a>
+        </nav>
+        
+        <div class="logout-btn">
+            <a href="/admin" class="btn btn-outline-light w-100">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </a>
+        </div>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="bi bi-chat-dots"></i> 用户反馈管理</h1>
+            <p>查看和管理用户提交的反馈信息</p>
+        </div>
+        
+        <!-- 统计信息 -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-number">{{ feedback_list | length }}</span>
+                <span class="stat-label">总反馈</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" style="color: #dc3545;">{{ feedback_list | selectattr("status", "equalto", "unread") | list | length }}</span>
+                <span class="stat-label">未读</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-number" style="color: #28a745;">{{ feedback_list | selectattr("status", "equalto", "read") | list | length }}</span>
+                <span class="stat-label">已读</span>
+            </div>
+        </div>
+        
+        <!-- 反馈列表 -->
+        {% if feedback_list %}
+            {% for feedback in feedback_list %}
+            <div class="feedback-card {{ feedback.status }}" id="feedback-{{ feedback.id }}">
+                <div class="feedback-header">
+                    <div class="feedback-author">
+                        <div class="avatar">{{ feedback.name[0] if feedback.name else '?' }}</div>
+                        <div>
+                            <div class="fw-bold">{{ feedback.name or '匿名用户' }}</div>
+                            <div class="feedback-meta">
+                                <i class="bi bi-clock"></i> {{ feedback.created_at[:19].replace('T', ' ') if feedback.created_at else '未知时间' }}
+                                {% if feedback.ip %}
+                                <span class="ms-2"><i class="bi bi-geo-alt"></i> {{ feedback.ip }}</span>
+                                {% endif %}
+                                {% if feedback.baby_name %}
+                                <span class="ms-2"><i class="bi bi-person-heart"></i> {{ feedback.baby_name }}</span>
+                                {% endif %}
+                                {% if feedback.client_id %}
+                                <span class="ms-2" title="{{ feedback.client_id }}"><i class="bi bi-device-ssd"></i> {{ feedback.client_id[:8] }}...</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <span class="badge-status badge-{{ feedback.status }}">
+                        {% if feedback.status == 'unread' %}未读{% else %}已读{% endif %}
+                    </span>
+                </div>
+                <div class="feedback-content">{{ feedback.content }}</div>
+                <div class="feedback-actions">
+                    {% if feedback.status == 'unread' %}
+                    <button class="btn btn-sm btn-success" onclick="markRead('{{ feedback.id }}')">
+                        <i class="bi bi-check-circle"></i> 标记已读
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFeedback('{{ feedback.id }}')">
+                        <i class="bi bi-trash"></i> 删除
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h4>暂无反馈</h4>
+            <p>目前还没有收到任何用户反馈</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <script src="/static/vendor/bootstrap/bootstrap-5.3.0.bundle.min.js"></script>
+    <script>
+        // 标记已读
+        async function markRead(feedbackId) {
+            if (!confirm('确定将此反馈标记为已读吗？')) return;
+            
+            try {
+                const response = await fetch(`/admin/feedback/${feedbackId}/mark-read`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // 刷新页面
+                    window.location.reload();
+                } else {
+                    alert('操作失败: ' + (data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('操作失败: ' + error.message);
+            }
+        }
+        
+        // 删除反馈
+        async function deleteFeedback(feedbackId) {
+            if (!confirm('确定要删除这条反馈吗？此操作不可恢复。')) return;
+            
+            try {
+                const response = await fetch(`/admin/feedback/${feedbackId}/delete`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // 刷新页面
+                    window.location.reload();
+                } else {
+                    alert('删除失败: ' + (data.message || '未知错误'));
+                }
+            } catch (error) {
+                alert('删除失败: ' + error.message);
+            }
+        }
+        
+        // 移动端侧边栏切换
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+            document.querySelector('.sidebar-overlay').classList.toggle('show');
+        }
+    </script>
+</body>
+</html>

@@ -485,3 +485,6 @@ def remove_photos_from_index(photo_paths, pm):
     return removed
 
 
+if __name__ == "__main__":
+    # 测试
+    print("照片工具模块已加载")

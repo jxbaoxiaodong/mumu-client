@@ -16,6 +16,8 @@ import warnings
 import tempfile
 import hashlib
 import hmac
+import atexit
+import signal
 from datetime import datetime, timedelta, timezone
 import threading
 import time
@@ -216,6 +218,75 @@ class ClientConfig:
 CLIENT_CONFIG = ClientConfig()
 
 
+# ==================== 权限控制装饰器 ====================
+from functools import wraps
+
+
+def require_local_or_password(f):
+    """
+    权限控制装饰器：本地连接免密码，远程连接需要密码
+    用于保护所有写操作API
+    """
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 检查是否本地连接
+        remote_addr = request.remote_addr
+        if remote_addr in ["127.0.0.1", "localhost"]:
+            # 本地连接，免密码
+            return f(*args, **kwargs)
+
+        # 远程连接，需要验证密码
+        # 从请求头或请求体获取密码
+        password = None
+
+        # 1. 尝试从请求头获取
+        password = request.headers.get("X-Admin-Password")
+
+        # 2. 尝试从请求体获取（JSON）
+        if not password and request.is_json:
+            try:
+                data = request.get_json() or {}
+                password = data.get("admin_password") or data.get("password")
+            except:
+                pass
+
+        # 3. 尝试从表单获取
+        if not password:
+            password = request.form.get("admin_password") or request.form.get(
+                "password"
+            )
+
+        # 检查是否设置了密码
+        stored_password = getattr(public_client, "admin_password", None)
+
+        if not stored_password:
+            # 没有设置密码，允许操作（但记录警告）
+            logger.warning(
+                f"[SECURITY] 远程访问未设置密码: {remote_addr} -> {request.endpoint}"
+            )
+            return f(*args, **kwargs)
+
+        # 验证密码
+        if password == stored_password:
+            return f(*args, **kwargs)
+        else:
+            logger.warning(
+                f"[SECURITY] 远程访问密码错误: {remote_addr} -> {request.endpoint}"
+            )
+            return jsonify(
+                {"success": False, "message": "需要密码验证", "require_password": True}
+            ), 403
+
+    return decorated_function
+
+
+def is_local_request():
+    """检查是否为本地请求"""
+    remote_addr = request.remote_addr
+    return remote_addr in ["127.0.0.1", "localhost"]
+
+
 def post_with_retry(session, url, json_data, max_retries=3, timeout=10):
     """带重试的POST请求"""
     for attempt in range(max_retries):
@@ -252,11 +323,15 @@ class PublicClient:
         self.is_paid = USER_CONFIG.get("is_paid", False)
         self.subdomain = USER_CONFIG.get("subdomain")
         self.public_url = USER_CONFIG.get("public_url")
-        self.avatar_url = USER_CONFIG.get("avatar_url")
+        self.avatar_url = USER_CONFIG.get("avatar_url") or "/static/images/default-avatar.png"
         self.client_version = USER_CONFIG.get("client_version", "2.0.0")
+        self.index_after_date = USER_CONFIG.get("index_after_date", "")
         self.tunnel_active = False
         self.client_port = CLIENT_CONFIG["local"]["port"]
         self.tunnel_process = None
+        self._pending_tunnel_credentials = None  # 待启动的 Tunnel 凭证
+        self._tunnel_credentials = None  # 保存凭证用于重启
+        self._last_tunnel_check = 0  # 上次检查 tunnel 的时间
         self.data_dir = USER_DATA_DIR
 
         self.session = requests.Session()
@@ -302,23 +377,38 @@ class PublicClient:
         USER_CONFIG["server_url"] = self.server_url
         USER_CONFIG["avatar_url"] = self.avatar_url
         USER_CONFIG["client_version"] = self.client_version
+        USER_CONFIG["index_after_date"] = getattr(self, "index_after_date", "")
         save_user_config()
 
     def signed_request(self, method, url, **kwargs):
         """发送带签名的请求"""
+        from urllib.parse import urlparse, urlencode, quote
+
         headers = kwargs.pop("headers", {})
         json_data = kwargs.get("json")
         params = kwargs.get("params")
         body = json.dumps(json_data) if json_data else ""
 
         if self.client_id and self.secret_key:
-            # 构建完整路径（包括 query string）
+            # 构建完整路径（包括 query string），确保 URL 编码一致
             path = url.replace(self.server_url, "")
-            if params:
-                from urllib.parse import urlencode
+            
+            # 解析 URL 并重新编码，确保签名和服务端一致
+            parsed = urlparse(path)
+            if parsed.query:
+                # 重新编码 query string，确保中文字符被正确编码
+                query_params = {}
+                for param in parsed.query.split('&'):
+                    if '=' in param:
+                        key, value = param.split('=', 1)
+                        query_params[key] = value
+                # 使用 quote 对值进行编码，保持与服务端一致
+                query_string = '&'.join(f"{k}={quote(str(v), safe='')}" for k, v in query_params.items())
+                path = f"{parsed.path}?{query_string}"
+            elif params:
                 query_string = urlencode(params)
                 path = f"{path}?{query_string}"
-            
+
             add_signature_headers(
                 headers, self.client_id, self.secret_key, method, path, body
             )
@@ -374,8 +464,16 @@ class PublicClient:
 
                 def async_scan():
                     try:
-                        result = pm.scan_existing_photos()
-                        print(f"✅ 索引更新完成: 新增 {result.get('new', 0)} 个文件")
+                        # 读取日期范围设置（从配置文件读取）
+                        index_after = USER_CONFIG.get("index_after_date", "") or None
+                        print(
+                            f"[索引] 配置中的index_after_date: '{USER_CONFIG.get('index_after_date')}'"
+                        )
+                        print(f"[索引] 传递给scan的start_date: '{index_after}'")
+                        result = pm.scan_existing_photos(start_date=index_after)
+                        print(
+                            f"✅ 索引更新完成: 新增 {result.get('new', 0)} 个文件, 总计 {result.get('total', 0)} 个"
+                        )
                     except Exception as e:
                         print(f"⚠️ 索引更新失败: {e}")
 
@@ -453,21 +551,27 @@ class PublicClient:
             print("🔍 开始建立照片索引，这可能需要一些时间...")
             result = pm.scan_existing_photos()
             print(f"✅ 索引建立完成: 共 {result.get('total', 0)} 个文件")
-            
+
             # 清理日历缓存
             self.clear_calendar_cache()
-            
+
             return {"success": True, "result": result}
         except Exception as e:
             print(f"⚠️ 建立照片索引失败: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def clear_calendar_cache(self):
         """清理日历缓存"""
         try:
             from flask import current_app as app
+
             # 清理所有以 _photo_dates_cache_ 开头的属性
-            attrs_to_delete = [attr for attr in dir(app) if attr.startswith('_photo_dates_cache_') or attr.startswith('_photo_dates_cache_time_')]
+            attrs_to_delete = [
+                attr
+                for attr in dir(app)
+                if attr.startswith("_photo_dates_cache_")
+                or attr.startswith("_photo_dates_cache_time_")
+            ]
             for attr in attrs_to_delete:
                 delattr(app, attr)
             print(f"[Calendar] 清理了 {len(attrs_to_delete)} 个缓存项")
@@ -1184,10 +1288,27 @@ class PublicClient:
                 self.connect_to_public_server()
             else:
                 print(f"❌ HTTP连接失败: {response.status_code}")
-                print("🏠 切换到本地模式运行")
+                self._enter_local_mode(f"HTTP连接失败 ({response.status_code})")
         except Exception as e:
             print(f"❌ HTTP连接错误: {e}")
-            print("🏠 切换到本地模式运行")
+            self._enter_local_mode(f"HTTP连接错误: {e}")
+
+    def _enter_local_mode(self, reason="服务端不可用"):
+        """进入本地模式"""
+        print("=" * 50)
+        print(f"⚠️  无法连接到服务端: {reason}")
+        print("🏠 已切换到【本地模式】运行")
+        print("   - 数据仅保存在本地，不会同步到云端")
+        print("   - AI 功能将不可用")
+        print("   - 请检查网络连接或稍后重试")
+        print("=" * 50)
+        logger.warning(f"进入本地模式: {reason}")
+        if not self.client_id:
+            self.client_id = f"local_{uuid.uuid4().hex[:12]}"
+            self.save_config()
+            print(f"📱 已生成本地客户端ID: {self.client_id}")
+        global LOCAL_MODE
+        LOCAL_MODE = True
 
     def register_client(self):
         """注册客户端"""
@@ -1215,10 +1336,10 @@ class PublicClient:
             if response.status_code == 200:
                 data = response.json()
                 if data.get("success"):
-                    self.client_id = data.get("client_id")
+                    self.client_id = data.get("client_id") or ""
                     self.is_paid = data.get("is_paid", False)
-                    self.registered_at = data.get("registered_at")
-                    secret_key = data.get("secret_key")
+                    self.registered_at = data.get("registered_at") or datetime.now().isoformat()
+                    secret_key = data.get("secret_key") or ""
                     if secret_key:
                         USER_CONFIG["secret_key"] = secret_key
                         self.secret_key = secret_key
@@ -1253,7 +1374,7 @@ class PublicClient:
         except Exception as e:
             print(f"❌ 注册错误: {e}")
             logger.error(f"注册错误: {e}")
-            print("🏠 切换到本地模式运行")
+            self._enter_local_mode(f"注册失败: {e}")
 
     def fetch_subdomain(self):
         """获取子域名并启动 Cloudflare Tunnel"""
@@ -1275,8 +1396,8 @@ class PublicClient:
                 data = response.json()
                 if data.get("success"):
                     client_info = data.get("client_info", {})
-                    self.subdomain = client_info.get("subdomain")
-                    self.public_url = client_info.get("public_url")
+                    self.subdomain = client_info.get("subdomain") or ""
+                    self.public_url = client_info.get("public_url") or ""
 
                     print(f"🎉 子域名获取成功!")
                     print(f"🌐 您的子域名: {self.subdomain}")
@@ -1298,49 +1419,139 @@ class PublicClient:
             print(f"⚠ 获取子域名错误: {e}")
             logger.error(f"获取子域名错误: {e}")
 
+    def fetch_subdomain_only(self):
+        """获取子域名信息但不启动 Tunnel（Tunnel 在 Flask 启动后启动）"""
+        if not self.client_id:
+            return
+
+        print("🔑 获取子域名...")
+        logger.info("获取子域名...")
+
+        try:
+            response = self.signed_request(
+                "POST",
+                f"{self.server_url}/czrz/cloudflare/credentials",
+                json={"client_id": self.client_id},
+                timeout=15,
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    client_info = data.get("client_info", {})
+                    self.subdomain = client_info.get("subdomain") or ""
+                    self.public_url = client_info.get("public_url") or ""
+
+                    print(f"🎉 子域名获取成功!")
+                    print(f"🌐 您的子域名: {self.subdomain}")
+                    logger.info(f"子域名获取成功: {self.subdomain}")
+
+                    # 保存凭证，稍后启动 Tunnel
+                    credentials = data.get("credentials", {})
+                    if credentials:
+                        self._pending_tunnel_credentials = credentials
+                        print("⏳ Tunnel 将在服务启动后自动启动...")
+                else:
+                    print(f"⚠ 获取子域名失败: {data.get('message')}")
+                    logger.warning(f"获取子域名失败: {data.get('message')}")
+            else:
+                print(f"⚠ 子域名请求失败: {response.status_code}")
+                logger.warning(f"子域名请求失败: {response.status_code}")
+                # 如果是 5xx 错误，可能是服务端 tunnel 还没就绪，稍后重试
+                if response.status_code >= 500:
+                    self._retry_fetch_subdomain()
+
+        except Exception as e:
+            print(f"⚠ 获取子域名错误: {e}")
+            logger.error(f"获取子域名错误: {e}")
+
+    def _retry_fetch_subdomain(self):
+        """在后台线程中延迟重试获取子域名"""
+        def retry_task():
+            import time
+            max_retries = 3
+            for i in range(max_retries):
+                time.sleep(5)  # 等待 5 秒后重试
+                print(f"🔄 重试获取子域名 ({i+1}/{max_retries})...")
+                try:
+                    response = self.signed_request(
+                        "POST",
+                        f"{self.server_url}/czrz/cloudflare/credentials",
+                        json={"client_id": self.client_id},
+                        timeout=15,
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("success"):
+                            client_info = data.get("client_info", {})
+                            self.subdomain = client_info.get("subdomain") or ""
+                            self.public_url = client_info.get("public_url") or ""
+                            print(f"🎉 子域名获取成功!")
+                            logger.info(f"子域名获取成功: {self.subdomain}")
+                            # 启动 Tunnel
+                            credentials = data.get("credentials", {})
+                            if credentials:
+                                self.start_cloudflare_tunnel(credentials)
+                            return
+                except Exception as e:
+                    print(f"⚠ 重试失败: {e}")
+            print(f"⚠ 获取子域名重试 {max_retries} 次后仍失败")
+
+        import threading
+        thread = threading.Thread(target=retry_task, daemon=True)
+        thread.start()
+
     def start_cloudflare_tunnel(self, credentials):
-        """启动 Cloudflare Tunnel"""
+        """启动 Cloudflare Tunnel（使用配置文件方式）"""
         import subprocess
         import platform
 
         try:
-            # 确定系统类型（提前定义）
             system = platform.system()
-
-            # 保存凭证到正确位置（cloudflared 期望的位置）
             tunnel_id = credentials.get("TunnelID", "")
+            if not tunnel_id:
+                print("⚠ 凭证中缺少 TunnelID")
+                return
 
-            # 确定凭证目录
+            if not self.subdomain:
+                print("⚠ 缺少子域名信息，无法启动 Tunnel")
+                return
+
             if system == "Windows":
                 creds_dir = Path(os.environ.get("USERPROFILE", ".")) / ".cloudflared"
             else:
                 creds_dir = Path.home() / ".cloudflared"
 
-            # 创建目录（如果不存在）
             creds_dir.mkdir(parents=True, exist_ok=True)
-
-            # 凭证文件名必须是 <tunnel-id>.json
             creds_file = creds_dir / f"{tunnel_id}.json"
 
             with open(creds_file, "w", encoding="utf-8") as f:
                 json.dump(credentials, f, indent=2)
 
-            # 确定 cloudflared 可执行文件名
+            config_content = f"""tunnel: {tunnel_id}
+credentials-file: {creds_file}
+
+ingress:
+  - hostname: {self.subdomain}
+    service: http://localhost:{self.client_port}
+  - service: http_status:404
+"""
+            config_file = self.data_dir / "tunnel_config.yml"
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write(config_content)
+
             if system == "Windows":
                 exe_name = "cloudflare.exe"
             else:
                 exe_name = "cloudflared"
 
-            # 查找 cloudflared 可执行文件（支持 PyInstaller 打包）
             exe_paths = [
-                Path(__file__).parent / exe_name,  # 同级目录
-                Path(sys._MEIPASS) / exe_name
-                if hasattr(sys, "_MEIPASS")
-                else None,  # PyInstaller 临时目录
+                Path(__file__).parent / exe_name,
+                Path(sys._MEIPASS) / exe_name if hasattr(sys, "_MEIPASS") else None,
                 Path(__file__).parent / "cloudflared" / exe_name,
                 Path(exe_name),
             ]
-            exe_paths = [p for p in exe_paths if p is not None]  # 过滤 None
+            exe_paths = [p for p in exe_paths if p is not None]
 
             exe_path = None
             for path in exe_paths:
@@ -1352,33 +1563,24 @@ class PublicClient:
                 print(f"⚠ 未找到 {exe_name}，请确保它在程序目录中")
                 return
 
-            # 构建 tunnel 启动命令
-            # 使用 tunnel 模式运行
-            tunnel_id = credentials.get("TunnelID", "")
-            if not tunnel_id:
-                print("⚠ 凭证中缺少 TunnelID")
-                return
-
             cmd = [
                 str(exe_path),
                 "tunnel",
+                "--config",
+                str(config_file),
                 "run",
-                "--url",
-                f"http://localhost:{self.client_port}",
-                "--credentials-file",
-                str(creds_file),
-                tunnel_id,
             ]
 
             print(f"🚀 启动 Cloudflare Tunnel...")
             print(f"   本地地址: http://localhost:{self.client_port}")
             print(f"   公网地址: {self.public_url}")
+            print(f"   配置文件: {config_file}")
 
-            # 后台启动 tunnel，保存进程引用
             if system == "Windows":
+                # CREATE_NO_WINDOW = 0x08000000 - 隐藏窗口
                 self.tunnel_process = subprocess.Popen(
                     cmd,
-                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    creationflags=0x08000000,  # CREATE_NO_WINDOW
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -1392,6 +1594,8 @@ class PublicClient:
 
             print(f"✅ Cloudflare Tunnel 已启动 (PID: {self.tunnel_process.pid})")
             self.tunnel_active = True
+            self._tunnel_credentials = credentials  # 保存凭证用于重启
+            self._last_tunnel_check = time.time()
 
         except Exception as e:
             print(f"⚠ 启动 Tunnel 失败: {e}")
@@ -1600,9 +1804,35 @@ class PublicClient:
 
         def heartbeat_worker():
             print("💓 心跳循环已启动（每 5 分钟一次）")
+            last_restart_hour = -1  # 记录上次重启的小时
+
             while True:
                 try:
                     time.sleep(300)  # 5 分钟
+
+                    # 检查并重启 Tunnel（每天凌晨 3 点）
+                    current_hour = datetime.now().hour
+                    if current_hour == 3 and last_restart_hour != 3:
+                        if self._tunnel_credentials and self.tunnel_active:
+                            print("🔄 定时重启 Tunnel（凌晨 3 点）...")
+                            logger.info("定时重启 Tunnel")
+                            self.stop_cloudflare_tunnel()
+                            time.sleep(2)
+                            self.start_cloudflare_tunnel(self._tunnel_credentials)
+                        last_restart_hour = 3
+                    elif current_hour != 3:
+                        last_restart_hour = -1
+
+                    # 检查 Tunnel 进程是否存活
+                    if self.tunnel_active and self._tunnel_credentials:
+                        if self.tunnel_process and self.tunnel_process.poll() is not None:
+                            print("⚠ Tunnel 进程已退出，尝试重启...")
+                            logger.warning("Tunnel 进程已退出，尝试重启")
+                            self.tunnel_active = False
+                            time.sleep(2)
+                            self.start_cloudflare_tunnel(self._tunnel_credentials)
+
+                    # 发送心跳
                     if self.client_id:
                         success = self.send_heartbeat()
                         if success:
@@ -2006,10 +2236,28 @@ def index():
     try:
         featured_info = get_featured_photo_info(display_date, public_client.client_id)
         if featured_info:
-            featured_photo = featured_info.get("filename")
-            featured_photo_hash = featured_info.get("file_hash")
+            featured_photo = featured_info.get("filename") or ""
+            featured_photo_hash = featured_info.get("file_hash") or ""
     except Exception as e:
         print(f"[WARN] 获取精选照片失败: {e}")
+
+    # 获取天气数据
+    weather = None
+    is_today = display_date == datetime.now().strftime("%Y-%m-%d")
+    if is_today:
+        # 今天：从服务端获取实时天气
+        try:
+            user_city = getattr(public_client, "user_city", "") or "上海"
+            weather_url = f"{public_client.server_url}/czrz/baby/log?city={user_city}&date={display_date}"
+            if public_client.client_id:
+                weather_url += f"&client_id={public_client.client_id}"
+            
+            weather_resp = public_client.signed_request("GET", weather_url, timeout=5)
+            if weather_resp.status_code == 200:
+                weather_data = weather_resp.json()
+                weather = weather_data.get("weather") or {}
+        except Exception as e:
+            print(f"[WARN] 获取天气失败: {e}")
 
     return render_template(
         "index.html",
@@ -2036,6 +2284,8 @@ def index():
         default_is_video=default_is_video,
         featured_photo=featured_photo,
         featured_photo_hash=featured_photo_hash,
+        index_after_date=getattr(public_client, "index_after_date", ""),
+        weather=weather,
     )
 
 
@@ -2101,6 +2351,10 @@ def api_setup():
         public_client.log_style = log_style if log_style else "简练"
         public_client.custom_style = custom_style
         public_client.media_folders = valid_folders
+
+        index_after_date = data.get("index_after_date", "").strip()
+        if index_after_date:
+            public_client.index_after_date = index_after_date
 
         if admin_password:
             public_client.admin_password = admin_password
@@ -2750,6 +3004,7 @@ def get_voice(filename):
 
 
 @app.route("/api/photo/delete", methods=["POST"])
+@require_local_or_password
 def delete_photo():
     """删除照片 - 从索引中移除（不删除实际文件）"""
     try:
@@ -2818,6 +3073,7 @@ def get_photo_detail(filename):
 
 
 @app.route("/upload", methods=["POST"])
+@require_local_or_password
 def upload_photos():
     """上传照片到本地文件夹"""
     try:
@@ -2894,6 +3150,26 @@ def photo_folder_settings():
         )
 
     elif request.method == "POST":
+        # POST修改设置需要权限检查
+        remote_addr = request.remote_addr
+        if remote_addr not in ["127.0.0.1", "localhost"]:
+            # 远程连接需要验证密码
+            password = None
+            password = request.headers.get("X-Admin-Password")
+            if not password and request.is_json:
+                try:
+                    data = request.get_json() or {}
+                    password = data.get("admin_password") or data.get("password")
+                except:
+                    pass
+            if not password:
+                password = request.form.get("admin_password") or request.form.get(
+                    "password"
+                )
+            # 验证密码
+            if not public_client._verify_admin_password(password):
+                return jsonify({"success": False, "message": "需要管理员密码"}), 403
+
         # 修改设置
         data = request.get_json()
         new_folder = data.get("photo_folder", "").strip()
@@ -2925,6 +3201,7 @@ def photo_folder_settings():
 
 
 @app.route("/api/settings/basic", methods=["POST"])
+@require_local_or_password
 def save_basic_settings():
     """保存基本设置"""
     try:
@@ -2961,6 +3238,7 @@ def save_basic_settings():
 
 
 @app.route("/api/settings/log-style", methods=["POST"])
+@require_local_or_password
 def save_log_style():
     """保存日志风格设置"""
     try:
@@ -2986,6 +3264,7 @@ def save_log_style():
 
 
 @app.route("/api/settings/avatar", methods=["POST"])
+@require_local_or_password
 def upload_avatar():
     """上传头像"""
     try:
@@ -3122,14 +3401,18 @@ def scan_progress_callback(current, total, message):
     scan_progress["message"] = message
 
 
-def run_scan_in_background(media_folders, data_dir):
+def run_scan_in_background(media_folders, data_dir, start_date=None, end_date=None):
     """后台扫描线程"""
     global scan_progress
     from photo_manager import PhotoManager
 
     try:
         pm = PhotoManager(media_folders, data_dir)
-        result = pm.scan_existing_photos(progress_callback=scan_progress_callback)
+        result = pm.scan_existing_photos(
+            progress_callback=scan_progress_callback,
+            start_date=start_date,
+            end_date=end_date,
+        )
         scan_progress["result"] = result
         scan_progress["message"] = (
             f"扫描完成：新增 {result['new']} 个，已有 {result['existing']} 个，总计 {result['total']} 个"
@@ -3142,6 +3425,7 @@ def run_scan_in_background(media_folders, data_dir):
 
 
 @app.route("/api/photos/scan", methods=["POST"])
+@require_local_or_password
 def scan_photos():
     """手动触发照片扫描（后台执行）"""
     global scan_progress
@@ -3152,6 +3436,15 @@ def scan_photos():
     media_folders = getattr(public_client, "media_folders", [])
     if not media_folders:
         return jsonify({"success": False, "message": "未配置媒体文件夹"})
+
+    # 获取起始日期参数
+    data = request.get_json() or {}
+    start_date = data.get("start_date", "")
+
+    # 保存日期范围设置到配置
+    if start_date:
+        public_client.index_after_date = start_date
+        public_client.save_config()
 
     scan_progress = {
         "running": True,
@@ -3164,7 +3457,8 @@ def scan_photos():
     import threading
 
     thread = threading.Thread(
-        target=run_scan_in_background, args=(media_folders, public_client.data_dir)
+        target=run_scan_in_background,
+        args=(media_folders, public_client.data_dir, start_date or None, None),
     )
     thread.daemon = True
     thread.start()
@@ -3200,23 +3494,26 @@ def get_calendar_data(month):
         if media_folders:
             cache_key = f"_photo_dates_cache_{month}"
             cache_time_key = f"_photo_dates_cache_time_{month}"
-            
+
             # 检查缓存是否有效（5分钟内）
             cache_valid = False
             if hasattr(app, cache_key) and hasattr(app, cache_time_key):
-                cache_age = (datetime.now() - getattr(app, cache_time_key)).total_seconds()
+                cache_age = (
+                    datetime.now() - getattr(app, cache_time_key)
+                ).total_seconds()
                 if cache_age < 300:  # 5分钟缓存
                     cache_valid = True
                     photo_dates = getattr(app, cache_key)
-            
+
             if not cache_valid:
                 # 缓存失效，重新加载
                 from photo_manager import PhotoManager
+
                 pm = PhotoManager(media_folders, public_client.data_dir)
-                
+
                 # 使用优化的按月查询方法
                 photo_dates = set(pm.get_dates_by_month(year, month_num))
-                
+
                 # 更新缓存
                 setattr(app, cache_key, photo_dates)
                 setattr(app, cache_time_key, datetime.now())
@@ -3264,7 +3561,7 @@ def get_date_details(date):
         from datetime import datetime, timedelta
 
         is_today = date == datetime.now().strftime("%Y-%m-%d")
-        
+
         # 初始化精选照片变量
         featured_photo = None
         featured_photo_hash = None
@@ -3291,10 +3588,12 @@ def get_date_details(date):
         # 获取精选照片信息（从服务端获取）
         try:
             featured_info = get_featured_photo_info(date, public_client.client_id)
-            print(f"[DEBUG] 获取精选照片: date={date}, client_id={public_client.client_id}, info={featured_info}")
+            print(
+                f"[DEBUG] 获取精选照片: date={date}, client_id={public_client.client_id}, info={featured_info}"
+            )
             if featured_info:
-                featured_photo = featured_info.get("filename")
-                featured_photo_hash = featured_info.get("file_hash")
+                featured_photo = featured_info.get("filename") or ""
+                featured_photo_hash = featured_info.get("file_hash") or ""
         except Exception as e:
             print(f"[WARN] 获取精选照片失败: {e}")
 
@@ -3320,14 +3619,18 @@ def get_date_details(date):
             log_resp = public_client.signed_request("GET", log_url, timeout=10)
             if log_resp.status_code == 200:
                 resp_data = log_resp.json()
-                if resp_data.get("success") and resp_data.get("log"):
-                    response_data["log"] = {
-                        "content": resp_data.get("log", ""),
-                        "generated_at": resp_data.get(
-                            "generated_at", datetime.now().isoformat()
-                        ),
-                    }
-                    # 天气、农历等信息
+                if resp_data.get("success"):
+                    # 日志内容
+                    if resp_data.get("log"):
+                        response_data["log"] = {
+                            "content": resp_data.get("log", ""),
+                            "generated_at": resp_data.get(
+                                "generated_at", datetime.now().isoformat()
+                            ),
+                        }
+                        response_data["has_content"] = True
+                    
+                    # 天气、农历等信息（即使没有日志也返回）
                     if resp_data.get("weather"):
                         response_data["weather"] = resp_data.get("weather")
                     if resp_data.get("lunar"):
@@ -3336,7 +3639,6 @@ def get_date_details(date):
                         response_data["weekday"] = resp_data.get("weekday")
                     if resp_data.get("news"):
                         response_data["news"] = resp_data.get("news")
-                    response_data["has_content"] = True
         except Exception as e:
             print(f"[WARN] 从服务端获取日志失败: {e}")
 
@@ -3364,6 +3666,7 @@ def get_date_details(date):
 
 
 @app.route("/api/log/generate", methods=["POST"])
+@require_local_or_password
 def api_generate_log():
     """生成日志API - 支持照片和用户输入"""
     try:
@@ -3427,6 +3730,7 @@ def api_generate_log():
 
 
 @app.route("/api/log/save", methods=["POST"])
+@require_local_or_password
 def api_save_log():
     """保存编辑后的日志到服务端"""
     try:
@@ -3495,6 +3799,26 @@ def api_save_log():
 def api_photo_tag():
     """照片标签管理，上报服务端存储"""
     try:
+        # POST/DELETE操作需要权限检查
+        remote_addr = request.remote_addr
+        if remote_addr not in ["127.0.0.1", "localhost"]:
+            # 远程连接需要验证密码
+            password = None
+            password = request.headers.get("X-Admin-Password")
+            if not password and request.is_json:
+                try:
+                    data = request.get_json() or {}
+                    password = data.get("admin_password") or data.get("password")
+                except:
+                    pass
+            if not password:
+                password = request.form.get("admin_password") or request.form.get(
+                    "password"
+                )
+            # 验证密码
+            if not public_client._verify_admin_password(password):
+                return jsonify({"success": False, "message": "需要管理员密码"}), 403
+
         if request.method == "POST":
             data = request.get_json()
             filename = data.get("filename")
@@ -3647,6 +3971,7 @@ def api_get_notifications():
 
 
 @app.route("/api/feedback", methods=["POST"])
+@require_local_or_password
 def api_submit_feedback():
     """提交用户反馈"""
     try:
@@ -3701,6 +4026,7 @@ def api_submit_feedback():
 
 
 @app.route("/api/notifications/mark-read", methods=["POST"])
+@require_local_or_password
 def api_mark_notification_read():
     """标记通知为已读"""
     try:
@@ -4310,6 +4636,7 @@ def get_theme():
 
 
 @app.route("/api/theme/update", methods=["POST"])
+@require_local_or_password
 def update_theme():
     """根据用户描述更新主题"""
     try:
@@ -4366,6 +4693,7 @@ def get_preset_themes():
 
 
 @app.route("/api/theme/apply", methods=["POST"])
+@require_local_or_password
 def apply_preset_theme():
     """应用预设主题 - 新版本已废弃，请使用AI主题生成"""
     try:
@@ -4381,6 +4709,7 @@ def apply_preset_theme():
 
 
 @app.route("/api/theme/reset", methods=["POST"])
+@require_local_or_password
 def reset_theme():
     """重置为默认主题"""
     try:
@@ -4434,6 +4763,7 @@ public_client = PublicClient(auto_connect=False)
 
 
 @app.route("/message", methods=["POST"])
+@require_local_or_password
 def post_message():
     """提交留言（文字或语音）- 转发到服务端，支持角色选择"""
     try:
@@ -4497,6 +4827,7 @@ def get_messages(date):
 
 
 @app.route("/api/messages/<message_id>", methods=["DELETE"])
+@require_local_or_password
 def delete_message(message_id):
     """删除留言 - 发送到服务端"""
     try:
@@ -4561,6 +4892,10 @@ def featured_photo_api():
                 timeout=10,
             )
         else:
+            # POST操作需要权限验证
+            check_result = check_local_or_password()
+            if check_result:
+                return check_result
             data = request.get_json()
             response = public_client.signed_request(
                 "POST",
@@ -4574,6 +4909,7 @@ def featured_photo_api():
 
 
 @app.route("/api/photos/best", methods=["POST"])
+@require_local_or_password
 def select_best_photo_api():
     """选择最佳照片"""
     try:
@@ -4624,6 +4960,7 @@ def select_best_photo_api():
 
 
 @app.route("/api/photos/cleanup", methods=["POST"])
+@require_local_or_password
 def cleanup_photos_api():
     """清理功能已合并到AI精选，提示用户使用精选功能"""
     return jsonify(
@@ -4636,6 +4973,7 @@ def cleanup_photos_api():
 
 
 @app.route("/api/photos/remove-from-index", methods=["POST"])
+@require_local_or_password
 def remove_photos_from_index_api():
     """从索引中移除指定照片（不删除原文件）"""
     try:
@@ -4675,6 +5013,7 @@ def remove_photos_from_index_api():
 
 
 @app.route("/api/ai/generate-log", methods=["POST"])
+@require_local_or_password
 def proxy_ai_generate_log():
     """
     AI生成日志 - 统一流程
@@ -4729,6 +5068,18 @@ def proxy_ai_generate_log():
                         photo_paths[:20], select_n=1, child_id=child_id
                     )
                     print(f"[TIME] AI分析耗时: {time.time() - step_start:.2f}s")
+
+                    # 【调试】输出 AI 返回结果
+                    print(f"[DEBUG] AI 返回结果:")
+                    print(f"  - selected: {len(ai_result.get('selected', []))}张")
+                    print(f"  - photos 字段：{len(ai_result.get('photos', {}))}条")
+                    print(f"  - blurry: {len(ai_result.get('blurry', []))}张")
+                    print(f"  - no_baby: {len(ai_result.get('no_baby', []))}张")
+                    print(f"  - duplicates: {len(ai_result.get('duplicates', []))}组")
+                    if ai_result.get("photos"):
+                        print(
+                            f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                        )
 
                     blurry_count = len(ai_result.get("blurry", []))
                     no_baby_count = len(ai_result.get("no_baby", []))
@@ -4879,6 +5230,7 @@ def proxy_ai_generate_log():
 
 
 @app.route("/api/photo/select-best", methods=["POST"])
+@require_local_or_password
 def select_best_photo_local():
     """本地选择精选照片（同时返回模糊和重复照片列表）"""
     try:
@@ -4948,6 +5300,7 @@ def select_best_photo_local():
 
 
 @app.route("/api/ai/ask", methods=["POST"])
+@require_local_or_password
 def ai_ask():
     """向本地健康AI服务提问"""
     try:
@@ -5027,6 +5380,7 @@ def ai_ask():
 
 
 @app.route("/api/ai/feedback", methods=["POST"])
+@require_local_or_password
 def ai_feedback():
     """提交AI回答反馈"""
     try:
@@ -5229,6 +5583,32 @@ def ai_feedback_proxy(child_id):
                 timeout=30,
             )
         else:
+            # POST请求需要权限验证
+            remote_addr = request.remote_addr
+            if remote_addr not in ["127.0.0.1", "localhost"]:
+                # 远程连接，需要验证密码
+                password = request.headers.get("X-Admin-Password")
+                if not password and request.is_json:
+                    try:
+                        data = request.get_json() or {}
+                        password = data.get("admin_password") or data.get("password")
+                    except:
+                        pass
+                if not password:
+                    password = request.form.get("admin_password") or request.form.get(
+                        "password"
+                    )
+
+                stored_password = getattr(public_client, "admin_password", None)
+                if stored_password and password != stored_password:
+                    return jsonify(
+                        {
+                            "success": False,
+                            "message": "需要密码验证",
+                            "require_password": True,
+                        }
+                    ), 403
+
             data = request.get_json()
             response = public_client.signed_request(
                 "POST",
@@ -5249,6 +5629,7 @@ def ai_feedback_proxy(child_id):
 
 
 @app.route("/api/ai/children/<child_id>/feedback/<int:feedback_id>", methods=["DELETE"])
+@require_local_or_password
 def ai_delete_feedback(child_id, feedback_id):
     """删除反馈"""
     server_url = USER_CONFIG.get("server_url", "")
@@ -5275,6 +5656,7 @@ def ai_delete_feedback(child_id, feedback_id):
 
 
 @app.route("/api/ai/children/<child_id>/tags/<int:tag_id>/reject", methods=["POST"])
+@require_local_or_password
 def ai_reject_tag(child_id, tag_id):
     """否决标签"""
     server_url = USER_CONFIG.get("server_url", "")
@@ -5300,6 +5682,7 @@ def ai_reject_tag(child_id, tag_id):
 
 
 @app.route("/api/ai/children/<child_id>/tags/<int:tag_id>/restore", methods=["POST"])
+@require_local_or_password
 def ai_restore_tag(child_id, tag_id):
     """恢复标签"""
     server_url = USER_CONFIG.get("server_url", "")
@@ -5325,6 +5708,7 @@ def ai_restore_tag(child_id, tag_id):
 
 
 @app.route("/api/ai/sync/batch", methods=["POST"])
+@require_local_or_password
 def ai_batch_sync():
     """批量同步历史数据到AI系统"""
     try:
@@ -5442,6 +5826,7 @@ AI_REVIEW_TASKS = {}
 
 
 @app.route("/api/ai/auto-review", methods=["POST"])
+@require_local_or_password
 def start_ai_auto_review():
     """启动AI智能回顾任务"""
     import threading
@@ -5469,6 +5854,8 @@ def start_ai_auto_review():
             "status": "running",
             "processed": 0,
             "total": 0,
+            "success_count": 0,
+            "skipped": 0,
             "message": "正在扫描照片...",
             "details": [],
             "completed": False,
@@ -5526,10 +5913,24 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
 
         today = datetime.now().strftime("%Y-%m-%d")
 
-        # 过滤无效日期和未来日期，按日期倒序处理（最近优先）
+        # 获取索引日期过滤设置（从配置文件读取，确保重启后生效）
+        index_after = USER_CONFIG.get("index_after_date", "") or ""
+        print(f"[AI回顾] index_after_date = '{index_after}'")
+
+        # 过滤无效日期、未来日期和索引设置之前的日期，按日期倒序处理（最近优先）
         dates_to_process = sorted(
-            [d for d in all_dates if d < today and is_valid_date(d)], reverse=True
+            [
+                d
+                for d in all_dates
+                if d < today
+                and is_valid_date(d)
+                and (not index_after or d >= index_after)
+            ],
+            reverse=True,
         )
+
+        if index_after:
+            print(f"[AI回顾] 索引日期过滤: 只处理 {index_after} 之后的日期")
 
         AI_REVIEW_TASKS[task_id]["total"] = len(dates_to_process)
         AI_REVIEW_TASKS[task_id]["message"] = f"发现 {len(dates_to_process)} 天需要处理"
@@ -5555,8 +5956,15 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
         for i, date in enumerate(dates_to_process):
             try:
                 AI_REVIEW_TASKS[task_id]["message"] = (
-                    f"正在处理 {date} ({i + 1}/{len(dates_to_process)})"
+                    f"正在处理 {date} ({i + 1}/{len(dates_to_process)})，"
+                    f"已处理 {success_count} 天，已跳过 {skipped_count} 天"
                 )
+
+                # 【调试】输出当前处理的日期
+                print(f"\n{'=' * 60}")
+                print(f"[DEBUG] 处理日期：{date}")
+                print(f"[DEBUG] 强制模式：{force}")
+                print(f"{'=' * 60}")
 
                 # 检查是否已有数据（非强制模式下跳过）
                 if not force:
@@ -5564,14 +5972,18 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                     has_log = check_has_log(date, child_id)
                     if has_photo and has_log:
                         skipped_count += 1
+                        print(f"[DEBUG] 跳过 {date}：已有精选照片和日志")
+                        print(f"  - has_photo={has_photo}, has_log={has_log}")
                         AI_REVIEW_TASKS[task_id]["details"].append(
                             {"date": date, "success": True, "message": "已有数据，跳过"}
                         )
+                        AI_REVIEW_TASKS[task_id]["skipped"] = skipped_count
                         AI_REVIEW_TASKS[task_id]["processed"] = i + 1
                         continue
 
                 photos = pm.get_photos_by_date(date)
                 if not photos:
+                    print(f"[DEBUG] {date} 无照片数据")
                     AI_REVIEW_TASKS[task_id]["details"].append(
                         {"date": date, "success": False, "message": "无照片"}
                     )
@@ -5604,6 +6016,18 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                     ai_result = ai_select(
                         photo_paths[:20], select_n=1, child_id=child_id
                     )
+
+                    # 【调试】输出 AI 返回结果
+                    print(f"[DEBUG] AI 返回结果:")
+                    print(f"  - selected: {len(ai_result.get('selected', []))}张")
+                    print(f"  - photos 字段：{len(ai_result.get('photos', {}))}条")
+                    print(f"  - blurry: {len(ai_result.get('blurry', []))}张")
+                    print(f"  - no_baby: {len(ai_result.get('no_baby', []))}张")
+                    print(f"  - duplicates: {len(ai_result.get('duplicates', []))}组")
+                    if ai_result.get("photos"):
+                        print(
+                            f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                        )
 
                     blurry_count = len(ai_result.get("blurry", []))
                     no_baby_count = len(ai_result.get("no_baby", []))
@@ -5644,6 +6068,14 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                         client_id=child_id,
                         date=date,
                         ai_result=ai_result,
+                    )
+                    # 【调试】输出分析结果
+                    print(f"[DEBUG] analyze_all_photos 结果:")
+                    print(
+                        f"  - valid_photos: {len(analysis_result.get('photos', []))}张"
+                    )
+                    print(
+                        f"  - combined_summary: {analysis_result.get('combined_summary', '')[:100]}"
                     )
                     valid_count = len(analysis_result.get("photos", []))
                     if valid_count > 0:
@@ -5797,6 +6229,13 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                         date, combined_desc, child_id, log_style, custom_style
                     )
 
+                    # 【调试】输出日志生成结果
+                    print(f"[DEBUG] generate_ai_log 结果:")
+                    print(f"  - 返回内容长度：{len(log_content) if log_content else 0}")
+                    print(
+                        f"  - 内容前 100 字：{log_content[:100] if log_content else 'None'}"
+                    )
+
                     if log_content:
                         featured_desc = (
                             featured_info.get("ai_description")
@@ -5822,6 +6261,10 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                     {"date": date, "success": False, "message": str(e)[:50]}
                 )
 
+            if needs_sync:
+                success_count += 1
+            AI_REVIEW_TASKS[task_id]["success_count"] = success_count
+            AI_REVIEW_TASKS[task_id]["skipped"] = skipped_count
             AI_REVIEW_TASKS[task_id]["processed"] = i + 1
 
         AI_REVIEW_TASKS[task_id]["completed"] = True
@@ -5866,14 +6309,18 @@ def get_featured_photo_info(date: str, client_id: str) -> dict:
             params={"client_id": client_id, "date": date},
             timeout=10,
         )
-        print(f"[DEBUG] get_featured_photo_info: status={resp.status_code}, url={resp.url}")
+        print(
+            f"[DEBUG] get_featured_photo_info: status={resp.status_code}, url={resp.url}"
+        )
         if resp.status_code == 200:
             result = resp.json()
             print(f"[DEBUG] get_featured_photo_info: result={result}")
             if result.get("success") and result.get("photo"):
                 return result["photo"]
         else:
-            print(f"[DEBUG] get_featured_photo_info: error status={resp.status_code}, text={resp.text[:200]}")
+            print(
+                f"[DEBUG] get_featured_photo_info: error status={resp.status_code}, text={resp.text[:200]}"
+            )
     except Exception as e:
         print(f"[DEBUG] get_featured_photo_info: exception={e}")
     return None
@@ -6091,7 +6538,9 @@ def api_today_news():
         if resp.status_code == 200:
             return jsonify(resp.json())
         else:
-            return jsonify({"success": False, "message": f"服务端错误: {resp.status_code}"})
+            return jsonify(
+                {"success": False, "message": f"服务端错误: {resp.status_code}"}
+            )
     except Exception as e:
         print(f"[新闻] 获取今日新闻失败: {e}")
         return jsonify({"success": False, "message": str(e)})
@@ -6339,6 +6788,21 @@ def compression_settings():
             return jsonify({"success": True, "data": settings})
 
         else:
+            # POST请求需要权限验证
+            remote_addr = request.remote_addr
+            if remote_addr not in ["127.0.0.1", "localhost"]:
+                password = None
+                password = request.headers.get("X-Admin-Password")
+                if not password and request.is_json:
+                    try:
+                        data = request.get_json() or {}
+                        password = data.get("admin_password") or data.get("password")
+                    except:
+                        pass
+                expected_password = USER_CONFIG.get("admin_password", "admin")
+                if not password or password != expected_password:
+                    return jsonify({"success": False, "message": "权限验证失败"})
+
             data = request.get_json()
             if data:
                 manager.save_settings(data)
@@ -6349,6 +6813,7 @@ def compression_settings():
 
 
 @app.route("/api/compression/update", methods=["POST"])
+@require_local_or_password
 def update_compression_settings():
     """更新压缩设置并重新生成压缩文件"""
     try:
@@ -6393,6 +6858,7 @@ def update_compression_settings():
 
 
 @app.route("/api/compression/regenerate", methods=["POST"])
+@require_local_or_password
 def regenerate_compression():
     """重新生成所有压缩文件"""
     try:
@@ -6443,6 +6909,7 @@ photo_index_rebuild_status = {"running": False, "result": None, "error": None}
 
 
 @app.route("/api/photo-index/rebuild", methods=["POST"])
+@require_local_or_password
 def rebuild_photo_index():
     """重建素材索引（后台执行）"""
     global photo_index_rebuild_status
@@ -6590,31 +7057,6 @@ MATERIAL_PROCESS_STATUS = {
     "last_run": None,
     "last_result": None,
 }
-
-ERROR_REPORT_QUEUE = []
-REPORTED_ERRORS = set()
-MAX_ERROR_QUEUE_SIZE = 10
-
-
-def report_error(error_type: str, message: str, details: str = ""):
-    """添加错误到上报队列（去重）"""
-    error_key = f"{error_type}:{message[:100]}"
-    if error_key in REPORTED_ERRORS:
-        return
-
-    REPORTED_ERRORS.add(error_key)
-    ERROR_REPORT_QUEUE.append(
-        {
-            "type": error_type,
-            "message": message[:200],
-            "details": details[:500],
-            "time": datetime.now().isoformat(),
-        }
-    )
-
-    if len(ERROR_REPORT_QUEUE) > MAX_ERROR_QUEUE_SIZE:
-        ERROR_REPORT_QUEUE.pop(0)
-
 
 ERROR_REPORT_QUEUE = []
 REPORTED_ERRORS = set()
@@ -6852,7 +7294,58 @@ def material_process_scheduler():
             time.sleep(3600)
 
 
+def show_welcome_dialog():
+    """显示欢迎对话框（仅 Windows 打包环境）"""
+    # 只在 Windows 打包环境下显示
+    if sys.platform != "win32" or not hasattr(sys, "_MEIPASS"):
+        return
+
+    try:
+        # 使用 Windows API MessageBox
+        # MB_OK = 0, MB_ICONINFORMATION = 64, MB_SETFOREGROUND = 0x10000
+        MB_OK = 0
+        MB_ICONINFORMATION = 64
+        MB_SETFOREGROUND = 0x10000
+
+        title = "宝宝成长记录系统"
+
+        message = """欢迎使用宝宝成长记录系统！
+
+【系统简介】
+这是一款专为记录宝宝成长点滴设计的智能系统，
+支持照片管理、AI 生成成长日志、公网分享等功能。
+
+【使用步骤】
+1. 首次使用会自动打开设置向导页面
+2. 填写宝宝信息（名字、生日、性别）
+3. 选择照片所在的文件夹
+4. 点击"完成设置"保存配置
+5. 系统会自动打开主页，开始记录美好时光
+
+【功能说明】
+• 首页：查看今日照片和成长日志
+• 画像：AI 生成的宝宝性格兴趣画像
+• 日历：按日期浏览历史记录
+• 设置：修改配置、查看配额
+
+【提示】
+• 首次运行会自动打开浏览器
+• 如需公网访问，请确保网络正常
+• 日志文件位于：文档/CZRZ/logs/
+
+点击"确定"开始使用！"""
+
+        ctypes.windll.user32.MessageBoxW(
+            0, message, title, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
+        )
+    except Exception as e:
+        print(f"显示欢迎对话框失败: {e}")
+
+
 if __name__ == "__main__":
+    # 显示欢迎对话框（仅 Windows 打包环境）
+    show_welcome_dialog()
+
     print("\n" + "=" * 60)
     print("  成长记录系统 - 公网客户端")
     print("=" * 60)
@@ -6865,13 +7358,16 @@ if __name__ == "__main__":
     if port:
         public_client.client_port = port
 
-        if not public_client.is_first_run():
-            public_client.connect_to_public_server()
-
         print(f"\n🚀 启动服务器 (端口: {port})")
         print(f"🌐 本地访问: http://localhost:{port}")
         print(f"🌐 局域网访问: http://{public_client.get_local_ip()}:{port}")
         print(f"📡 监听地址: 0.0.0.0:{port} (所有网络接口)")
+
+        # 先获取子域名信息（不启动 tunnel）
+        if not public_client.is_first_run():
+            # 获取子域名但不启动 tunnel（tunnel 在 Flask 启动后启动）
+            if public_client.client_id:
+                public_client.fetch_subdomain_only()
 
         if public_client.public_url:
             print(f"🔗 公网访问: {public_client.public_url}")
@@ -6934,11 +7430,54 @@ if __name__ == "__main__":
             material_thread.start()
             print("✅ 素材处理定时任务已启动（每天 18:00）")
 
+        # 启动 Tunnel（在后台线程中，等待 Flask 绑定端口后启动）
+        def start_tunnel_after_flask():
+            import time
+            # 等待 Flask 启动（最多等待 5 秒）
+            for _ in range(50):
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    result = sock.connect_ex(("127.0.0.1", port))
+                    sock.close()
+                    if result == 0:  # 端口已被绑定
+                        break
+                except:
+                    pass
+                time.sleep(0.1)
+            
+            # 启动 Tunnel
+            if public_client._pending_tunnel_credentials:
+                time.sleep(0.5)  # 再等一下确保 Flask 完全就绪
+                public_client.start_cloudflare_tunnel(public_client._pending_tunnel_credentials)
+                public_client._pending_tunnel_credentials = None
+
+        if public_client._pending_tunnel_credentials:
+            tunnel_thread = threading.Thread(target=start_tunnel_after_flask, daemon=True)
+            tunnel_thread.start()
+
+        # 注册退出处理：确保退出时杀死 cloudflared 进程
+        def cleanup_on_exit():
+            if public_client.tunnel_active:
+                print("\n🛑 正在停止 Cloudflare Tunnel...")
+                public_client.stop_cloudflare_tunnel()
+
+        atexit.register(cleanup_on_exit)
+
+        # 信号处理：捕获 SIGTERM 和 SIGINT
+        def signal_handler(signum, frame):
+            print(f"\n收到信号 {signum}，正在退出...")
+            cleanup_on_exit()
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
         # 启动 Flask（threaded=True 支持多用户）
         try:
             app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
         except Exception as e:
             print(f"\n❌ 服务器启动失败: {e}")
+            cleanup_on_exit()
             input("按回车键退出...")
     else:
         # 端口查找失败（find_available_port 内部已处理提示）
