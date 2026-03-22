@@ -423,20 +423,20 @@ function uploadFiles() {
         } catch (e) {
             data = { success: false, message: '解析响应失败' };
         }
-        
+
         if (xhr.status === 200 && data && data.success) {
             progressBar.style.width = '100%';
             sizeInfo.textContent = `${formatSize(totalSize)} / ${formatSize(totalSize)}`;
             speedInfo.textContent = '完成';
             statusText.textContent = '上传完成！';
             showNotification(data.message || `成功上传 ${data.count || 0} 个文件`, 'success');
-            
+
             const modalEl = document.getElementById('uploadModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if (modal) {
                 modal.hide();
             }
-            
+
             // 重置表单
             document.getElementById('fileInput').value = '';
             document.getElementById('photoCaption').value = '';
@@ -445,7 +445,12 @@ function uploadFiles() {
             document.getElementById('uploadBtn').disabled = true;
             selectedFiles = [];
             hideQuickAddBar();
-            
+
+            // ========== 显示勋章通知 ==========
+            if (data.badges && data.badges.length > 0) {
+                showBadgeNotification(data.badges);
+            }
+
             // 刷新当前日期数据
             setTimeout(() => {
                 if (typeof loadDateData === 'function' && typeof window.currentCalendarDate !== 'undefined') {

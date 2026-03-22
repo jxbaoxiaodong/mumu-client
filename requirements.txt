@@ -21,12 +21,15 @@ pydub==0.25.1
 # 日期处理
 python-dateutil==2.8.2
 
+# 农历支持
+zhdate>=0.1.0
+
+# HTML解析（新闻采集）
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
 # 其他工具
 colorama==0.4.6
 
 # 可选: 如果使用 Windows 打包
 # pyinstaller==6.3.0
-
-# 可选: 如果直接调用 AI API (不通过服务端转发)
-# openai>=1.0.0
-# dashscope>=1.0.0

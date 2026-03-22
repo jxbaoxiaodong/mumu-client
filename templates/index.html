@@ -3984,7 +3984,7 @@ function submitCorrection() {
                     <label class="form-label">
                         <i class="fas fa-align-left me-1"></i>日记内容
                     </label>
-                    <textarea id="editLogContent" class="form-control" rows="12" 
+                    <textarea id="editLogContent" class="form-control" rows="12"
                         placeholder="记录今天的成长点滴..." style="resize: vertical; line-height: 1.8;"></textarea>
                 </div>
             </div>
@@ -3993,6 +3993,78 @@ function submitCorrection() {
                 <button type="button" class="btn btn-primary" onclick="saveEditedLog()">
                     <i class="fas fa-save me-2"></i>保存修改
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 勋章获得提示模态框 -->
+<div class="modal fade" id="badgeNotificationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px; border: none; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <div class="modal-body text-center p-4">
+                <div class="mb-3">
+                    <div class="badge-notification-icon" style="font-size: 4rem; margin-bottom: 10px;">
+                        🎉
+                    </div>
+                    <h4 class="mb-3" style="color: #2C2C2C; font-weight: 600;">🎉 获得新勋章！</h4>
+                </div>
+                
+                <div id="badgeNotificationContent">
+                    <!-- 动态内容 -->
+                </div>
+                
+                <button type="button" class="btn btn-primary mt-3" style="background: linear-gradient(135deg, #E8B4B8 0%, #C9A87C 100%); border: none; padding: 10px 30px; border-radius: 25px; font-weight: 600;" data-bs-dismiss="modal">
+                    好的
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 勋章墙模态框 -->
+<div class="modal fade" id="badgeWallModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px; border: none;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #F8F6F3 0%, #EFEBE6 100%); border-bottom: 2px solid #E8DCC4;">
+                <h5 class="modal-title" style="color: #2C2C2C; font-weight: 600;">
+                    <i class="fas fa-medal me-2"></i>我的勋章墙
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- 统计信息 -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
+                            <div style="font-size: 2rem; font-weight: 600; color: #E8B4B8;">{{ badge_stats.total if badge_stats else 0 }}</div>
+                            <div style="color: #8A8A8A; font-size: 0.9rem;">总勋章数</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
+                            <div style="font-size: 2rem; font-weight: 600; color: #A8B5A0;">{{ badge_stats.by_type.streak if badge_stats and badge_stats.by_type else 0 }}</div>
+                            <div style="color: #8A8A8A; font-size: 0.9rem;">连续勋章</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
+                            <div style="font-size: 2rem; font-weight: 600; color: #E07A5F;">{{ badge_stats.by_type.achievement if badge_stats and badge_stats.by_type else 0 }}</div>
+                            <div style="color: #8A8A8A; font-size: 0.9rem;">成就勋章</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
+                            <div style="font-size: 2rem; font-weight: 600; color: #C9A87C;">{{ badge_stats.by_type.count if badge_stats and badge_stats.by_type else 0 }}</div>
+                            <div style="color: #8A8A8A; font-size: 0.9rem;">数量勋章</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 勋章列表 -->
+                <div id="badgeWallContent">
+                    <!-- 动态加载 -->
+                </div>
             </div>
         </div>
     </div>
@@ -4014,6 +4086,261 @@ function submitCorrection() {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
+
+/* 勋章通知样式 */
+.badge-notification-item {
+    background: linear-gradient(135deg, #F8F6F3 0%, #EFEBE6 100%);
+    border-radius: 12px;
+    padding: 15px;
+    margin-bottom: 10px;
+    border-left: 4px solid #E8B4B8;
+}
+
+.badge-notification-icon {
+    animation: badgePop 0.5s ease-out;
+}
+
+@keyframes badgePop {
+    0% { transform: scale(0.5); opacity: 0; }
+    70% { transform: scale(1.1); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+/* 勋章墙样式 */
+.badge-category {
+    margin-bottom: 30px;
+}
+
+.badge-category-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #2C2C2C;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #E8DCC4;
+}
+
+.badge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.badge-card {
+    background: #F8F6F3;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.badge-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    border-color: #E8DCC4;
+}
+
+.badge-card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 10px;
+}
+
+.badge-card-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #2C2C2C;
+    margin-bottom: 5px;
+}
+
+.badge-card-date {
+    font-size: 0.8rem;
+    color: #8A8A8A;
+}
+
+/* 勋章墙入口按钮 */
+.badge-wall-entry {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #E8B4B8 0%, #C9A87C 100%);
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 24px;
+    box-shadow: 0 4px 12px rgba(232, 180, 184, 0.4);
+    cursor: pointer;
+    transition: all 0.3s;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.badge-wall-entry:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(232, 180, 184, 0.6);
+}
+
+.badge-wall-entry i {
+    font-size: 1.2rem;
+}
 </style>
+
+<!-- 勋章墙入口按钮 -->
+{% if not client_disabled %}
+<button class="badge-wall-entry" onclick="openBadgeWall()">
+    <i class="fas fa-medal"></i>
+    <span>我的勋章</span>
+</button>
+{% endif %}
+
+<script>
+// 显示勋章通知
+function showBadgeNotification(badges) {
+    const modal = document.getElementById('badgeNotificationModal');
+    const content = document.getElementById('badgeNotificationContent');
+
+    let html = '';
+    badges.forEach(badge => {
+        html += `
+            <div class="badge-notification-item">
+                <div style="font-size: 2.5rem; margin-bottom: 10px;">${badge.icon}</div>
+                <div style="font-weight: 600; font-size: 1.1rem; color: #2C2C2C; margin-bottom: 5px;">${badge.name}</div>
+                <div style="font-size: 0.9rem; color: #8A8A8A;">${badge.description}</div>
+            </div>
+        `;
+    });
+
+    content.innerHTML = html;
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+// 打开勋章墙
+function openBadgeWall() {
+    // 加载勋章数据
+    fetch('/api/badges')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                renderBadgeWall(data.badges);
+                const modal = new bootstrap.Modal(document.getElementById('badgeWallModal'));
+                modal.show();
+            } else {
+                showNotification('加载勋章失败', 'error');
+            }
+        })
+        .catch(err => {
+            console.error('加载勋章失败:', err);
+            showNotification('加载勋章失败', 'error');
+        });
+}
+
+// 渲染勋章墙
+function renderBadgeWall(badges) {
+    const content = document.getElementById('badgeWallContent');
+
+    // 按类型分组
+    const grouped = {
+        streak: [],
+        achievement: [],
+        count: []
+    };
+
+    badges.forEach(badge => {
+        const config = BADGE_CONFIG[badge.type];
+        if (config) {
+            grouped[config.type].push(badge);
+        }
+    });
+
+    let html = '';
+
+    // 连续勋章
+    if (grouped.streak.length > 0) {
+        html += `
+            <div class="badge-category">
+                <div class="badge-category-title">🏆 连续上传勋章</div>
+                <div class="badge-grid">
+        `;
+        grouped.streak.forEach(badge => {
+            html += renderBadgeCard(badge);
+        });
+        html += `</div></div>`;
+    }
+
+    // 成就勋章
+    if (grouped.achievement.length > 0) {
+        html += `
+            <div class="badge-category">
+                <div class="badge-category-title">🌟 宝宝成就勋章</div>
+                <div class="badge-grid">
+        `;
+        grouped.achievement.forEach(badge => {
+            html += renderBadgeCard(badge);
+        });
+        html += `</div></div>`;
+    }
+
+    // 数量勋章
+    if (grouped.count.length > 0) {
+        html += `
+            <div class="badge-category">
+                <div class="badge-category-title">📸 照片数量勋章</div>
+                <div class="badge-grid">
+        `;
+        grouped.count.forEach(badge => {
+            html += renderBadgeCard(badge);
+        });
+        html += `</div></div>`;
+    }
+
+    if (html === '') {
+        html = '<div class="text-center py-5"><p class="text-muted">还没有获得任何勋章，快上传照片吧！</p></div>';
+    }
+
+    content.innerHTML = html;
+}
+
+// 渲染单个勋章卡片
+function renderBadgeCard(badge) {
+    return `
+        <div class="badge-card">
+            <div class="badge-card-icon">${badge.icon}</div>
+            <div class="badge-card-name">${badge.name}</div>
+            <div class="badge-card-date">${badge.earned_date}</div>
+        </div>
+    `;
+}
+
+// 勋章配置（用于前端显示）
+const BADGE_CONFIG = {
+    bronze_care: { type: 'streak' },
+    silver_care: { type: 'streak' },
+    gold_care: { type: 'streak' },
+    diamond_care: { type: 'streak' },
+    dog_lover: { type: 'achievement' },
+    cat_lover: { type: 'achievement' },
+    climber: { type: 'achievement' },
+    swimmer: { type: 'achievement' },
+    birthday_star: { type: 'achievement' },
+    christmas_baby: { type: 'achievement' },
+    first_stand: { type: 'achievement' },
+    first_walk: { type: 'achievement' },
+    first_mom: { type: 'achievement' },
+    photo_lover: { type: 'count' },
+    photo_master: { type: 'count' },
+    photo_expert: { type: 'count' },
+    outdoor_explorer: { type: 'achievement' },
+    home_time: { type: 'achievement' },
+    foodie_baby: { type: 'achievement' },
+    sleepy_baby: { type: 'achievement' },
+    playful_baby: { type: 'achievement' },
+    bath_time: { type: 'achievement' },
+    reading_time: { type: 'achievement' },
+    music_lover: { type: 'achievement' }
+};
+</script>
 
 {% endblock %}

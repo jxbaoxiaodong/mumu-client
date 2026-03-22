@@ -3123,17 +3123,110 @@ def upload_photos():
                 # 清理临时文件
                 temp_path.unlink(missing_ok=True)
 
+        # ========== 勋章检测逻辑 ==========
+        badges_earned = []
+        try:
+            from badge_detector import (
+                check_count_badges,
+                check_achievement_badges,
+                check_special_date_badges,
+                save_badge,
+            )
+            from select_best_photo import analyze_all_photos
+            from database import user_session
+            from datetime import datetime
+
+            # 获取上传日期
+            today = upload_date if upload_date else datetime.now().strftime("%Y-%m-%d")
+            
+            # 检查照片数量勋章
+            with user_session(public_client.client_id) as session:
+                count_badges = check_count_badges(
+                    public_client.client_id, today, len(saved_files), session
+                )
+                for badge_type in count_badges:
+                    save_badge(public_client.client_id, badge_type, today, today)
+                    badges_earned.append(badge_type)
+
+            # AI分析照片内容（异步执行，不阻塞上传）
+            if saved_files:
+                photo_paths = [f["path"] for f in saved_files if f.get("path")]
+                if photo_paths:
+                    # 在后台线程中执行
+                    def analyze_and_check_badges():
+                        try:
+                            from badge_config import BADGE_CONFIG
+                            
+                            # AI分析
+                            photo_analysis = analyze_all_photos(
+                                photo_paths,
+                                max_photos=20,
+                                client_id=public_client.client_id,
+                                date=today
+                            )
+                            
+                            # 检查成就勋章
+                            with user_session(public_client.client_id) as session:
+                                achievement_badges = check_achievement_badges(
+                                    public_client.client_id, today, photo_analysis, session
+                                )
+                                for badge_info in achievement_badges:
+                                    badge_type = badge_info["badge_type"]
+                                    trigger_photo = badge_info.get("trigger_photo")
+                                    save_badge(
+                                        public_client.client_id, 
+                                        badge_type, 
+                                        today, 
+                                        today,
+                                        trigger_photo
+                                    )
+                            
+                            # 检查特殊日期勋章
+                            with user_session(public_client.client_id) as session:
+                                special_badges = check_special_date_badges(
+                                    public_client.client_id, today, session
+                                )
+                                for badge_type in special_badges:
+                                    save_badge(public_client.client_id, badge_type, today, today)
+                        
+                        except Exception as e:
+                            print(f"[Badge] 勋章检测异常: {e}")
+                    
+                    # 启动后台线程
+                    import threading
+                    badge_thread = threading.Thread(target=analyze_and_check_badges, daemon=True)
+                    badge_thread.start()
+
+        except Exception as e:
+            print(f"[Badge] 勋章检测失败: {e}")
+
+        # 返回结果，包含新获得的勋章
+        badge_info = []
+        for badge_type in badges_earned:
+            from badge_config import get_badge_config
+            config = get_badge_config(badge_type)
+            if config:
+                badge_info.append({
+                    "type": badge_type,
+                    "name": config["name"],
+                    "icon": config["icon"],
+                    "description": config["description"]
+                })
+
         return jsonify(
             {
                 "success": True,
                 "message": f"成功上传 {len(saved_files)} 个文件",
                 "count": len(saved_files),
                 "files": saved_files,
+                "badges": badge_info  # 新获得的勋章
             }
         )
 
     except Exception as e:
         print(f"[ERROR] 上传失败: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"success": False, "message": f"上传失败: {str(e)}"})
 
 
@@ -3792,6 +3885,43 @@ def api_save_log():
             return jsonify({"success": False, "message": f"保存失败: {str(e)}"})
 
     except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/api/badges", methods=["GET"])
+@require_local_or_password
+def api_get_badges():
+    """获取用户所有勋章"""
+    try:
+        from badge_detector import get_all_badges, get_badge_stats
+        
+        badges = get_all_badges(public_client.client_id)
+        stats = get_badge_stats(public_client.client_id)
+        
+        return jsonify({
+            "success": True,
+            "badges": badges,
+            "stats": stats
+        })
+    except Exception as e:
+        print(f"[ERROR] 获取勋章失败: {e}")
+        return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/api/badges/stats", methods=["GET"])
+@require_local_or_password
+def api_get_badge_stats():
+    """获取勋章统计"""
+    try:
+        from badge_detector import get_badge_stats
+        
+        stats = get_badge_stats(public_client.client_id)
+        return jsonify({
+            "success": True,
+            "stats": stats
+        })
+    except Exception as e:
+        print(f"[ERROR] 获取勋章统计失败: {e}")
         return jsonify({"success": False, "message": str(e)})
 
 
