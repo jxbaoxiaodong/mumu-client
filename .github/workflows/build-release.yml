@@ -91,24 +91,30 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Windows
-          path: release
+          path: release-windows
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Linux
-          path: release
+          path: release-linux
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-macOS
-          path: release
+          path: release-macos
 
       - name: List files
-        run: ls -la release/
+        run: |
+          echo "=== Windows ===" && ls -la release-windows/
+          echo "=== Linux ===" && ls -la release-linux/
+          echo "=== macOS ===" && ls -la release-macos/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: release/*
+          files: |
+            release-windows/*
+            release-linux/*
+            release-macos/*
