@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build on ${{ matrix.os }}
@@ -14,15 +17,12 @@ jobs:
         include:
           - os: windows-latest
             artifact: CZRZClient-Windows
-            ext: .exe
             cloudflared: cloudflared-windows.exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
-            ext: ''
             cloudflared: cloudflared-linux
           - os: macos-latest
             artifact: CZRZClient-macOS
-            ext: ''
             cloudflared: cloudflared-darwin
 
     steps:
@@ -84,29 +84,31 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Windows
-          path: CZRZClient-Windows
+          path: release
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Linux
-          path: CZRZClient-Linux
+          path: release
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-macOS
-          path: CZRZClient-macOS
+          path: release
+
+      - name: List files
+        run: ls -la release/
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            CZRZClient-Windows/*
-            CZRZClient-Linux/*
-            CZRZClient-macOS/*
+          files: release/*
