@@ -19,14 +19,17 @@ jobs:
             artifact: CZRZClient-Windows
             cloudflared: cloudflared-windows.exe
             output_name: mumu-windows.exe
+            cloudflared_name: cloudflare.exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
             cloudflared: cloudflared-linux
             output_name: mumu-linux
+            cloudflared_name: cloudflared-linux
           - os: macos-latest
             artifact: CZRZClient-macOS
             cloudflared: cloudflared-darwin
             output_name: mumu-macos
+            cloudflared_name: cloudflared-darwin
 
     steps:
       - name: Checkout code
@@ -46,44 +49,44 @@ jobs:
       - name: Prepare cloudflared (Windows)
         if: runner.os == 'Windows'
         run: |
-          copy ${{ matrix.cloudflared }} cloudflare.exe
+          copy ${{ matrix.cloudflared }} ${{ matrix.cloudflared_name }}
 
       - name: Prepare cloudflared (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
-          cp ${{ matrix.cloudflared }} cloudflared
-          chmod +x cloudflared
+          cp ${{ matrix.cloudflared }} ${{ matrix.cloudflared_name }}
+          chmod +x ${{ matrix.cloudflared_name }}
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
         run: |
-          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates;templates" --add-data="static;static" --add-data="cloudflare.exe;." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client.py
+          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates;templates" --add-data="static;static" --add-data="${{ matrix.cloudflared_name }};." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client.py
 
       - name: Build with PyInstaller (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
-          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates:templates" --add-data="static:static" --add-data="cloudflared:." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client.py
+          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates:templates" --add-data="static:static" --add-data="${{ matrix.cloudflared_name }}:." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client.py
 
       - name: Create package (Windows)
         if: runner.os == 'Windows'
         run: |
           mkdir release
           copy dist\CZRZClient.exe release\${{ matrix.output_name }}
-          copy cloudflare.exe release\
+          copy ${{ matrix.cloudflared_name }} release\
 
       - name: Create package (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p release
           cp dist/CZRZClient release/${{ matrix.output_name }}
-          cp cloudflared release/
+          cp ${{ matrix.cloudflared_name }} release/
 
       - name: Create package (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p release
           cp dist/CZRZClient release/${{ matrix.output_name }}
-          cp cloudflared release/
+          cp ${{ matrix.cloudflared_name }} release/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
