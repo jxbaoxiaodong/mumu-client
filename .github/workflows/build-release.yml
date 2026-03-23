@@ -14,10 +14,13 @@ jobs:
         include:
           - os: windows-latest
             artifact: CZRZClient-Windows
+            ext: .exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
+            ext: ''
           - os: macos-latest
             artifact: CZRZClient-macOS
+            ext: ''
 
     steps:
       - name: Checkout code
@@ -42,13 +45,15 @@ jobs:
       - name: Download cloudflared (Linux)
         if: runner.os == 'Linux'
         run: |
-          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared ||
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
           chmod +x cloudflared
 
       - name: Download cloudflared (macOS)
         if: runner.os == 'macOS'
         run: |
-          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -o cloudflared
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -o cloudflared ||
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -O cloudflared
           chmod +x cloudflared
 
       - name: Build with PyInstaller (Windows)
@@ -93,31 +98,31 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Windows
-          path: windows/
+          path: windows
 
       - name: Download Linux artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-Linux
-          path: linux/
+          path: linux
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v4
         with:
           name: CZRZClient-macOS
-          path: macos/
+          path: macos
 
-      - name: Create archives
+      - name: Create zip files
         run: |
           cd windows && zip -r ../CZRZClient-Windows.zip . && cd ..
-          cd linux && tar -czvf ../CZRZClient-Linux.tar.gz . && cd ..
-          cd macos && tar -czvf ../CZRZClient-macOS.tar.gz . && cd ..
+          cd linux && zip -r ../CZRZClient-Linux.zip . && cd ..
+          cd macos && zip -r ../CZRZClient-macOS.zip . && cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             CZRZClient-Windows.zip
-            CZRZClient-Linux.tar.gz
-            CZRZClient-macOS.tar.gz
+            CZRZClient-Linux.zip
+            CZRZClient-macOS.zip
           generate_release_notes: true
