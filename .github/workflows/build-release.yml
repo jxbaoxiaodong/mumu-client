@@ -18,12 +18,15 @@ jobs:
           - os: windows-latest
             artifact: CZRZClient-Windows
             cloudflared: cloudflared-windows.exe
+            output_name: mumu-windows.exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
             cloudflared: cloudflared-linux
+            output_name: mumu-linux
           - os: macos-latest
             artifact: CZRZClient-macOS
             cloudflared: cloudflared-darwin
+            output_name: mumu-macos
 
     steps:
       - name: Checkout code
@@ -65,14 +68,21 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir release
-          copy dist\CZRZClient.exe release\
+          copy dist\CZRZClient.exe release\${{ matrix.output_name }}
           copy cloudflare.exe release\
 
-      - name: Create package (Linux/macOS)
-        if: runner.os != 'Windows'
+      - name: Create package (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p release
-          cp dist/CZRZClient release/
+          cp dist/CZRZClient release/${{ matrix.output_name }}
+          cp cloudflared release/
+
+      - name: Create package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p release
+          cp dist/CZRZClient release/${{ matrix.output_name }}
           cp cloudflared release/
 
       - name: Upload artifact
