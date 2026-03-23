@@ -14,13 +14,10 @@ jobs:
         include:
           - os: windows-latest
             artifact: CZRZClient-Windows
-            ext: .exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
-            ext: ''
           - os: macos-latest
             artifact: CZRZClient-macOS
-            ext: ''
 
     steps:
       - name: Checkout code
