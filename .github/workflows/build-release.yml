@@ -15,12 +15,15 @@ jobs:
           - os: windows-latest
             artifact: CZRZClient-Windows
             ext: .exe
+            cloudflared: cloudflared-windows.exe
           - os: ubuntu-latest
             artifact: CZRZClient-Linux
             ext: ''
+            cloudflared: cloudflared-linux
           - os: macos-latest
             artifact: CZRZClient-macOS
             ext: ''
+            cloudflared: cloudflared-darwin
 
     steps:
       - name: Checkout code
@@ -37,21 +40,15 @@ jobs:
           pip install pyinstaller
           pip install flask werkzeug requests Pillow jinja2 python-dateutil zhdate beautifulsoup4 lxml pydub imageio-ffmpeg
 
-      - name: Download cloudflared (Windows)
+      - name: Prepare cloudflared (Windows)
         if: runner.os == 'Windows'
         run: |
-          Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflare.exe"
+          copy ${{ matrix.cloudflared }} cloudflare.exe
 
-      - name: Download cloudflared (Linux)
-        if: runner.os == 'Linux'
+      - name: Prepare cloudflared (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
-          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared || curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
-          chmod +x cloudflared
-
-      - name: Download cloudflared (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -o cloudflared || wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -O cloudflared
+          cp ${{ matrix.cloudflared }} cloudflared
           chmod +x cloudflared
 
       - name: Build with PyInstaller (Windows)
@@ -82,45 +79,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: release/
+          path: release/*
 
   release:
-    name: Create Release
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Download Windows artifact
+      - name: Download all artifacts
         uses: actions/download-artifact@v4
-        with:
-          name: CZRZClient-Windows
-          path: windows
-
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: CZRZClient-Linux
-          path: linux
-
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: CZRZClient-macOS
-          path: macos
-
-      - name: Create zip files
-        run: |
-          cd windows && zip -r ../CZRZClient-Windows.zip . && cd ..
-          cd linux && zip -r ../CZRZClient-Linux.zip . && cd ..
-          cd macos && zip -r ../CZRZClient-macOS.zip . && cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            CZRZClient-Windows.zip
-            CZRZClient-Linux.zip
-            CZRZClient-macOS.zip
-          generate_release_notes: true
+            CZRZClient-Windows/*
+            CZRZClient-Linux/*
+            CZRZClient-macOS/*
