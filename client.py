@@ -222,10 +222,12 @@ CLIENT_CONFIG = ClientConfig()
 from functools import wraps
 
 
-def require_local_or_password(f):
+def require_local_or_password_real(f):
     """
     权限控制装饰器：本地连接免密码，远程连接需要密码
     用于保护所有写操作API
+    
+    注意：此装饰器已禁用，保留代码供将来需要时恢复
     """
 
     @wraps(f)
@@ -279,6 +281,14 @@ def require_local_or_password(f):
             ), 403
 
     return decorated_function
+
+
+def require_local_or_password(f):
+    """
+    密码验证装饰器 - 已禁用
+    所有接口直接通过，不进行密码验证
+    """
+    return f
 
 
 def is_local_request():
