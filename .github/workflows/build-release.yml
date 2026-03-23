@@ -1,0 +1,126 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: CZRZClient-Windows
+            ext: .exe
+          - os: ubuntu-latest
+            artifact: CZRZClient-Linux
+            ext: ''
+          - os: macos-latest
+            artifact: CZRZClient-macOS
+            ext: ''
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install flask werkzeug requests Pillow jinja2 python-dateutil zhdate beautifulsoup4 lxml pydub imageio-ffmpeg
+
+      - name: Download cloudflared (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflare.exe"
+
+      - name: Download cloudflared (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared
+          chmod +x cloudflared
+
+      - name: Download cloudflared (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -O cloudflared
+          chmod +x cloudflared
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates;templates" --add-data="static;static" --add-data="cloudflare.exe;." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client_public_final.py
+
+      - name: Build with PyInstaller (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller --name="CZRZClient" --onefile --console --add-data="templates:templates" --add-data="static:static" --add-data="cloudflared:." --hidden-import=flask --hidden-import=flask.json --hidden-import=werkzeug --hidden-import=werkzeug.security --hidden-import=jinja2 --hidden-import=requests --hidden-import=PIL --hidden-import=PIL.Image --hidden-import=dateutil --hidden-import=dateutil.parser --hidden-import=zhdate --hidden-import=zhdate.zh_date --hidden-import=bs4 --hidden-import=lxml --hidden-import=pydub --hidden-import=imageio_ffmpeg --exclude-module=matplotlib --exclude-module=numpy --exclude-module=pandas --exclude-module=scipy --exclude-module=tkinter --clean --noconfirm client_public_final.py
+
+      - name: Create package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir release
+          copy dist\CZRZClient.exe release\
+          copy cloudflare.exe release\
+
+      - name: Create package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p release
+          cp dist/CZRZClient release/
+          cp cloudflared release/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: release/
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CZRZClient-Windows
+          path: windows/
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CZRZClient-Linux
+          path: linux/
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CZRZClient-macOS
+          path: macos/
+
+      - name: Create archives
+        run: |
+          cd windows && zip -r ../CZRZClient-Windows.zip . && cd ..
+          cd linux && tar -czvf ../CZRZClient-Linux.tar.gz . && cd ..
+          cd macos && tar -czvf ../CZRZClient-macOS.tar.gz . && cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            CZRZClient-Windows.zip
+            CZRZClient-Linux.tar.gz
+            CZRZClient-macOS.tar.gz
+          generate_release_notes: true

@@ -1,52 +1,67 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+*.so
 .Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
+dist/
+build/
 *.egg
 
-# Logs
-logs/
-*.log
-
-# User data - 永不提交用户数据
-config.json
-ai_config.json
-*.db
-*.sqlite
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# Logs
+logs/
+*.log
+
+# Data - 敏感数据，绝不提交
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials - 凭证文件，绝不提交
+credentials.json
+*.key
+*.pem
+secret*.json
+config.local.*
+cloudflared_config.yml
+landing_tunnel.yml
+api_config.json
+api_keys.json
+admin_config.json
+
+# Build outputs
+dist/
+build/
+*.spec
 
 # OS
 .DS_Store
 Thumbs.db
-desktop.ini
 
-# Windows
-*.exe
+# Backup
+*.bak
+*.backup
+_backup/
 
-# 打包输出
-build/
-dist/
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Taobao product images (not needed for client)
+static/taobao_product/

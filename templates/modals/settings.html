@@ -82,23 +82,28 @@
                                     <div class="col-12">
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-white" style="font-size: 0.75rem;">局域网</span>
-                                            <input type="text" class="form-control form-control-sm" value="{{ local_url or '' }}" readonly style="font-size: 0.75rem;">
-                                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard('{{ local_url or '' }}')" style="font-size: 0.75rem;">
+                                            <input type="text" class="form-control form-control-sm" id="localUrlInput" value="{{ local_url or '' }}" readonly style="font-size: 0.75rem;">
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard(document.getElementById('localUrlInput').value)" style="font-size: 0.75rem;">
                                                 <i class="fas fa-copy"></i>
                                             </button>
                                         </div>
+                                        <small class="text-muted" style="font-size: 0.65rem;">同一WiFi下访问更快</small>
                                     </div>
                                     {% if public_url %}
                                     <div class="col-12">
                                         <div class="input-group input-group-sm">
                                             <span class="input-group-text bg-white" style="font-size: 0.75rem;">公网</span>
-                                            <input type="text" class="form-control form-control-sm" value="{{ public_url }}" readonly style="font-size: 0.75rem;">
-                                            <button class="btn btn-outline-success btn-sm" type="button" onclick="copyToClipboard('{{ public_url }}')" style="font-size: 0.75rem;">
+                                            <input type="text" class="form-control form-control-sm" id="publicUrlInput" value="{{ public_url }}" readonly style="font-size: 0.75rem;">
+                                            <button class="btn btn-outline-success btn-sm" type="button" onclick="copyToClipboard(document.getElementById('publicUrlInput').value)" style="font-size: 0.75rem;">
                                                 <i class="fas fa-copy"></i>
                                             </button>
                                         </div>
+                                        <small class="text-muted" style="font-size: 0.65rem;">不在同一WiFi时使用</small>
                                     </div>
                                     {% endif %}
+                                </div>
+                                <div class="mt-2 p-2 bg-light rounded" style="font-size: 0.7rem;">
+                                    <strong>分享给亲朋：</strong>复制上方地址发送给他们即可访问。同一WiFi用局域网地址更快，否则用公网地址。
                                 </div>
                             </div>
                         </div>

@@ -1134,8 +1134,13 @@ class PublicClient:
         # 运行窗口
         root.mainloop()
 
-    def save_credentials(self, credentials):
-        """保存 tunnel 凭证到本地"""
+    def save_credentials(self, credentials, subdomain=None):
+        """保存 tunnel 凭证到本地
+        
+        Args:
+            credentials: 凭证信息字典
+            subdomain: 可选，子域名信息
+        """
         import platform
         import shutil
 
@@ -1175,12 +1180,103 @@ class PublicClient:
             with open(client_creds_file, "w", encoding="utf-8") as f:
                 json.dump(creds_data, f, indent=2)
 
+            # 如果提供了子域名，保存到 client_config.json
+            if subdomain:
+                self._save_subdomain_to_config(subdomain)
+
             print(f"💾 凭证已保存到: {creds_file}")
             return True
 
         except Exception as e:
             print(f"❌ 保存凭证失败: {e}")
             return False
+
+    def _save_subdomain_to_config(self, subdomain):
+        """保存子域名到 client_config.json"""
+        try:
+            config_file = self.data_dir / "client_config.json"
+            config = {}
+            if config_file.exists():
+                with open(config_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            
+            # 更新 server.domain
+            if "server" not in config:
+                config["server"] = {}
+            config["server"]["domain"] = subdomain
+            
+            with open(config_file, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            
+            print(f"💾 子域名已保存: {subdomain}")
+        except Exception as e:
+            print(f"⚠ 保存子域名失败: {e}")
+
+    def load_local_credentials(self):
+        """读取本地保存的 tunnel 凭证
+        
+        优先级：
+        1. client_tunnels/{client_id}/credentials.json（服务端分配的凭证）
+        2. data/cloudflared_credentials.json（备用位置）
+        """
+        try:
+            # 1. 优先从 client_tunnels 目录读取（服务端分配的凭证）
+            if self.client_id:
+                client_tunnel_dir = self.data_dir / "client_tunnels" / self.client_id
+                client_creds_file = client_tunnel_dir / "credentials.json"
+                if client_creds_file.exists():
+                    with open(client_creds_file, "r", encoding="utf-8") as f:
+                        credentials = json.load(f)
+                    tunnel_id = credentials.get("TunnelID", "")
+                    if tunnel_id:
+                        # 检查 cloudflared 目录中的凭证文件是否存在
+                        creds_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                        if creds_file.exists():
+                            print(f"📂 发现本地凭证: {tunnel_id[:8]}...")
+                            return credentials
+                        else:
+                            # 凭证文件不存在，需要创建
+                            print(f"⚠ cloudflared 目录缺少凭证文件，尝试创建...")
+                            # 创建凭证文件
+                            creds_dir = Path.home() / ".cloudflared"
+                            creds_dir.mkdir(parents=True, exist_ok=True)
+                            with open(creds_file, "w", encoding="utf-8") as f:
+                                json.dump(credentials, f, indent=2)
+                            print(f"✅ 已创建凭证文件: {creds_file}")
+                            return credentials
+
+            # 2. 从备用位置读取
+            client_creds_file = self.data_dir / "cloudflared_credentials.json"
+            if client_creds_file.exists():
+                with open(client_creds_file, "r", encoding="utf-8") as f:
+                    credentials = json.load(f)
+                tunnel_id = credentials.get("TunnelID", "")
+                if tunnel_id:
+                    creds_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                    if creds_file.exists():
+                        print(f"📂 发现本地凭证(备用): {tunnel_id[:8]}...")
+                        return credentials
+
+            return None
+        except Exception as e:
+            print(f"⚠ 读取本地凭证失败: {e}")
+            return None
+
+    def load_local_subdomain(self):
+        """从本地配置读取子域名信息"""
+        try:
+            config_file = self.data_dir / "client_config.json"
+            if config_file.exists():
+                with open(config_file, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                # 从 server.domain 提取子域名
+                domain = config.get("server", {}).get("domain", "")
+                if domain:
+                    return domain
+            return None
+        except Exception as e:
+            print(f"⚠ 读取本地子域名失败: {e}")
+            return None
 
     def connect_to_public_server(self):
         """强制连接到公网服务端"""
@@ -1406,9 +1502,10 @@ class PublicClient:
                         print(f"🔗 公网访问地址: {self.public_url}")
                         logger.info(f"子域名获取成功: {self.subdomain}")
 
-                        # 启动 Cloudflare Tunnel
+                        # 保存凭证到本地
                         credentials = data.get("credentials", {})
                         if credentials:
+                            self.save_credentials(credentials, self.subdomain)
                             self.start_cloudflare_tunnel(credentials)
                         return True
                     else:
@@ -1444,10 +1541,34 @@ class PublicClient:
         thread.start()
 
     def fetch_subdomain_only(self):
-        """获取子域名信息但不启动 Tunnel（Tunnel 在 Flask 启动后启动）"""
+        """获取子域名信息但不启动 Tunnel（Tunnel 在 Flask 启动后启动）
+        
+        优先级：
+        1. 先尝试读取本地已保存的凭证
+        2. 如果本地凭证存在且有效，直接使用
+        3. 如果本地凭证不存在或无效，再从服务端获取
+        """
         if not self.client_id:
             return
 
+        # 1. 先尝试读取本地凭证
+        local_credentials = self.load_local_credentials()
+        if local_credentials:
+            tunnel_id = local_credentials.get("TunnelID", "")
+            # 尝试从本地配置读取子域名
+            local_domain = self.load_local_subdomain()
+            if local_domain:
+                # 构造子域名（假设格式为 tunnel_id前8位 + mumu.ftir.fun）
+                # 或者直接使用保存的域名
+                self.subdomain = local_domain
+                self.public_url = f"https://{local_domain}"
+                self._pending_tunnel_credentials = local_credentials
+                print(f"✅ 使用本地凭证启动 Tunnel")
+                print(f"🌐 子域名: {self.subdomain}")
+                logger.info(f"使用本地凭证: {tunnel_id[:8]}...")
+                return
+
+        # 2. 本地凭证不存在，从服务端获取
         print("🔑 获取子域名...")
         logger.info("获取子域名...")
 
@@ -1470,9 +1591,11 @@ class PublicClient:
                     print(f"🌐 您的子域名: {self.subdomain}")
                     logger.info(f"子域名获取成功: {self.subdomain}")
 
-                    # 保存凭证，稍后启动 Tunnel
+                    # 保存凭证到本地
                     credentials = data.get("credentials", {})
                     if credentials:
+                        # 保存凭证和子域名到本地
+                        self.save_credentials(credentials, self.subdomain)
                         self._pending_tunnel_credentials = credentials
                         print("⏳ Tunnel 将在服务启动后自动启动...")
                 else:
@@ -1512,9 +1635,10 @@ class PublicClient:
                             self.public_url = client_info.get("public_url") or ""
                             print(f"🎉 子域名获取成功!")
                             logger.info(f"子域名获取成功: {self.subdomain}")
-                            # 启动 Tunnel
+                            # 保存凭证并启动 Tunnel
                             credentials = data.get("credentials", {})
                             if credentials:
+                                self.save_credentials(credentials, self.subdomain)
                                 self.start_cloudflare_tunnel(credentials)
                             return
                 except Exception as e:
@@ -1856,11 +1980,30 @@ ingress:
                             time.sleep(2)
                             self.start_cloudflare_tunnel(self._tunnel_credentials)
 
-                    # 如果 tunnel 从未启动过（_tunnel_credentials 为 None），尝试获取凭证并启动
-                    if not self.tunnel_active and not self._tunnel_credentials and self.subdomain:
-                        print("🔄 Tunnel 未启动，尝试获取凭证并启动...")
-                        logger.info("Tunnel 未启动，尝试获取凭证并启动")
-                        self.fetch_subdomain()
+                    # 如果 tunnel 从未启动过，尝试启动
+                    if not self.tunnel_active:
+                        # 优先使用本地凭证
+                        if not self._tunnel_credentials:
+                            local_credentials = self.load_local_credentials()
+                            if local_credentials:
+                                self._tunnel_credentials = local_credentials
+                                # 尝试读取本地子域名
+                                local_domain = self.load_local_subdomain()
+                                if local_domain:
+                                    self.subdomain = local_domain
+                                    self.public_url = f"https://{local_domain}"
+                                print(f"📂 加载本地凭证用于启动 Tunnel")
+                        
+                        # 如果有凭证，启动 tunnel
+                        if self._tunnel_credentials and self.subdomain:
+                            print("🔄 Tunnel 未启动，尝试启动...")
+                            logger.info("Tunnel 未启动，尝试启动")
+                            self.start_cloudflare_tunnel(self._tunnel_credentials)
+                        elif not self._tunnel_credentials:
+                            # 本地凭证也不存在，才从服务端获取
+                            print("🔄 本地凭证不存在，尝试从服务端获取...")
+                            logger.info("本地凭证不存在，尝试从服务端获取")
+                            self.fetch_subdomain()
 
                     # 发送心跳
                     if self.client_id:
@@ -2428,6 +2571,7 @@ def api_setup():
 
 
 @app.route("/api/photo-index/build", methods=["POST"])
+@require_local_or_password
 def build_photo_index_api():
     """执行照片索引建立（首次）"""
     try:
@@ -3275,6 +3419,7 @@ def upload_photos():
 
 
 @app.route("/api/settings/photo_folder", methods=["GET", "POST"])
+@require_local_or_password
 def photo_folder_settings():
     """获取/修改照片文件夹设置"""
     if request.method == "GET":
@@ -3985,29 +4130,10 @@ def api_get_badge_stats():
 
 
 @app.route("/api/photo/tag", methods=["POST", "DELETE"])
+@require_local_or_password
 def api_photo_tag():
     """照片标签管理，上报服务端存储"""
     try:
-        # POST/DELETE操作需要权限检查
-        remote_addr = request.remote_addr
-        if remote_addr not in ["127.0.0.1", "localhost"]:
-            # 远程连接需要验证密码
-            password = None
-            password = request.headers.get("X-Admin-Password")
-            if not password and request.is_json:
-                try:
-                    data = request.get_json() or {}
-                    password = data.get("admin_password") or data.get("password")
-                except:
-                    pass
-            if not password:
-                password = request.form.get("admin_password") or request.form.get(
-                    "password"
-                )
-            # 验证密码
-            if not public_client._verify_admin_password(password):
-                return jsonify({"success": False, "message": "需要管理员密码"}), 403
-
         if request.method == "POST":
             data = request.get_json()
             filename = data.get("filename")
@@ -4337,6 +4463,7 @@ def api_check_version():
 
 
 @app.route("/api/version/download", methods=["POST"])
+@require_local_or_password
 def api_download_update():
     """下载更新（支持多平台格式）"""
     try:
@@ -4422,6 +4549,7 @@ def api_download_update():
 
 
 @app.route("/api/version/install", methods=["POST"])
+@require_local_or_password
 def api_install_update():
     """安装更新 - 静默替换当前客户端"""
     try:
@@ -4603,6 +4731,7 @@ except Exception as e:
 
 
 @app.route("/api/version/auto-update", methods=["POST"])
+@require_local_or_password
 def api_auto_update():
     """一键自动更新：下载并安装"""
     try:
@@ -5068,6 +5197,7 @@ def verify_password():
 
 
 @app.route("/api/photo/featured", methods=["GET", "POST"])
+@require_local_or_password
 def featured_photo_api():
     """获取/保存精选照片"""
     try:
@@ -5786,6 +5916,7 @@ def api_card_styles():
 
 
 @app.route("/api/card/generate", methods=["POST"])
+@require_local_or_password
 def api_card_generate():
     """生成成长卡片"""
     try:
@@ -5909,6 +6040,7 @@ def api_card_cache_random():
 
 
 @app.route("/api/card/cache/update", methods=["POST"])
+@require_local_or_password
 def api_card_cache_update():
     """更新卡片缓存"""
     try:
@@ -5931,6 +6063,7 @@ def api_card_cache_update():
 
 
 @app.route("/api/card/share", methods=["POST"])
+@require_local_or_password
 def api_card_share():
     """标记卡片已分享"""
     try:
@@ -5984,6 +6117,7 @@ def get_local_profile_data():
 
 
 @app.route("/api/card/share-log", methods=["POST"])
+@require_local_or_password
 def api_card_share_log():
     """记录分享行为"""
     try:
@@ -6031,6 +6165,7 @@ def api_collage_styles():
 
 
 @app.route("/api/collage/generate", methods=["POST"])
+@require_local_or_password
 def api_collage_generate():
     """生成照片合图"""
     try:
@@ -6152,6 +6287,7 @@ def calculate_age_text():
 
 
 @app.route("/api/ai/children/<child_id>/feedback", methods=["GET", "POST"])
+@require_local_or_password
 def ai_feedback_proxy(child_id):
     """反馈API代理"""
     server_url = USER_CONFIG.get("server_url", "")
@@ -7358,6 +7494,7 @@ def get_compression_status():
 
 
 @app.route("/api/compression/settings", methods=["GET", "POST"])
+@require_local_or_password
 def compression_settings():
     """获取或保存压缩设置"""
     try:

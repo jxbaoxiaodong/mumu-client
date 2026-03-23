@@ -2442,10 +2442,10 @@ let cachedPhotos = {{ today_photos | tojson }} || [];
 function autoSelectFeatured() {
     const clientId = window.currentClientId || '';
     const dateStr = formatDate(window.currentCalendarDate || new Date());
-    
+
     showNotification('AI正在选择最佳照片...', 'info');
-    
-    fetch('/api/photo/select-best', {
+
+    fetchWithPassword('/api/photo/select-best', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -2453,9 +2453,8 @@ function autoSelectFeatured() {
             date: dateStr
         })
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success && data.photo) {
+        if (data && data.success && data.photo) {
             // 更新照片框
             const featuredWrapper = document.getElementById('featuredPhotoWrapper');
             if (featuredWrapper) {
@@ -2531,23 +2530,24 @@ function clearPhotoHighlights() {
 // 从索引移除照片
 function removePhotosFromIndex(filenames, dateStr) {
     if (!filenames || filenames.length === 0) return;
-    
-    fetch('/api/photos/remove-from-index', {
+
+    fetchWithPassword('/api/photos/remove-from-index', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({filenames: filenames, date: dateStr})
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             showNotification(`已从索引移除 ${filenames.length} 张照片，原文件未删除。如需恢复，请在设置中重新扫描媒体文件夹。`, 'success');
             loadDateData(dateStr);
-        } else {
+        } else if (data) {
             showNotification(data.message || '移除失败', 'error');
         }
     })
     .catch(err => {
-        showNotification('移除失败: ' + err.message, 'error');
+        if (err !== 'require_password') {
+            showNotification('移除失败: ' + err.message, 'error');
+        }
     });
 }
 
@@ -2644,7 +2644,7 @@ function selectAsFeatured(filename) {
         // 保存到服务端
         const clientId = window.currentClientId || '';
         const dateStr = formatDate(window.currentCalendarDate || new Date());
-        fetch('/api/photo/featured', {
+        fetchWithPassword('/api/photo/featured', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -2653,10 +2653,13 @@ function selectAsFeatured(filename) {
                 file_hash: fileHash,
                 filename: filename
             })
-        }).then(r => r.json())
-          .then(data => {
-              // 更换成功，不显示提示
-          });
+        }).then(data => {
+            // 更换成功，不显示提示
+        }).catch(err => {
+            if (err !== 'require_password') {
+                console.error('保存精选照片失败:', err);
+            }
+        });
     }
 }
 
@@ -2914,33 +2917,25 @@ function toggleRecording() {
 
 function submitComment() {
     const text = document.getElementById('commentText').value;
-    
+
     // 如果有录音，先处理录音
     if (audioBlob) {
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = function() {
             const base64data = reader.result;
-            
+
             const formData = new FormData();
             formData.append('audio', base64data);
             formData.append('message', text);
             formData.append('type', 'voice');
-            
-            fetch('/message', {
+
+            fetchWithPassword('/message', {
                 method: 'POST',
                 body: formData
             })
-            .then(async response => {
-                const text = await response.text();
-                try {
-                    return JSON.parse(text);
-                } catch (e) {
-                    throw new Error('服务器返回无效数据，请检查网络连接');
-                }
-            })
             .then(data => {
-                if (data.success) {
+                if (data && data.success) {
                     showNotification('语音留言发送成功', 'success');
                     // 重置状态
                     audioBlob = null;
@@ -2948,52 +2943,48 @@ function submitComment() {
                     closeCommentForm();
                     // 刷新留言列表
                     loadMessages(formatDate(window.currentCalendarDate));
-                } else {
+                } else if (data) {
                     showNotification('发送失败: ' + data.message, 'error');
                 }
             })
             .catch(err => {
-                showNotification('发送失败: ' + err.message, 'error');
+                if (err !== 'require_password') {
+                    showNotification('发送失败: ' + err.message, 'error');
+                }
             });
         };
         return;
     }
-    
+
     // 纯文字留言
     if (!text.trim()) {
         showNotification('请输入留言内容', 'error');
         return;
     }
-    
+
     const formData = new FormData();
     formData.append('message', text);
     formData.append('type', 'text');
-    
-    fetch('/message', {
+
+    fetchWithPassword('/message', {
         method: 'POST',
         body: formData
     })
-    .then(async response => {
-        const text = await response.text();
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            throw new Error('服务器返回无效数据，请检查网络连接');
-        }
-    })
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             showNotification('留言发送成功', 'success');
             document.getElementById('commentText').value = '';
             closeCommentForm();
             // 刷新留言列表
             loadMessages(formatDate(window.currentCalendarDate));
-        } else {
+        } else if (data) {
             showNotification('发送失败: ' + data.message, 'error');
         }
     })
     .catch(err => {
-        showNotification('发送失败: ' + err.message, 'error');
+        if (err !== 'require_password') {
+            showNotification('发送失败: ' + err.message, 'error');
+        }
     });
 }
 
@@ -3106,16 +3097,16 @@ function editBabyLog(dateStr) {
 function saveEditedLog() {
     const dateStr = document.getElementById('editLogDate').value;
     const newContent = document.getElementById('editLogContent').value;
-    
+
     if (!newContent || newContent.trim() === '') {
         showNotification('内容不能为空', 'error');
         return;
     }
-    
+
     // 收集当前页面的元数据
     const metadata = collectCurrentMetadata();
-    
-    fetch('/api/log/save', {
+
+    fetchWithPassword('/api/log/save', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -3124,19 +3115,20 @@ function saveEditedLog() {
             metadata: metadata
         })
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             bootstrap.Modal.getInstance(document.getElementById('editLogModal')).hide();
             showNotification('日记已保存', 'success');
             location.reload();
-        } else {
+        } else if (data) {
             showNotification(data.message || '保存失败', 'error');
         }
     })
     .catch(err => {
-        console.error(err);
-        showNotification('保存失败', 'error');
+        if (err !== 'require_password') {
+            console.error(err);
+            showNotification('保存失败', 'error');
+        }
     });
 }
 
@@ -3155,22 +3147,23 @@ function viewPhotoDetail(filename) {
 
 function deletePhoto(filename) {
     if (confirm('确定要从相册中移除这张照片吗？\n（原文件不会删除）')) {
-        fetch('/api/photo/delete', {
+        fetchWithPassword('/api/photo/delete', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({filename: filename})
         })
-        .then(r => r.json())
         .then(data => {
-            if (data.success) {
+            if (data && data.success) {
                 showNotification('照片已移除', 'success');
                 loadDateData(formatDate(window.currentCalendarDate));
-            } else {
+            } else if (data) {
                 showNotification(data.message || '删除失败', 'error');
             }
         })
         .catch(err => {
-            showNotification('删除失败: ' + err.message, 'error');
+            if (err !== 'require_password') {
+                showNotification('删除失败: ' + err.message, 'error');
+            }
         });
     }
 }
@@ -3589,16 +3582,20 @@ function openPhotoTagModal(filename) {
         // 如果 photo_tags.html 还没加载，直接显示提示
         const tag = prompt('为这张照片添加标签：');
         if (tag && tag.trim()) {
-            fetch('/api/photo/tag', {
+            fetchWithPassword('/api/photo/tag', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({filename, tag: tag.trim(), note: ''})
             })
-            .then(r => r.json())
             .then(data => {
-                if (data.success) {
+                if (data && data.success) {
                     showNotification('标签添加成功', 'success');
                     location.reload();
+                }
+            })
+            .catch(err => {
+                if (err !== 'require_password') {
+                    console.error(err);
                 }
             });
         }
@@ -3613,6 +3610,8 @@ function deleteMessage(messageId) {
 
 // 显示密码验证模态框
 let pendingAction = null;
+let pendingRequest = null;  // 待重试的请求
+
 function showPasswordVerify(action) {
     pendingAction = action;
     const modal = new bootstrap.Modal(document.getElementById('passwordVerifyModal'));
@@ -3625,7 +3624,7 @@ function showPasswordVerify(action) {
 function confirmPasswordVerify() {
     const password = document.getElementById('verifyPassword').value;
     const errorEl = document.getElementById('passwordError');
-    
+
     fetch('/api/verify-password', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -3635,9 +3634,20 @@ function confirmPasswordVerify() {
     .then(data => {
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
+            
+            // 处理特定操作
             if (pendingAction === 'delete_message' && window.pendingDeleteId) {
                 doDeleteMessage(window.pendingDeleteId);
             }
+            
+            // 如果有待重试的请求，使用密码重试
+            if (pendingRequest) {
+                const req = pendingRequest;
+                pendingRequest = null;
+                // 将密码添加到请求中重试
+                fetchWithPassword(req.url, req.options, password);
+            }
+            
             pendingAction = null;
         } else {
             errorEl.textContent = data.message || '密码错误';
@@ -3648,6 +3658,40 @@ function confirmPasswordVerify() {
         errorEl.textContent = '验证失败: ' + err.message;
         errorEl.style.display = 'block';
     });
+}
+
+// 带密码验证的 fetch 包装函数
+function fetchWithPassword(url, options = {}, password = null) {
+    // 如果提供了密码，直接添加到请求头中
+    if (password) {
+        if (options.headers) {
+            options.headers['X-Admin-Password'] = password;
+        } else {
+            options.headers = {'X-Admin-Password': password};
+        }
+    }
+    
+    return fetch(url, options)
+        .then(async r => {
+            // 尝试解析 JSON
+            const text = await r.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                // 非 JSON 响应，返回原始文本
+                return { success: false, message: text };
+            }
+        })
+        .then(data => {
+            // 检查是否需要密码验证
+            if (data.require_password) {
+                // 保存请求以便验证成功后重试
+                pendingRequest = {url, options};
+                showPasswordVerify('api_request');
+                return Promise.reject('require_password');
+            }
+            return data;
+        });
 }
 
 // 执行删除留言
@@ -3886,15 +3930,15 @@ function submitAIQuestion() {
         showNotification('请输入你的问题', 'warning');
         return;
     }
-    
+
     currentAIQuestion = question;
     // 显示加载状态
     document.getElementById('aiSubmitBtn').disabled = true;
     document.getElementById('aiLoading').style.display = 'block';
     document.getElementById('aiAnswerContainer').style.display = 'none';
-    
+
     // 调用后端AI接口
-    fetch('/api/ai/ask', {
+    fetchWithPassword('/api/ai/ask', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -3903,18 +3947,19 @@ function submitAIQuestion() {
             date: formatDate(window.currentCalendarDate)
         })
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             currentAIAnswer = data.answer;
             document.getElementById('aiAnswerText').textContent = data.answer;
             document.getElementById('aiAnswerContainer').style.display = 'block';
-        } else {
+        } else if (data) {
             showNotification('AI分析失败: ' + data.message, 'error');
         }
     })
     .catch(err => {
-        showNotification('请求失败: ' + err.message, 'error');
+        if (err !== 'require_password') {
+            showNotification('请求失败: ' + err.message, 'error');
+        }
     })
     .finally(() => {
         document.getElementById('aiSubmitBtn').disabled = false;
@@ -3925,7 +3970,7 @@ function submitAIQuestion() {
 function feedbackAnswer(isCorrect) {
     if (isCorrect) {
         // 提交正确反馈
-        fetch('/api/ai/feedback', {
+        fetchWithPassword('/api/ai/feedback', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -3934,6 +3979,10 @@ function feedbackAnswer(isCorrect) {
                 is_correct: true,
                 photo_filename: currentAIPhoto
             })
+        }).catch(err => {
+            if (err !== 'require_password') {
+                console.error('提交反馈失败:', err);
+            }
         });
         showNotification('感谢反馈，AI会变得更准确哦', 'success');
         // 关闭模态框
@@ -3950,8 +3999,8 @@ function submitCorrection() {
         showNotification('请输入正确的答案', 'warning');
         return;
     }
-    
-    fetch('/api/ai/feedback', {
+
+    fetchWithPassword('/api/ai/feedback', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -3962,12 +4011,11 @@ function submitCorrection() {
             photo_filename: currentAIPhoto
         })
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             showNotification('纠正已提交，AI已经记住啦', 'success');
             bootstrap.Modal.getInstance(document.getElementById('aiAnalysisModal')).hide();
-        } else {
+        } else if (data) {
             showNotification('提交失败: ' + data.message, 'error');
         }
     });
@@ -4357,7 +4405,8 @@ let cardCache = {
     cards: [],           // 从后端加载的卡片数组
     milestoneCards: [],  // 今日里程碑卡片
     shownIds: new Set(), // 本次会话已显示的卡片ID
-    loaded: false,       // 是否加载完成
+    loaded: false,       // 数据加载完成
+    imagesLoaded: false, // 图片预加载完成
     loading: false       // 是否正在加载
 };
 
@@ -4367,6 +4416,9 @@ function loadCardsFromCache() {
     cardCache.loading = true;
 
     console.log('[Card] 从后端缓存加载卡片...');
+    
+    // 显示加载中的迷你卡片
+    showMiniCardLoading('加载中...');
 
     // 先检查今日里程碑
     fetch('/api/card/milestone/today')
@@ -4378,8 +4430,10 @@ function loadCardsFromCache() {
                 console.log(`[Card] 今日里程碑: ${data.cards.length} 张`);
                 cardCache.loaded = true;
                 cardCache.loading = false;
-                // 显示"今日卡片"按钮
-                showMiniCard();
+                // 预加载里程碑卡片图片
+                preloadCardImages(data.cards, () => {
+                    showMiniCard();
+                });
             } else {
                 // 没有里程碑，加载普通卡片
                 loadNormalCards();
@@ -4401,10 +4455,12 @@ function loadNormalCards() {
                 cardCache.cards = shuffleArray(data.cards);
                 cardCache.loaded = true;
                 cardCache.loading = false;
-                console.log(`[Card] 加载完成，共 ${cardCache.cards.length} 张卡片`);
+                console.log(`[Card] 数据加载完成，共 ${cardCache.cards.length} 张卡片`);
 
-                // 显示"今日卡片"按钮（不自动弹出卡片）
-                showMiniCard();
+                // 预加载所有卡片图片，完成后显示按钮
+                preloadCardImages(cardCache.cards, () => {
+                    showMiniCard();
+                });
             } else {
                 console.log('[Card] 缓存为空，触发更新...');
                 // 触发后台更新
@@ -4419,21 +4475,114 @@ function loadNormalCards() {
         });
 }
 
+// 预加载卡片图片
+function preloadCardImages(cards, callback) {
+    if (!cards || cards.length === 0) {
+        cardCache.imagesLoaded = true;
+        if (callback) callback();
+        return;
+    }
+
+    // 收集所有需要预加载的图片URL
+    const imageUrls = new Set();
+    cards.forEach(card => {
+        if (card.photo) imageUrls.add(card.photo);
+        if (card.before_photo) imageUrls.add(card.before_photo);
+        if (card.after_photo) imageUrls.add(card.after_photo);
+    });
+
+    const urls = Array.from(imageUrls);
+    if (urls.length === 0) {
+        console.log('[Card] 无需预加载图片');
+        cardCache.imagesLoaded = true;
+        if (callback) callback();
+        return;
+    }
+
+    console.log(`[Card] 开始预加载 ${urls.length} 张图片...`);
+    let loadedCount = 0;
+    let errorCount = 0;
+    const total = urls.length;
+
+    // 更新加载进度显示
+    const updateProgress = () => {
+        const progress = Math.round((loadedCount + errorCount) / total * 100);
+        showMiniCardLoading(`加载中 ${progress}%`);
+    };
+    
+    updateProgress();
+
+    urls.forEach(url => {
+        const img = new Image();
+        img.onload = () => {
+            loadedCount++;
+            updateProgress();
+            if (loadedCount + errorCount === total) {
+                cardCache.imagesLoaded = true;
+                console.log(`[Card] 图片预加载完成: ${loadedCount} 成功, ${errorCount} 失败`);
+                if (callback) callback();
+            }
+        };
+        img.onerror = () => {
+            errorCount++;
+            updateProgress();
+            console.warn(`[Card] 图片加载失败: ${url}`);
+            if (loadedCount + errorCount === total) {
+                cardCache.imagesLoaded = true;
+                console.log(`[Card] 图片预加载完成: ${loadedCount} 成功, ${errorCount} 失败`);
+                if (callback) callback();
+            }
+        };
+        img.src = url;
+    });
+
+    // 设置超时（30秒），避免无限等待
+    setTimeout(() => {
+        if (!cardCache.imagesLoaded) {
+            console.warn('[Card] 图片预加载超时，强制显示按钮');
+            cardCache.imagesLoaded = true;
+            if (callback) callback();
+        }
+    }, 30000);
+}
+
+// 显示加载中的迷你卡片
+function showMiniCardLoading(text) {
+    let miniCard = document.getElementById('miniGrowthCard');
+    
+    if (!miniCard) {
+        miniCard = document.createElement('div');
+        miniCard.id = 'miniGrowthCard';
+        miniCard.className = 'mini-growth-card';
+        document.body.appendChild(miniCard);
+    }
+    
+    miniCard.innerHTML = `
+        <div class="mini-card-loading"></div>
+        <div class="mini-card-text">${text}</div>
+    `;
+    miniCard.classList.add('show');
+    miniCard.onclick = null;  // 加载中不可点击
+}
+
 // 更新后端缓存
 function updateCardCache() {
     console.log('[Card] 更新后端缓存...');
 
-    fetch('/api/card/cache/update', { method: 'POST' })
-        .then(r => r.json())
+    fetchWithPassword('/api/card/cache/update', { method: 'POST' })
         .then(data => {
-            if (data.success) {
+            if (data && data.success) {
                 console.log(`[Card] 缓存更新完成，共 ${data.total} 张`);
                 // 重新加载
                 cardCache.loaded = false;
                 loadCardsFromCache();
             }
         })
-        .catch(err => console.error('[Card] 更新失败:', err));
+        .catch(err => {
+            if (err !== 'require_password') {
+                console.error('[Card] 更新失败:', err);
+            }
+        });
 }
 
 // 数组随机打乱
@@ -4491,21 +4640,24 @@ function switchToNextCard() {
 function markCardShared(cardId) {
     if (!cardId) return;
 
-    fetch('/api/card/share', {
+    fetchWithPassword('/api/card/share', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ card_id: cardId })
     })
-    .then(r => r.json())
     .then(data => {
-        if (data.success) {
+        if (data && data.success) {
             console.log('[Card] 已标记为已分享');
             // 更新本地缓存中的状态
             const card = cardCache.cards.find(c => c.id === cardId);
             if (card) card.shared = true;
         }
     })
-    .catch(err => console.error('[Card] 标记分享失败:', err));
+    .catch(err => {
+        if (err !== 'require_password') {
+            console.error('[Card] 标记分享失败:', err);
+        }
+    });
 }
 
 // 兼容旧函数
@@ -4564,7 +4716,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card photo-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="宝宝照片" class="card-photo" onerror="this.style.display='none'">
+                    <img src="${card.photo}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
                 <div class="card-photo-date">${card.photo_date || ''}</div>
                 <div class="card-content">
@@ -4641,7 +4793,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card collage-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="成长合图" class="card-collage" onerror="this.style.display='none'">
+                    <img src="${card.photo}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '成长合辑'}</div>
@@ -4659,7 +4811,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card comparison-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="成长对比" class="card-collage" onerror="this.style.display='none'">
+                    <img src="${card.photo}" alt="成长对比" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
                 <div class="card-photo-date">${card.before_date || ''} → ${card.after_date || ''}</div>
                 <div class="card-content">
@@ -4726,11 +4878,15 @@ function pregenerateShareImage(cardEl) {
     const totalImages = images.length;
     
     const doGenerate = () => {
-        // 加载 html2canvas
+        // 加载 html2canvas（本地资源，避免 CDN 超时）
         if (typeof html2canvas === 'undefined') {
             const script = document.createElement('script');
-            script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+            script.src = '/static/vendor/html2canvas/html2canvas.min.js';
             script.onload = () => generateCanvas(cardEl);
+            script.onerror = () => {
+                console.error('[Card] html2canvas 加载失败');
+                showNotification('图片生成组件加载失败', 'error');
+            };
             document.head.appendChild(script);
         } else {
             generateCanvas(cardEl);
@@ -4761,9 +4917,18 @@ function pregenerateShareImage(cardEl) {
 function generateCanvas(cardEl) {
     html2canvas(cardEl, {
         scale: 2,
-        backgroundColor: null,
+        backgroundColor: '#ffffff',
         useCORS: true,
-        allowTaint: true
+        allowTaint: true,
+        logging: false,
+        imageTimeout: 15000,
+        onclone: (clonedDoc) => {
+            // 确保克隆的图片元素正确加载
+            const clonedImages = clonedDoc.querySelectorAll('img');
+            clonedImages.forEach(img => {
+                img.crossOrigin = 'anonymous';
+            });
+        }
     }).then(canvas => {
         pregeneratedCanvas = canvas;
         console.log('[Card] 分享图片预生成完成');
@@ -4817,8 +4982,12 @@ function shareDailyCard() {
     
     if (typeof html2canvas === 'undefined') {
         const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        script.src = '/static/vendor/html2canvas/html2canvas.min.js';
         script.onload = () => generateAndShare(card);
+        script.onerror = () => {
+            console.error('[Card] html2canvas 加载失败');
+            showNotification('图片生成组件加载失败', 'error');
+        };
         document.head.appendChild(script);
     } else {
         generateAndShare(card);
@@ -4828,9 +4997,17 @@ function shareDailyCard() {
 function generateAndShare(card) {
     html2canvas(card, {
         scale: 2,
-        backgroundColor: null,
+        backgroundColor: '#ffffff',
         useCORS: true,
-        allowTaint: true
+        allowTaint: true,
+        logging: false,
+        imageTimeout: 15000,
+        onclone: (clonedDoc) => {
+            const clonedImages = clonedDoc.querySelectorAll('img');
+            clonedImages.forEach(img => {
+                img.crossOrigin = 'anonymous';
+            });
+        }
     }).then(canvas => {
         pregeneratedCanvas = canvas;
         doShareWithCanvas(canvas);
@@ -4841,39 +5018,47 @@ function generateAndShare(card) {
 }
 
 function doShareWithCanvas(canvas) {
-    // 检测是否在微信内置浏览器
-    const isWechat = /MicroMessenger/i.test(navigator.userAgent);
+    // 检测是否为移动端
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-    if (isWechat) {
-        // 微信环境：显示图片预览，让用户长按保存
-        showImagePreview(canvas);
-    } else if (navigator.share) {
-        // 支持原生分享的浏览器 - 使用JPEG格式
-        canvas.toBlob(blob => {
-            if (blob) {
-                const file = new File([blob], '成长卡片.jpg', {type: 'image/jpeg'});
-                navigator.share({
-                    title: '宝宝成长卡片',
-                    text: '看看AI发现了什么~',
-                    files: [file]
-                }).catch(() => showImagePreview(canvas));
-            } else {
-                showImagePreview(canvas);
-            }
-        }, 'image/jpeg', 0.8);
-    } else {
-        // 其他浏览器：显示图片预览
-        showImagePreview(canvas);
-    }
+    // 统一显示图片预览，移动端长按保存，桌面端显示下载按钮
+    showImagePreview(canvas, !isMobile);
 }
 
-function showImagePreview(canvas) {
+function showImagePreview(canvas, showDownload = false) {
     // 创建预览模态框
     let modal = document.getElementById('imagePreviewModal');
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'imagePreviewModal';
         modal.className = 'image-preview-modal';
+        document.body.appendChild(modal);
+
+        // 点击背景关闭
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeImagePreview();
+        });
+    }
+
+    // 根据是否桌面端显示不同内容
+    if (showDownload) {
+        modal.innerHTML = `
+            <div class="image-preview-content">
+                <div class="image-preview-header">
+                    <span>保存图片</span>
+                    <button class="image-preview-close" onclick="closeImagePreview()">✕</button>
+                </div>
+                <div class="image-preview-body">
+                    <img id="previewImage" src="" alt="成长卡片">
+                </div>
+                <div class="image-preview-tip" style="display: flex; gap: 10px; justify-content: center;">
+                    <button onclick="downloadCardFromPreview()" style="background: linear-gradient(135deg, #FFB6C1, #FFD700); border: none; color: white; padding: 10px 24px; border-radius: 20px; font-weight: 600; cursor: pointer;">
+                        <i class="fas fa-download"></i> 保存图片
+                    </button>
+                </div>
+            </div>
+        `;
+    } else {
         modal.innerHTML = `
             <div class="image-preview-content">
                 <div class="image-preview-header">
@@ -4888,17 +5073,21 @@ function showImagePreview(canvas) {
                 </div>
             </div>
         `;
-        document.body.appendChild(modal);
-        
-        // 点击背景关闭
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeImagePreview();
-        });
     }
-    
+
     // 设置图片 - 使用JPEG格式减小文件大小
     document.getElementById('previewImage').src = canvas.toDataURL('image/jpeg', 0.8);
+    
+    // 保存canvas引用供下载使用
+    window.previewCanvas = canvas;
+    
     modal.classList.add('show');
+}
+
+function downloadCardFromPreview() {
+    if (window.previewCanvas) {
+        downloadCard(window.previewCanvas);
+    }
 }
 
 function closeImagePreview() {
@@ -4941,9 +5130,23 @@ function closeDailyCard() {
 }
 
 function showMiniCard() {
-    // 只有卡片加载完成后才显示迷你卡片
-    if (!cardCache.loaded || cardCache.cards.length === 0) {
-        console.log('[Card] 卡片未加载完成，不显示迷你卡片');
+    // 只有数据和图片都加载完成后才显示迷你卡片
+    if (!cardCache.loaded) {
+        console.log('[Card] 数据未加载完成，不显示迷你卡片');
+        return;
+    }
+
+    // 检查是否有可用卡片
+    const hasCards = (cardCache.cards && cardCache.cards.length > 0) ||
+                     (cardCache.milestoneCards && cardCache.milestoneCards.length > 0);
+    if (!hasCards) {
+        console.log('[Card] 没有可用卡片，不显示迷你卡片');
+        return;
+    }
+
+    // 检查图片是否预加载完成
+    if (!cardCache.imagesLoaded) {
+        console.log('[Card] 图片未预加载完成，不显示迷你卡片');
         return;
     }
 
@@ -4953,18 +5156,20 @@ function showMiniCard() {
         miniCard = document.createElement('div');
         miniCard.id = 'miniGrowthCard';
         miniCard.className = 'mini-growth-card';
-        miniCard.innerHTML = `
-            <div class="mini-card-icon">✨</div>
-            <div class="mini-card-text">今日卡片</div>
-        `;
-        miniCard.onclick = () => {
-            // 从缓存显示大卡片（秒开）
-            showCachedCard();
-        };
         document.body.appendChild(miniCard);
     }
 
+    // 更新为可点击的"今日卡片"按钮
+    miniCard.innerHTML = `
+        <div class="mini-card-icon">✨</div>
+        <div class="mini-card-text">今日卡片</div>
+    `;
+    miniCard.onclick = () => {
+        // 从缓存显示大卡片（秒开）
+        showCachedCard();
+    };
     miniCard.classList.add('show');
+    console.log('[Card] 迷你卡片按钮已显示');
 }
 
 function hideMiniCard() {
@@ -5112,6 +5317,20 @@ function hideMiniCard() {
     transform: scale(0.95);
 }
 
+/* 加载动画 */
+.mini-card-loading {
+    width: 22px;
+    height: 22px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
 .mini-card-icon {
     font-size: 22px;
     animation: pulse 2s ease-in-out infinite;
@@ -5222,7 +5441,7 @@ function hideMiniCard() {
 
 /* 成长对比卡片 */
 .comparison-card {
-    background: linear-gradient(135deg, #F5F7FA 0%, #E8ECF1 100%);
+    background: #F5F7FA;
 }
 
 .comparison-card .card-photo-wrapper {
@@ -5279,7 +5498,7 @@ function hideMiniCard() {
 
 /* 特殊里程碑卡片 */
 .special-milestone-card {
-    background: linear-gradient(135deg, #FFF9E6 0%, #FFE4B5 100%);
+    background: #FFF9E6;
     text-align: center;
     padding: 30px 20px;
 }
@@ -5316,7 +5535,7 @@ function hideMiniCard() {
 
 /* 画像卡片 */
 .profile-card {
-    background: linear-gradient(135deg, #FFF5F7 0%, #FFE4EC 100%);
+    background: #FFF5F7;
 }
 
 .profile-card .card-header-bar {
@@ -5336,7 +5555,7 @@ function hideMiniCard() {
 
 /* 里程碑卡片 */
 .milestone-card {
-    background: linear-gradient(135deg, #FFF9E6 0%, #FFE4B5 100%);
+    background: #FFF9E6;
     text-align: center;
     padding: 30px 20px;
 }
@@ -5348,7 +5567,7 @@ function hideMiniCard() {
 
 /* 特质卡片 */
 .trait-card {
-    background: linear-gradient(135deg, #F0FFF4 0%, #C6F6D5 100%);
+    background: #F0FFF4;
 }
 
 .trait-card .card-header-bar {
