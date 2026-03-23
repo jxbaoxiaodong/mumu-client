@@ -2571,7 +2571,6 @@ def api_setup():
 
 
 @app.route("/api/photo-index/build", methods=["POST"])
-@require_local_or_password
 def build_photo_index_api():
     """执行照片索引建立（首次）"""
     try:
@@ -3254,7 +3253,6 @@ def get_photo_detail(filename):
 
 
 @app.route("/upload", methods=["POST"])
-@require_local_or_password
 def upload_photos():
     """上传照片到本地文件夹"""
     try:
@@ -3482,9 +3480,7 @@ def photo_folder_settings():
             return jsonify({"success": False, "message": f"无法设置文件夹: {str(e)}"})
 
 
-@app.route("/api/settings/basic", methods=["POST"])
-@require_local_or_password
-def save_basic_settings():
+save_basic_settings():
     """保存基本设置"""
     try:
         data = request.get_json()
@@ -3518,10 +3514,8 @@ def save_basic_settings():
     except Exception as e:
         return jsonify({"success": False, "message": f"保存失败: {str(e)}"})
 
-
 @app.route("/api/settings/log-style", methods=["POST"])
-@require_local_or_password
-def save_log_style():
+save_log_style():
     """保存日志风格设置"""
     try:
         data = request.get_json()
@@ -3546,7 +3540,6 @@ def save_log_style():
 
 
 @app.route("/api/settings/avatar", methods=["POST"])
-@require_local_or_password
 def upload_avatar():
     """上传头像"""
     try:
@@ -3705,10 +3698,8 @@ def run_scan_in_background(media_folders, data_dir, start_date=None, end_date=No
     finally:
         scan_progress["running"] = False
 
-
 @app.route("/api/photos/scan", methods=["POST"])
-@require_local_or_password
-def scan_photos():
+scan_photos():
     """手动触发照片扫描（后台执行）"""
     global scan_progress
 
@@ -4113,25 +4104,19 @@ def api_save_log():
 #     except Exception as e:
 #         print(f"[ERROR] 获取勋章统计失败: {e}")
 #         return jsonify({"success": False, "message": str(e)})
-
 # 勋章API已禁用，保留代码备用
 @app.route("/api/badges", methods=["GET"])
-@require_local_or_password
-def api_get_badges():
+api_get_badges():
     """获取用户所有勋章（已禁用）"""
-    return jsonify({"success": False, "message": "勋章功能已暂停", "badges": [], "stats": {}})
 
 
 @app.route("/api/badges/stats", methods=["GET"])
-@require_local_or_password
-def api_get_badge_stats():
-    """获取勋章统计（已禁用）"""
+api_get_badge_stats():
     return jsonify({"success": False, "message": "勋章功能已暂停", "stats": {}})
 
 
 @app.route("/api/photo/tag", methods=["POST", "DELETE"])
-@require_local_or_password
-def api_photo_tag():
+api_photo_tag():
     """照片标签管理，上报服务端存储"""
     try:
         if request.method == "POST":
@@ -4282,12 +4267,10 @@ def api_get_notifications():
             return jsonify({"success": False, "message": "获取失败"})
 
     except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/feedback", methods=["POST"])
-@require_local_or_password
-def api_submit_feedback():
+api_submit_feedback():
     """提交用户反馈"""
     try:
         data = request.get_json()
@@ -4336,13 +4319,11 @@ def api_submit_feedback():
 
         return jsonify({"success": True, "message": "感谢您的反馈！"})
 
-    except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/notifications/mark-read", methods=["POST"])
-@require_local_or_password
-def api_mark_notification_read():
+api_mark_notification_read():
     """标记通知为已读"""
     try:
         import requests
@@ -4457,14 +4438,12 @@ def api_check_version():
             )
         else:
             return jsonify({"success": False, "message": "检查失败"})
-
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/version/download", methods=["POST"])
-@require_local_or_password
-def api_download_update():
+api_download_update():
     """下载更新（支持多平台格式）"""
     try:
         data = request.get_json() or {}
@@ -4542,15 +4521,13 @@ def api_download_update():
                 "download_path": str(update_file),
                 "filename": filename,
             }
-        )
 
     except Exception as e:
         return jsonify({"success": False, "message": f"下载失败: {str(e)}"})
 
 
 @app.route("/api/version/install", methods=["POST"])
-@require_local_or_password
-def api_install_update():
+api_install_update():
     """安装更新 - 静默替换当前客户端"""
     try:
         import subprocess
@@ -4723,7 +4700,6 @@ except Exception as e:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-
             return jsonify({"success": True, "message": "更新程序已启动，即将重启..."})
 
     except Exception as e:
@@ -4731,8 +4707,7 @@ except Exception as e:
 
 
 @app.route("/api/version/auto-update", methods=["POST"])
-@require_local_or_password
-def api_auto_update():
+api_auto_update():
     """一键自动更新：下载并安装"""
     try:
         # 1. 获取版本信息
@@ -4945,7 +4920,6 @@ def get_theme():
 
         if theme:
             css = generate_css(theme)
-            return jsonify({"success": True, "theme": theme, "css": css})
         else:
             return jsonify({"success": False, "message": "主题不存在"})
 
@@ -4954,8 +4928,7 @@ def get_theme():
 
 
 @app.route("/api/theme/update", methods=["POST"])
-@require_local_or_password
-def update_theme():
+update_theme():
     """根据用户描述更新主题"""
     try:
         from theme_generator import update_theme, generate_css
@@ -5001,7 +4974,6 @@ def get_preset_themes():
         return jsonify(
             {
                 "success": True,
-                "presets": [],
                 "message": "请使用AI主题生成功能创建自定义主题",
             }
         )
@@ -5011,12 +4983,10 @@ def get_preset_themes():
 
 
 @app.route("/api/theme/apply", methods=["POST"])
-@require_local_or_password
-def apply_preset_theme():
+apply_preset_theme():
     """应用预设主题 - 新版本已废弃，请使用AI主题生成"""
     try:
         return jsonify(
-            {
                 "success": False,
                 "message": "预设主题功能已废弃，请使用AI主题生成器创建自定义主题",
             }
@@ -5027,8 +4997,7 @@ def apply_preset_theme():
 
 
 @app.route("/api/theme/reset", methods=["POST"])
-@require_local_or_password
-def reset_theme():
+reset_theme():
     """重置为默认主题"""
     try:
         from theme_generator import get_or_create_theme
@@ -5069,7 +5038,6 @@ def get_photo_dates():
         dates = pm.get_all_dates()
 
         return jsonify({"success": True, "dates": dates})
-
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -5081,8 +5049,7 @@ public_client = PublicClient(auto_connect=False)
 
 
 @app.route("/message", methods=["POST"])
-@require_local_or_password
-def post_message():
+post_message():
     """提交留言（文字或语音）- 转发到服务端，支持角色选择"""
     try:
         message_type = request.form.get("type", "text")
@@ -5215,7 +5182,6 @@ def featured_photo_api():
             check_result = check_local_or_password()
             if check_result:
                 return check_result
-            data = request.get_json()
             response = public_client.signed_request(
                 "POST",
                 f"{public_client.server_url}/czrz/photo/featured/update",
@@ -5228,8 +5194,7 @@ def featured_photo_api():
 
 
 @app.route("/api/photos/best", methods=["POST"])
-@require_local_or_password
-def select_best_photo_api():
+select_best_photo_api():
     """选择最佳照片"""
     try:
         from photo_tools import select_best_photo_from_list
@@ -5265,7 +5230,6 @@ def select_best_photo_api():
             best_filename = os.path.basename(best_path)
             return jsonify(
                 {
-                    "success": True,
                     "message": "已选择最佳照片",
                     "filename": best_filename,
                     "path": best_path,
@@ -5279,8 +5243,7 @@ def select_best_photo_api():
 
 
 @app.route("/api/photos/cleanup", methods=["POST"])
-@require_local_or_password
-def cleanup_photos_api():
+cleanup_photos_api():
     """清理功能已合并到AI精选，提示用户使用精选功能"""
     return jsonify(
         {
@@ -5534,7 +5497,6 @@ def proxy_ai_generate_log():
             json=request_data,
             timeout=600,
         )
-        print(f"[TIME] 服务端生成日志耗时: {time.time() - step_start:.2f}s")
 
         result = response.json()
         print(f"[TIME] 总耗时: {time.time() - start_time:.2f}s")
@@ -5549,8 +5511,7 @@ def proxy_ai_generate_log():
 
 
 @app.route("/api/photo/select-best", methods=["POST"])
-@require_local_or_password
-def select_best_photo_local():
+select_best_photo_local():
     """本地选择精选照片（同时返回模糊和重复照片列表）"""
     try:
         from select_best_photo import (
@@ -5619,8 +5580,7 @@ def select_best_photo_local():
 
 
 @app.route("/api/ai/ask", methods=["POST"])
-@require_local_or_password
-def ai_ask():
+ai_ask():
     """向本地健康AI服务提问"""
     try:
         # 检查AI服务是否启用
@@ -5699,8 +5659,7 @@ def ai_ask():
 
 
 @app.route("/api/ai/feedback", methods=["POST"])
-@require_local_or_password
-def ai_feedback():
+ai_feedback():
     """提交AI回答反馈"""
     try:
         ai_config = CLIENT_CONFIG.get("ai_service", {})
@@ -5900,7 +5859,6 @@ def api_card_types():
         
         types = get_available_card_types(profile)
         return jsonify({"success": True, "types": types})
-    except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
 
@@ -5916,8 +5874,7 @@ def api_card_styles():
 
 
 @app.route("/api/card/generate", methods=["POST"])
-@require_local_or_password
-def api_card_generate():
+api_card_generate():
     """生成成长卡片"""
     try:
         from card_generator import generate_card_content
@@ -6023,7 +5980,6 @@ def api_card_cache_random():
 
         count = request.args.get('count', 5, type=int)
         exclude_ids = request.args.get('exclude', '').split(',') if request.args.get('exclude') else []
-
         cards = cache.get_random_cards(count, exclude_ids)
 
         # 添加分享状态
@@ -6040,12 +5996,10 @@ def api_card_cache_random():
 
 
 @app.route("/api/card/cache/update", methods=["POST"])
-@require_local_or_password
-def api_card_cache_update():
+api_card_cache_update():
     """更新卡片缓存"""
     try:
         from card_cache import get_card_cache
-        cache = get_card_cache()
 
         baby_name = USER_CONFIG.get("baby_name", "宝宝")
         # 使用公网URL
@@ -6063,8 +6017,7 @@ def api_card_cache_update():
 
 
 @app.route("/api/card/share", methods=["POST"])
-@require_local_or_password
-def api_card_share():
+api_card_share():
     """标记卡片已分享"""
     try:
         from card_cache import get_card_cache
@@ -6098,7 +6051,6 @@ def get_local_profile_data():
             return None
 
         server_url = USER_CONFIG.get("server_url", "")
-        if not server_url:
             return None
 
         response = public_client.signed_request(
@@ -6117,8 +6069,7 @@ def get_local_profile_data():
 
 
 @app.route("/api/card/share-log", methods=["POST"])
-@require_local_or_password
-def api_card_share_log():
+api_card_share_log():
     """记录分享行为"""
     try:
         from card_generator import log_share_event
@@ -6145,7 +6096,6 @@ def api_card_share_stats():
     """获取分享统计数据"""
     try:
         from card_generator import get_share_stats
-
         stats = get_share_stats()
         return jsonify({"success": True, "stats": stats})
     except Exception as e:
@@ -6165,8 +6115,7 @@ def api_collage_styles():
 
 
 @app.route("/api/collage/generate", methods=["POST"])
-@require_local_or_password
-def api_collage_generate():
+api_collage_generate():
     """生成照片合图"""
     try:
         from photo_collage import PhotoCollageGenerator
@@ -6266,7 +6215,6 @@ def calculate_age_text():
         days = delta.days
         
         if days < 0:
-            return ""
         
         if days < 30:
             return f"{days}天"
@@ -6287,8 +6235,7 @@ def calculate_age_text():
 
 
 @app.route("/api/ai/children/<child_id>/feedback", methods=["GET", "POST"])
-@require_local_or_password
-def ai_feedback_proxy(child_id):
+ai_feedback_proxy(child_id):
     """反馈API代理"""
     server_url = USER_CONFIG.get("server_url", "")
     if not server_url:
@@ -6328,7 +6275,6 @@ def ai_feedback_proxy(child_id):
                             "message": "需要密码验证",
                             "require_password": True,
                         }
-                    ), 403
 
             data = request.get_json()
             response = public_client.signed_request(
@@ -6350,8 +6296,7 @@ def ai_feedback_proxy(child_id):
 
 
 @app.route("/api/ai/children/<child_id>/feedback/<int:feedback_id>", methods=["DELETE"])
-@require_local_or_password
-def ai_delete_feedback(child_id, feedback_id):
+ai_delete_feedback(child_id, feedback_id):
     """删除反馈"""
     server_url = USER_CONFIG.get("server_url", "")
     if not server_url:
@@ -6405,7 +6350,6 @@ def ai_reject_tag(child_id, tag_id):
 @app.route("/api/ai/children/<child_id>/tags/<int:tag_id>/restore", methods=["POST"])
 @require_local_or_password
 def ai_restore_tag(child_id, tag_id):
-    """恢复标签"""
     server_url = USER_CONFIG.get("server_url", "")
     if not server_url:
         return jsonify({"success": False, "message": "未配置服务端地址"})
@@ -6429,8 +6373,7 @@ def ai_restore_tag(child_id, tag_id):
 
 
 @app.route("/api/ai/sync/batch", methods=["POST"])
-@require_local_or_password
-def ai_batch_sync():
+ai_batch_sync():
     """批量同步历史数据到AI系统"""
     try:
         ai_config = CLIENT_CONFIG.get("ai_service", {})
@@ -6522,7 +6465,6 @@ def ai_batch_sync():
                     timeout=600,
                 )
                 if response.status_code == 200:
-                    success_count += 1
 
             except Exception as e:
                 print(f"同步 {date_str} 失败: {e}")
@@ -7468,7 +7410,6 @@ def get_latest_ai_review_status():
 def get_compression_status():
     """获取压缩状态"""
     try:
-        from video_compressor import get_compression_manager
 
         manager = get_compression_manager()
 
@@ -7494,8 +7435,7 @@ def get_compression_status():
 
 
 @app.route("/api/compression/settings", methods=["GET", "POST"])
-@require_local_or_password
-def compression_settings():
+compression_settings():
     """获取或保存压缩设置"""
     try:
         from video_compressor import get_compression_manager
@@ -7508,7 +7448,6 @@ def compression_settings():
         if request.method == "GET":
             settings = manager.get_settings()
             return jsonify({"success": True, "data": settings})
-
         else:
             # POST请求需要权限验证
             remote_addr = request.remote_addr
@@ -7535,8 +7474,7 @@ def compression_settings():
 
 
 @app.route("/api/compression/update", methods=["POST"])
-@require_local_or_password
-def update_compression_settings():
+update_compression_settings():
     """更新压缩设置并重新生成压缩文件"""
     try:
         from video_compressor import get_compression_manager
@@ -7552,7 +7490,6 @@ def update_compression_settings():
         settings_changed = (
             data.get("video_quality")
             and data.get("video_quality") != current_settings.get("video_quality")
-            or data.get("image_quality")
             and data.get("image_quality") != current_settings.get("image_quality")
         )
 
@@ -7580,8 +7517,7 @@ def update_compression_settings():
 
 
 @app.route("/api/compression/regenerate", methods=["POST"])
-@require_local_or_password
-def regenerate_compression():
+regenerate_compression():
     """重新生成所有压缩文件"""
     try:
         from video_compressor import get_compression_manager
@@ -7602,7 +7538,6 @@ def regenerate_compression():
 
 
 @app.route("/api/compression/check-ffmpeg")
-def check_ffmpeg():
     """检查 FFmpeg 是否可用"""
     try:
         from video_compressor import get_compression_manager
@@ -7631,8 +7566,7 @@ photo_index_rebuild_status = {"running": False, "result": None, "error": None}
 
 
 @app.route("/api/photo-index/rebuild", methods=["POST"])
-@require_local_or_password
-def rebuild_photo_index():
+rebuild_photo_index():
     """重建素材索引（后台执行）"""
     global photo_index_rebuild_status
 
