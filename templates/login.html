@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - {{ baby_name }}的成长记录</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1rem;
+        }
+        .btn-login:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card text-center">
+        <div class="login-icon">
+            <i class="fas fa-baby"></i>
+        </div>
+        <h3 class="mb-2">{{ baby_name }}的成长记录</h3>
+        <p class="text-muted mb-4">请输入管理密码登录</p>
+        
+        <form id="loginForm">
+            <div class="mb-3">
+                <input type="password" class="form-control form-control-lg" id="password" 
+                       placeholder="管理密码" required autofocus>
+            </div>
+            <div id="errorMsg" class="alert alert-danger d-none mb-3"></div>
+            <button type="submit" class="btn btn-primary btn-login w-100">
+                <i class="fas fa-sign-in-alt me-2"></i>登录
+            </button>
+        </form>
+        
+        <div class="mt-4 text-muted">
+            <small>
+                <i class="fas fa-shield-alt me-1"></i>
+                本地访问，数据安全
+            </small>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.bundle.min.js') }}"></script>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const password = document.getElementById('password').value;
+            const errorMsg = document.getElementById('errorMsg');
+            
+            fetch('/api/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.href = '/';
+                } else {
+                    errorMsg.textContent = data.message || '密码错误';
+                    errorMsg.classList.remove('d-none');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorMsg.textContent = '登录失败，请稍后重试';
+                errorMsg.classList.remove('d-none');
+            });
+        });
+    </script>
+</body>
+</html>

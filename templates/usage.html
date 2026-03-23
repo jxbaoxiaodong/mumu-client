@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用明细 - 成长记录</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link href="/static/vendor/fontawesome/fontawesome-6.4.0.all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        .container {
+            max-width: 800px;
+            padding: 20px;
+        }
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+        }
+        .usage-item {
+            border-left: 4px solid #4CAF50;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            background: #f8f9fa;
+            border-radius: 0 8px 8px 0;
+            transition: all 0.2s;
+        }
+        .usage-item:hover {
+            background: #e9ecef;
+        }
+        .usage-item.log { border-left-color: #2196F3; }
+        .usage-item.photo { border-left-color: #FF9800; }
+        .usage-item.speech { border-left-color: #9C27B0; }
+        .usage-item.profile { border-left-color: #E91E63; }
+        .time-badge {
+            font-size: 0.75rem;
+            color: #6c757d;
+        }
+        .tokens-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #6c757d;
+        }
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="btn btn-light back-btn shadow-sm">
+        <i class="fas fa-arrow-left me-2"></i>返回
+    </a>
+
+    <div class="container py-5">
+        <div class="text-center mb-4">
+            <h2><i class="fas fa-history me-2 text-primary"></i>使用明细</h2>
+            <p class="text-muted">查看 AI 功能使用记录</p>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="row mb-4">
+            <div class="col-6">
+                <div class="card p-3 text-center">
+                    <div class="text-muted small">今日消耗</div>
+                    <div class="h4 text-primary mb-0" id="todayTokens">0</div>
+                </div>
+            </div>
+            <div class="col-6">
+                <div class="card p-3 text-center">
+                    <div class="text-muted small">总消耗</div>
+                    <div class="h4 text-success mb-0" id="totalTokens">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 明细列表 -->
+        <div class="card p-4">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0"><i class="fas fa-list-ul me-2"></i>使用记录</h5>
+                <select class="form-select form-select-sm" style="width: auto;" id="filterDate" onchange="loadUsage()">
+                    <option value="all">全部</option>
+                    <option value="today" selected>今天</option>
+                    <option value="week">最近7天</option>
+                    <option value="month">最近30天</option>
+                </select>
+            </div>
+
+            <div id="usageList">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function loadUsage() {
+            const filter = document.getElementById('filterDate').value;
+            
+            fetch('/api/usage/list?filter=' + filter)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('todayTokens').textContent = data.today_tokens.toLocaleString();
+                        document.getElementById('totalTokens').textContent = data.total_tokens.toLocaleString();
+                        
+                        const list = document.getElementById('usageList');
+                        
+                        if (!data.records || data.records.length === 0) {
+                            list.innerHTML = `
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>暂无使用记录</p>
+                                </div>
+                            `;
+                            return;
+                        }
+                        
+                        let html = '';
+                        data.records.forEach(record => {
+                            const typeClass = record.type || 'log';
+                            const detail = record.detail ? `<span class="text-muted small ms-2">${record.detail}</span>` : '';
+                            html += `
+                                <div class="usage-item ${typeClass}">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <div class="mb-1">${record.content}${detail}</div>
+                                            <span class="time-badge"><i class="fas fa-clock me-1"></i>${record.time}</span>
+                                        </div>
+                                        <span class="tokens-badge">${record.tokens.toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        
+                        list.innerHTML = html;
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('usageList').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>加载失败，请稍后重试
+                        </div>
+                    `;
+                });
+        }
+
+        loadUsage();
+    </script>
+</body>
+</html>

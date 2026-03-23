@@ -1,0 +1,601 @@
+<!-- 日历模态框 -->
+<div class="modal fade" id="calendarModal" tabindex="-1" aria-labelledby="calendarModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="calendarModalLabel">
+                    <i class="far fa-calendar-alt me-2"></i>成长日历
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <!-- 日历容器 -->
+                        <div id="calendar"></div>
+                    </div>
+                    <div class="col-md-4">
+                        <!-- 日期详情 -->
+                        <div class="date-details">
+                            <h6 class="mb-3">日期详情</h6>
+                            <div id="dateInfo" class="text-center py-4">
+                                <i class="far fa-calendar fa-3x text-muted mb-3"></i>
+                                <p>点击日历中的日期查看详情</p>
+                            </div>
+                            <div id="dateContent" style="display: none;">
+                                <h5 id="selectedDate" class="mb-3"></h5>
+                                
+                                <div class="mb-3">
+                                    <h6><i class="fas fa-images me-2"></i>照片</h6>
+                                    <div id="datePhotos" class="photo-preview"></div>
+                                    <p id="noPhotos" class="text-muted small">无照片</p>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <h6><i class="fas fa-comment-dots me-2"></i>留言</h6>
+                                    <div id="dateMessages" class="messages-preview"></div>
+                                    <p id="noMessages" class="text-muted small">无留言</p>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <h6><i class="fas fa-book me-2"></i>日志</h6>
+                                    <div id="dateLog" class="log-preview"></div>
+                                    <p id="noLog" class="text-muted small">无日志</p>
+                                </div>
+                                
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-primary" onclick="goToDate()">
+                                        <i class="fas fa-external-link-alt me-2"></i>查看该日详情
+                                    </button>
+                                    <button class="btn btn-outline-secondary" onclick="generateLogForDate()">
+                                        <i class="fas fa-robot me-2"></i>生成该日日志
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="calendar-legend">
+                    <div class="legend-item">
+                        <span class="legend-color has-photo"></span>
+                        <span class="legend-text">有照片</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color has-message"></span>
+                        <span class="legend-text">有留言</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color has-log"></span>
+                        <span class="legend-text">有日志</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color today"></span>
+                        <span class="legend-text">今天</span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+#calendar {
+    min-height: 400px;
+}
+
+.calendar-legend {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.legend-color.has-photo {
+    background-color: #4CAF50;
+}
+
+.legend-color.has-message {
+    background-color: #2196F3;
+}
+
+.legend-color.has-log {
+    background-color: #FF9800;
+}
+
+.legend-color.today {
+    background-color: #F44336;
+}
+
+.date-details {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 20px;
+    height: 100%;
+}
+
+.photo-preview {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+
+.photo-preview img {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.messages-preview {
+    max-height: 100px;
+    overflow-y: auto;
+    font-size: 0.9em;
+}
+
+.log-preview {
+    max-height: 100px;
+    overflow-y: auto;
+    font-size: 0.9em;
+    color: #666;
+}
+</style>
+
+<script>
+let selectedDate = null;
+let calendarData = {};
+let currentCalendarDate = null;
+
+// 前端缓存
+const calendarCache = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // 5分钟
+
+function getCachedData(key) {
+    const cached = calendarCache.get(key);
+    if (cached && (Date.now() - cached.time < CACHE_DURATION)) {
+        console.log(`[Calendar] 使用前端缓存: ${key}`);
+        return cached.data;
+    }
+    return null;
+}
+
+function setCachedData(key, data) {
+    calendarCache.set(key, { data, time: Date.now() });
+    console.log(`[Calendar] 缓存数据: ${key}`);
+}
+
+function initCalendarModal() {
+    // 使用主页面的当前日期作为初始日期
+    if (typeof window.currentCalendarDate !== 'undefined') {
+        currentCalendarDate = new Date(window.currentCalendarDate);
+    } else {
+        currentCalendarDate = new Date();
+    }
+    
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth() + 1;
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    
+    // 检查缓存
+    const cached = getCachedData(monthStr);
+    if (cached) {
+        calendarData = cached;
+        renderCalendar();
+    } else {
+        // 先渲染骨架屏，再异步加载数据
+        renderCalendarSkeleton();
+        loadCalendarData();
+    }
+}
+
+function renderCalendarSkeleton() {
+    const calendarEl = document.getElementById('calendar');
+    if (!calendarEl) return;
+    
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    
+    // 创建骨架屏日历
+    calendarEl.innerHTML = `
+        <div class="calendar-header mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <button class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="fas fa-angle-double-left"></i>
+                </button>
+                <span class="text-muted">${year}年</span>
+                <button class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="fas fa-angle-double-right"></i>
+                </button>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <button class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <h5 class="mb-0">${month + 1}月</h5>
+                <button class="btn btn-sm btn-outline-secondary" disabled>
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">加载中...</span>
+            </div>
+            <p class="text-muted mt-2 mb-0">正在加载日历数据...</p>
+        </div>
+    `;
+}
+
+function loadCalendarData() {
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth() + 1;
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    
+    // 检查缓存
+    const cached = getCachedData(monthStr);
+    if (cached) {
+        calendarData = cached;
+        renderCalendar();
+        return;
+    }
+    
+    console.log(`[Calendar] 开始加载: ${monthStr}`);
+    const startTime = Date.now();
+    
+    // 获取该月的日历数据
+    fetch(`/api/calendar/${monthStr}`)
+        .then(response => response.json())
+        .then(data => {
+            const elapsed = Date.now() - startTime;
+            console.log(`[Calendar] 数据加载完成: ${elapsed}ms`);
+            calendarData = data.data || {};
+            setCachedData(monthStr, calendarData);
+            renderCalendar();
+            
+            // 预加载相邻月份
+            preloadAdjacentMonths(year, month);
+        })
+        .catch(err => {
+            console.error('[Calendar] 加载失败:', err);
+            const calendarEl = document.getElementById('calendar');
+            if (calendarEl) {
+                calendarEl.innerHTML += `
+                    <div class="alert alert-danger mt-3">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        加载失败，请<a href="#" onclick="loadCalendarData(); return false;">重试</a>
+                    </div>
+                `;
+            }
+        });
+}
+
+// 预加载相邻月份数据
+function preloadAdjacentMonths(year, month) {
+    // 计算上一个月和下一个月
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    
+    const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+    const nextMonthStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+    
+    // 延迟预加载，避免阻塞当前显示
+    setTimeout(() => {
+        // 预加载上一个月
+        if (!getCachedData(prevMonthStr)) {
+            fetch(`/api/calendar/${prevMonthStr}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.data) setCachedData(prevMonthStr, data.data);
+                })
+                .catch(() => {});
+        }
+        
+        // 预加载下一个月
+        if (!getCachedData(nextMonthStr)) {
+            fetch(`/api/calendar/${nextMonthStr}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.data) setCachedData(nextMonthStr, data.data);
+                })
+                .catch(() => {});
+        }
+    }, 500);
+}
+
+function renderCalendar() {
+    const calendarEl = document.getElementById('calendar');
+    if (!calendarEl) return;
+    
+    // 清空日历
+    calendarEl.innerHTML = '';
+    
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    const today = new Date();
+    
+    // 创建日历头部（年份和月份导航）
+    const header = document.createElement('div');
+    header.className = 'calendar-header mb-3';
+    header.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeYear(-1)" title="上一年">
+                <i class="fas fa-angle-double-left"></i>
+            </button>
+            <select class="form-select form-select-sm" style="width:auto;" id="yearSelect" onchange="selectYear(this.value)">
+                ${generateYearOptions(year)}
+            </select>
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeYear(1)" title="下一年">
+                <i class="fas fa-angle-double-right"></i>
+            </button>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeMonth(-1)" title="上一月">
+                <i class="fas fa-chevron-left"></i>
+            </button>
+            <h5 class="mb-0">${month + 1}月</h5>
+            <button class="btn btn-sm btn-outline-secondary" onclick="changeMonth(1)" title="下一月">
+                <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    `;
+    calendarEl.appendChild(header);
+    
+    // 创建日历表格
+    const table = document.createElement('table');
+    table.className = 'table table-bordered calendar-table';
+    
+    // 表头 - 星期
+    const thead = document.createElement('thead');
+    const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+    let headerRow = document.createElement('tr');
+    
+    weekdays.forEach(day => {
+        const th = document.createElement('th');
+        th.textContent = day;
+        th.className = 'text-center';
+        headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // 表格主体
+    const tbody = document.createElement('tbody');
+    
+    // 获取当月第一天和最后一天
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    
+    // 计算第一天是星期几
+    let startDay = firstDay.getDay();
+    
+    // 计算需要显示的总天数
+    const totalDays = lastDay.getDate();
+    let date = 1;
+    
+    for (let i = 0; i < 6; i++) {
+        const row = document.createElement('tr');
+        
+        for (let j = 0; j < 7; j++) {
+            const cell = document.createElement('td');
+            cell.className = 'text-center calendar-day';
+            cell.style.cursor = 'pointer';
+            
+            if (i === 0 && j < startDay) {
+                // 上个月的日期 - 不显示
+                cell.innerHTML = '&nbsp;';
+                cell.className += ' empty-cell';
+            } else if (date > totalDays) {
+                // 下个月的日期 - 不显示
+                cell.innerHTML = '&nbsp;';
+                cell.className += ' empty-cell';
+            } else {
+                // 当前月的日期
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(date).padStart(2, '0')}`;
+                
+                // 检查是否为今天
+                if (date === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
+                    cell.className += ' today';
+                    cell.style.border = '2px solid #F44336';
+                }
+                
+                // 检查是否有内容
+                const dateData = calendarData[dateStr];
+                if (dateData && dateData.has_content) {
+                    // 有素材的日期 - 绿色背景
+                    cell.className += ' has-content';
+                    cell.style.backgroundColor = '#4CAF50';
+                    cell.style.color = 'white';
+                    cell.style.fontWeight = 'bold';
+                } else {
+                    // 无素材的日期 - 浅灰色
+                    cell.className += ' no-content';
+                    cell.style.backgroundColor = '#f5f5f5';
+                    cell.style.color = '#999';
+                }
+                
+                cell.textContent = date;
+                cell.dataset.date = dateStr;
+                cell.onclick = () => selectDate(dateStr);
+                
+                date++;
+            }
+            
+            row.appendChild(cell);
+        }
+        
+        tbody.appendChild(row);
+        
+        // 如果已经显示完所有日期，跳出循环
+        if (date > totalDays) break;
+    }
+    
+    table.appendChild(tbody);
+    calendarEl.appendChild(table);
+    
+    // 添加图例说明
+    const legend = document.createElement('div');
+    legend.className = 'calendar-legend mt-3 d-flex justify-content-center gap-4';
+    legend.innerHTML = `
+        <div class="d-flex align-items-center gap-2">
+            <span style="width:20px;height:20px;background:#4CAF50;border-radius:3px;display:inline-block;"></span>
+            <span>有素材</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span style="width:20px;height:20px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;display:inline-block;"></span>
+            <span>无素材</span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span style="width:20px;height:20px;border:2px solid #F44336;border-radius:3px;display:inline-block;"></span>
+            <span>今天</span>
+        </div>
+    `;
+    calendarEl.appendChild(legend);
+}
+
+function changeMonth(delta) {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + delta);
+    
+    // 检查是否有缓存，没有则显示骨架屏
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth() + 1;
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    
+    if (!getCachedData(monthStr)) {
+        renderCalendarSkeleton();
+    }
+    loadCalendarData();
+}
+
+function changeYear(delta) {
+    currentCalendarDate.setFullYear(currentCalendarDate.getFullYear() + delta);
+    
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth() + 1;
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    
+    if (!getCachedData(monthStr)) {
+        renderCalendarSkeleton();
+    }
+    loadCalendarData();
+}
+
+function selectYear(year) {
+    currentCalendarDate.setFullYear(parseInt(year));
+    
+    const y = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth() + 1;
+    const monthStr = `${y}-${String(month).padStart(2, '0')}`;
+    
+    if (!getCachedData(monthStr)) {
+        renderCalendarSkeleton();
+    }
+    loadCalendarData();
+}
+
+function generateYearOptions(selectedYear) {
+    const currentYear = new Date().getFullYear();
+    const minYear = 2000;
+    const maxYear = currentYear + 5;
+    let options = '';
+    for (let y = maxYear; y >= minYear; y--) {
+        options += `<option value="${y}" ${y === selectedYear ? 'selected' : ''}>${y}年</option>`;
+    }
+    return options;
+}
+
+function selectDate(dateStr) {
+    selectedDate = dateStr;
+    
+    // 更新选中样式
+    document.querySelectorAll('.calendar-day').forEach(cell => {
+        cell.style.boxShadow = '';
+        if (cell.dataset.date === dateStr) {
+            cell.style.boxShadow = 'inset 0 0 0 3px #2196F3';
+        }
+    });
+    
+    // 显示日期详情并切换日志
+    showDateDetails(dateStr);
+    
+    // 切换到该日期的日志
+    switchToDateLog(dateStr);
+}
+
+function switchToDateLog(dateStr) {
+    // 关闭日历模态框
+    const modal = bootstrap.Modal.getInstance(document.getElementById('calendarModal'));
+    if (modal) {
+        modal.hide();
+    }
+    
+    // 刷新页面显示该日期的日志
+    window.location.href = `/?date=${dateStr}`;
+}
+
+function showDateDetails(dateStr) {
+    const dateInfo = document.getElementById('dateInfo');
+    const dateContent = document.getElementById('dateContent');
+    const selectedDateEl = document.getElementById('selectedDate');
+    
+    if (dateInfo) dateInfo.style.display = 'none';
+    if (dateContent) dateContent.style.display = 'block';
+    if (selectedDateEl) selectedDateEl.textContent = dateStr;
+    
+    // 加载日期数据
+    fetch(`/api/date/${dateStr}`)
+        .then(response => response.json())
+        .then(data => {
+            // 更新照片显示
+            const photosContainer = document.getElementById('datePhotos');
+            const noPhotos = document.getElementById('noPhotos');
+            
+            if (photosContainer && noPhotos) {
+                if (data.photos && data.photos.length > 0) {
+                    photosContainer.innerHTML = '';
+                    data.photos.slice(0, 4).forEach(photo => {
+                        const img = document.createElement('img');
+                        img.src = `/photo/${photo.filename}`;
+                        img.alt = photo.caption || '照片';
+                        img.title = photo.caption || '';
+                        img.style.width = '50px';
+                        img.style.height = '50px';
+                        img.style.objectFit = 'cover';
+                        img.style.borderRadius = '4px';
+                        photosContainer.appendChild(img);
+                    });
+                    photosContainer.style.display = 'flex';
+                    noPhotos.style.display = 'none';
+                } else {
+                    photosContainer.style.display = 'none';
+                    noPhotos.style.display = 'block';
+                }
+            }
+        });
+}
+
+// 页面加载时初始化日历
+document.addEventListener('DOMContentLoaded', function() {
+    const calendarModal = document.getElementById('calendarModal');
+    if (calendarModal) {
+        calendarModal.addEventListener('shown.bs.modal', initCalendarModal);
+    }
+});
+</script>

@@ -1,0 +1,963 @@
+{% extends "base.html" %}
+{% block title %}{{ baby_name }}的小世界{% endblock %}
+{% block extra_css %}
+<style>
+/* 温馨风格基础样式 */
+.profile-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* 主卡片 - 温馨风格 */
+.profile-main-card {
+    background: linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%);
+    border-radius: 24px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(255, 182, 193, 0.15);
+}
+
+/* 头部区域 */
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(255, 182, 193, 0.3);
+}
+
+.profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-info h1 {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    color: #4A4A4A;
+    font-weight: 600;
+}
+
+.profile-info .age-text {
+    color: #888;
+    font-size: 15px;
+}
+
+/* 本月亮点区域 */
+.highlight-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-left: 4px solid #FFB6C1;
+}
+
+.highlight-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.highlight-content {
+    font-size: 18px;
+    color: #4A4A4A;
+    line-height: 1.6;
+}
+
+/* AI特质卡片区域 */
+.traits-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.traits-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.traits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.trait-card {
+    background: linear-gradient(135deg, #FFF5F5 0%, #FFFAF0 100%);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.trait-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 182, 193, 0.2);
+}
+
+.trait-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.trait-info {
+    flex: 1;
+}
+
+.trait-name {
+    font-weight: 600;
+    color: #4A4A4A;
+    font-size: 14px;
+}
+
+.trait-desc {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+
+/* 标签云区域 */
+.tags-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.tags-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tags-cloud-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tags-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+}
+
+.tag-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: white;
+    cursor: default;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tag-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.tag-tab {
+    padding: 4px 12px;
+    border: 1px solid #eee;
+    background: white;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tag-tab:hover {
+    background: #f8f8f8;
+}
+
+.tag-tab.active {
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    color: white;
+    border-color: transparent;
+}
+
+/* 数据详情区域（可折叠） */
+.data-section {
+    margin-top: 24px;
+}
+
+.data-toggle {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #f0f0f0;
+}
+
+.data-toggle:hover {
+    background: #fafafa;
+}
+
+.data-toggle-title {
+    font-size: 15px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.data-toggle-icon {
+    transition: transform 0.3s;
+    color: #999;
+}
+
+.data-toggle.expanded .data-toggle-icon {
+    transform: rotate(180deg);
+}
+
+.data-content {
+    display: none;
+    padding: 20px;
+    background: white;
+    border-radius: 0 0 12px 12px;
+    margin-top: -1px;
+    border: 1px solid #f0f0f0;
+    border-top: none;
+}
+
+.data-content.show {
+    display: block;
+}
+
+/* 雷达图容器 */
+.radar-container {
+    height: 250px;
+    position: relative;
+    margin: 10px 0;
+}
+
+.chart-container {
+    height: 250px;
+    margin: 15px 0;
+}
+
+/* 时间轴 */
+.timeline-section {
+    position: relative;
+    padding-left: 30px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.timeline-section::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #FFE4E1;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 16px;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #FFB6C1;
+    border: 2px solid white;
+}
+
+.timeline-date {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.timeline-content {
+    background: #FFF8F0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #555;
+}
+
+/* 反馈区域 */
+.feedback-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.feedback-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.feedback-input-area textarea {
+    border-radius: 12px;
+    border: 1px solid #eee;
+    resize: none;
+    background: #FAFAFA;
+}
+
+.feedback-input-area textarea:focus {
+    border-color: #FFB6C1;
+    box-shadow: 0 0 0 3px rgba(255, 182, 193, 0.1);
+}
+
+/* 底部进度条 */
+.ai-progress-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    color: white;
+    padding: 12px 20px;
+    z-index: 9999;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+    display: none;
+}
+
+.ai-progress-footer.show {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.ai-progress-footer .progress-info {
+    flex: 1;
+}
+
+.ai-progress-footer .progress-text {
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+.ai-progress-footer .progress {
+    height: 8px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 4px;
+    flex: 1;
+}
+
+.ai-progress-footer .progress-bar {
+    background: white;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.ai-progress-footer .btn-close-progress {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.ai-progress-footer.completed {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+/* 指标网格 */
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.metric-card {
+    background: #FFF8F0;
+    padding: 14px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.metric-title {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 6px;
+}
+
+.metric-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: #4A4A4A;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .profile-header {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .profile-info h1 {
+        font-size: 24px;
+    }
+    
+    .traits-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-container">
+    <!-- 主卡片 -->
+    <div class="profile-main-card">
+        <!-- 头部 -->
+        <div class="profile-header">
+            <div class="profile-avatar">
+                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像">
+            </div>
+            <div class="profile-info">
+                <h1>🌟 {{ baby_name }}的小世界</h1>
+                <p class="age-text">
+                    <i class="fas fa-birthday-cake me-1"></i>
+                    <span id="currentAge">{{ age_text if age_text else '未设置生日' }}</span>
+                    <button id="aiReviewBtn" class="btn btn-sm btn-outline-secondary ms-2" onclick="startAIReview()" title="让AI重新认识宝宝">
+                        <i class="fas fa-sync-alt me-1"></i>刷新
+                    </button>
+                </p>
+            </div>
+        </div>
+
+        <!-- 本月亮点 -->
+        <div class="highlight-section">
+            <div class="highlight-title">
+                <i class="fas fa-sparkles" style="color: #FFD700;"></i>
+                <span>本月可爱瞬间</span>
+            </div>
+            <div class="highlight-content" id="highlightContent">
+                <span style="color: #999;">AI正在观察中...</span>
+            </div>
+        </div>
+
+        <!-- AI发现的特质 -->
+        <div class="traits-section">
+            <div class="traits-title">
+                <i class="fas fa-brain" style="color: #FFB6C1;"></i>
+                <span>AI发现了宝宝的可爱特质</span>
+            </div>
+            <div class="traits-grid" id="traitsGrid">
+                <div class="trait-card">
+                    <div class="trait-icon" style="background: #FFF0F5;">💛</div>
+                    <div class="trait-info">
+                        <div class="trait-name">加载中...</div>
+                        <div class="trait-desc">AI正在分析</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 标签云 -->
+        <div class="tags-section">
+            <div class="tags-title">
+                <span><i class="fas fa-tags me-2" style="color: #FFB6C1;"></i>宝宝标签</span>
+                <div id="tagTabs" style="display: flex; gap: 6px;">
+                    <button class="tag-tab active" data-type="all" onclick="switchTagType('all')">全部</button>
+                    <button class="tag-tab" data-type="personality" onclick="switchTagType('personality')">性格</button>
+                    <button class="tag-tab" data-type="interest" onclick="switchTagType('interest')">兴趣</button>
+                </div>
+            </div>
+            <div class="tags-cloud" id="tagsCloud">
+                <span style="color: #999;">加载中...</span>
+            </div>
+            <div id="showAllTagsBtn" style="text-align: center; margin-top: 12px; display: none;">
+                <button class="btn btn-sm btn-outline-primary" onclick="showAllTags()">
+                    <i class="fas fa-plus me-1"></i>显示全部标签
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据详情（可折叠） -->
+    <div class="data-section">
+        <div class="data-toggle" onclick="toggleDataSection(this)">
+            <div class="data-toggle-title">
+                <i class="fas fa-chart-bar"></i>
+                <span>查看详细数据</span>
+            </div>
+            <i class="fas fa-chevron-down data-toggle-icon"></i>
+        </div>
+        <div class="data-content" id="dataContent">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-chart-pie me-2"></i>性格维度</h6>
+                    <div class="radar-container">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-star me-2"></i>兴趣偏好</h6>
+                    <div class="radar-container">
+                        <canvas id="interestChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-chart-line me-2"></i>成长曲线</h6>
+                    <div class="chart-container">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-title">累计标签</div>
+                            <div class="metric-value" id="tagCount">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-title">累计素材</div>
+                            <div class="metric-value" id="eventCount">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-history me-2"></i>成长轨迹</h6>
+                    <div id="timelineSection" class="timeline-section">
+                        <p class="text-muted">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 告诉AI更多 -->
+    <div class="feedback-section">
+        <div class="feedback-title">
+            <i class="fas fa-comment-dots" style="color: #FFB6C1;"></i>
+            <span>告诉AI更多关于宝宝的事</span>
+        </div>
+        <p class="text-muted small mb-2">分享宝宝的真实特点，帮助AI更准确地认识宝宝</p>
+        <div class="feedback-input-area">
+            <textarea id="feedbackText" class="form-control" rows="2" placeholder="例如：宝宝最近特别喜欢模仿大人说话..."></textarea>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <small class="text-muted">AI会在下次分析时参考您的分享</small>
+                <button class="btn btn-sm" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none;" onclick="submitFeedback()">
+                    <i class="fas fa-paper-plane me-1"></i>分享
+                </button>
+            </div>
+        </div>
+        <div id="feedbackHistory" class="mt-3"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/vendor/chartjs/chart.min.js"></script>
+<script>
+const currentChildId = '{{ client_id }}';
+let growthChart = null;
+let radarChart = null;
+let interestChart = null;
+let profileData = null;
+
+const gradients = [
+    'linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%)',
+    'linear-gradient(135deg, #87CEEB 0%, #98FB98 100%)',
+    'linear-gradient(135deg, #DDA0DD 0%, #F0E68C 100%)',
+    'linear-gradient(135deg, #FFA07A 0%, #FFDAB9 100%)',
+    'linear-gradient(135deg, #98D8C8 0%, #F7DC6F 100%)',
+    'linear-gradient(135deg, #F8B500 0%, #FF6B6B 100%)',
+];
+
+const traitIcons = {
+    '爱笑': '💛',
+    '好奇': '🔍',
+    '活泼': '⚡',
+    '安静': '🌙',
+    '专注': '🎯',
+    '社交': '👥',
+    '独立': '🌟',
+    '创造': '🎨',
+    '音乐': '🎵',
+    '运动': '🏃',
+    '阅读': '📚',
+    '探索': '🧭',
+    'default': '✨'
+};
+
+function getTraitIcon(traitName) {
+    for (let key in traitIcons) {
+        if (traitName.includes(key)) {
+            return traitIcons[key];
+        }
+    }
+    return traitIcons['default'];
+}
+
+function loadProfileData() {
+    Promise.all([
+        fetch('/api/ai/profile').then(r => r.json()),
+        fetch('/api/ai/features').then(r => r.json())
+    ])
+    .then(([pData, fData]) => {
+        if (pData.success) {
+            profileData = pData.profile;
+            
+            document.getElementById('currentAge').textContent = profileData.age || '暂无数据';
+            document.getElementById('tagCount').textContent = profileData.total_tags || 0;
+            document.getElementById('eventCount').textContent = profileData.total_events || 0;
+
+            renderHighlight(profileData);
+            renderTraits(profileData);
+            renderTagsCloud(profileData.tags || []);
+            renderTimeline(profileData.evolution?.recent_changes || []);
+            renderGrowthChart(profileData.knowledge_growth);
+        }
+
+        if (fData.success) {
+            const features = fData.features;
+            renderRadarChart(features?.personality || {});
+            renderInterests(features?.interest || {});
+        }
+    })
+    .catch(err => {
+        console.error('加载画像数据失败:', err);
+        showNotification('加载失败，请稍后重试', 'error');
+    });
+}
+
+function renderHighlight(profile) {
+    const container = document.getElementById('highlightContent');
+    const summary = profile.guidance?.summary || '';
+    
+    if (summary && !summary.includes('暂无足够数据')) {
+        container.innerHTML = `"${summary}"`;
+    } else if (profile.evolution?.recent_changes?.length > 0) {
+        const recent = profile.evolution.recent_changes[0];
+        container.innerHTML = `"${recent.change}"`;
+    } else {
+        container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
+    }
+}
+
+function renderTraits(profile) {
+    const container = document.getElementById('traitsGrid');
+    const tags = profile.tags || [];
+    
+    if (tags.length === 0) {
+        container.innerHTML = `
+            <div class="trait-card">
+                <div class="trait-icon" style="background: #FFF0F5;">🌱</div>
+                <div class="trait-info">
+                    <div class="trait-name">等待发现</div>
+                    <div class="trait-desc">继续记录，AI会发现更多特质</div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // 取前4个标签作为特质展示
+    const topTraits = tags.slice(0, 4);
+    container.innerHTML = topTraits.map((item, index) => {
+        const tag = typeof item === 'object' ? item.tag : item;
+        const confidence = typeof item === 'object' ? item.confidence : 0.8;
+        const icon = getTraitIcon(tag);
+        const bgColors = ['#FFF0F5', '#F0FFF0', '#FFF8DC', '#F0F8FF'];
+        
+        let desc = '宝宝的小特点';
+        if (tag.includes('笑')) desc = '笑容治愈力满满';
+        else if (tag.includes('好奇')) desc = '对世界充满好奇';
+        else if (tag.includes('活泼')) desc = '活力四射';
+        else if (tag.includes('安静')) desc = '安静的小天使';
+        else if (tag.includes('专注')) desc = '做事很认真';
+        else if (tag.includes('音乐')) desc = '听到音乐就开心';
+        else if (tag.includes('运动')) desc = '运动小健将';
+        
+        return `
+            <div class="trait-card">
+                <div class="trait-icon" style="background: ${bgColors[index % 4]};">${icon}</div>
+                <div class="trait-info">
+                    <div class="trait-name">${tag}</div>
+                    <div class="trait-desc">${desc}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+let allTags = [];
+function renderTagsCloud(tags) {
+    allTags = tags;
+    displayTagsByType('all');
+}
+
+function switchTagType(type) {
+    document.querySelectorAll('.tag-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelector(`.tag-tab[data-type="${type}"]`).classList.add('active');
+    displayTagsByType(type);
+}
+
+function displayTagsByType(type) {
+    const container = document.getElementById('tagsCloud');
+    const showAllBtn = document.getElementById('showAllTagsBtn');
+    let filteredTags = allTags;
+
+    if (type !== 'all') {
+        filteredTags = allTags.filter(t => {
+            const category = typeof t === 'object' ? t.category : 'other';
+            return category === type;
+        });
+    }
+
+    if (filteredTags && filteredTags.length > 0) {
+        // 只显示前8个标签
+        const displayTags = filteredTags.slice(0, 8);
+        container.innerHTML = displayTags.map((item, index) => {
+            const gradient = gradients[index % gradients.length];
+            const tag = typeof item === 'object' ? item.tag : item;
+            return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+        }).join('');
+
+        // 如果有更多标签，显示"显示全部"按钮
+        if (filteredTags.length > 8) {
+            showAllBtn.style.display = 'block';
+            showAllBtn.dataset.allTags = JSON.stringify(filteredTags);
+        } else {
+            showAllBtn.style.display = 'none';
+        }
+    } else {
+        container.innerHTML = '<span style="color: #999;">暂无标签</span>';
+        showAllBtn.style.display = 'none';
+    }
+}
+
+function showAllTags() {
+    const container = document.getElementById('tagsCloud');
+    const showAllBtn = document.getElementById('showAllTagsBtn');
+    const allTagsData = JSON.parse(showAllBtn.dataset.allTags);
+
+    container.innerHTML = allTagsData.map((item, index) => {
+        const gradient = gradients[index % gradients.length];
+        const tag = typeof item === 'object' ? item.tag : item;
+        return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+    }).join('');
+
+    showAllBtn.style.display = 'none';
+}
+
+function toggleDataSection(el) {
+    el.classList.toggle('expanded');
+    document.getElementById('dataContent').classList.toggle('show');
+}
+
+function renderRadarChart(scores) {
+    const ctx = document.getElementById('radarChart').getContext('2d');
+    if (radarChart) radarChart.destroy();
+
+    const labels = ['活跃度', '好奇心', '社交性', '专注力', '情绪稳定', '适应力'];
+    const keys = ['activity', 'curiosity', 'social', 'focus', 'emotion_stability', 'adaptability'];
+    const data = keys.map(k => scores[k] || 5);
+
+    radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '性格维度',
+                data: data,
+                backgroundColor: 'rgba(255, 182, 193, 0.3)',
+                borderColor: 'rgba(255, 182, 193, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(255, 182, 193, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2 } } }
+        }
+    });
+}
+
+function renderInterests(interest) {
+    const ctx = document.getElementById('interestChart').getContext('2d');
+    if (interestChart) interestChart.destroy();
+
+    const labels = ['音乐', '运动', '阅读', '艺术', '自然', '科技'];
+    const keys = ['music', 'sports', 'reading', 'art', 'nature', 'technology'];
+    const data = keys.map(k => interest[k] || 5);
+
+    interestChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '兴趣偏好',
+                data: data,
+                backgroundColor: 'rgba(255, 215, 0, 0.3)',
+                borderColor: 'rgba(255, 215, 0, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(255, 215, 0, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2 } } }
+        }
+    });
+}
+
+function renderTimeline(changes) {
+    const container = document.getElementById('timelineSection');
+    if (changes && changes.length > 0) {
+        const sorted = [...changes].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+        container.innerHTML = sorted.map(c => `
+            <div class="timeline-item">
+                <div class="timeline-date">${c.date || ''}</div>
+                <div class="timeline-content">${c.change}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<p class="text-muted">暂无成长轨迹</p>';
+    }
+}
+
+function renderGrowthChart(data) {
+    const ctx = document.getElementById('growthChart').getContext('2d');
+    if (growthChart) growthChart.destroy();
+
+    growthChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data?.dates || [],
+            datasets: [
+                {
+                    label: '标签数',
+                    data: data?.tags || [],
+                    borderColor: '#FFB6C1',
+                    backgroundColor: 'rgba(255, 182, 193, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: '素材数',
+                    data: data?.events || [],
+                    borderColor: '#FFD700',
+                    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+                    tension: 0.4,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+}
+
+function showNotification(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'success' ? 'success' : 'warning'} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 150px; padding: 10px 16px; border-radius: 8px;';
+    toast.innerHTML = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfileData();
+    loadFeedbackHistory();
+});
+</script>
+
+<!-- AI重新认识弹窗 -->
+<div class="modal fade" id="aiReviewModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 16px;">
+            <div class="modal-header border-0">
+                <h5 class="modal-title"><i class="fas fa-sync-alt me-2" style="color: #FFB6C1;"></i>刷新画像</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">选择刷新方式：</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary text-start" onclick="executeAIReview(false)">
+                        <i class="fas fa-plus-circle me-2"></i>增量更新（推荐）
+                        <small class="d-block text-muted">只处理新内容</small>
+                    </button>
+                    <button class="btn btn-outline-warning text-start" onclick="executeAIReview(true)">
+                        <i class="fas fa-redo me-2"></i>完全刷新
+                        <small class="d-block text-muted">重新分析所有内容</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 底部进度条 -->
+<div id="aiProgressFooter" class="ai-progress-footer">
+    <div class="progress-info">
+        <div class="progress-text" id="footerProgressText">处理中...</div>
+        <div class="progress">
+            <div class="progress-bar" id="footerProgressBar" style="width: 0%"></div>
+        </div>
+    </div>
+    <button class="btn-close-progress" onclick="hideProgressFooter()">后台运行</button>
+</div>
+
+<!-- 卡片生成器模态框 -->
+{% endblock %}

@@ -1,0 +1,1066 @@
+<!-- 设置模态框 -->
+<div class="modal fade" id="settingsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-cog me-2"></i>系统设置
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 进入修改页面按钮区域 -->
+                <div id="enterModifySection">
+                    <!-- 用户信息卡片 -->
+                    <div class="card mb-3 border-0 bg-light">
+                        <div class="card-body">
+                            <!-- 客户端ID -->
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="me-3">
+                                    <i class="fas fa-id-card fa-2x text-primary"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 text-muted small">客户端ID</h6>
+                                    <div class="d-flex align-items-center">
+                                        <code class="font-monospace text-break" id="modalClientIdDisplay" style="font-size: 0.85rem;">
+                                            {{ client_id or '未注册' }}
+                                        </code>
+                                        <button class="btn btn-sm btn-link text-muted ms-2 px-1 py-0" onclick="copyModalClientId()" title="复制ID">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Token配额 -->
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="me-3">
+                                    <i class="fas fa-robot fa-2x text-success"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 text-muted small">AI 配额</h6>
+                                    <div class="d-flex align-items-center">
+                                        <span class="me-2" style="font-size: 0.95rem;">{{ "{:,}".format(quota_used or 0) }}/{{ "{:,}".format(quota_total or 50000) }}</span>
+                                        <div class="flex-grow-1" style="max-width: 120px;">
+                                            <div class="progress" style="height: 6px;">
+                                                {% set quota_pct = quota_percent or 0 %}
+                                                <div class="progress-bar {% if quota_pct > 80 %}bg-danger{% elif quota_pct > 50 %}bg-warning{% else %}bg-success{% endif %}" 
+                                                     role="progressbar" 
+                                                     style="width: {{ quota_pct }}%">
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <a href="/usage" class="btn btn-sm btn-outline-secondary ms-2" title="查看明细">
+                                            <i class="fas fa-list"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Token用量统计 -->
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="me-3">
+                                    <i class="fas fa-chart-line fa-2x text-info"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 text-muted small">AI 总消耗</h6>
+                                    <div class="d-flex align-items-center">
+                                        <span class="me-2" style="font-size: 0.95rem;">
+                                            <span class="text-primary">{{ "{:,}".format(token_usage.total_tokens if token_usage else 0) }}</span>
+                                        </span>
+                                        <small class="text-muted" style="font-size: 0.7rem;">
+                                            (输入: {{ "{:,}".format(token_usage.total_prompt if token_usage else 0) }} / 输出: {{ "{:,}".format(token_usage.total_completion if token_usage else 0) }})
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 网络访问 -->
+                            <div class="mb-0">
+                                <h6 class="text-muted small mb-2"><i class="fas fa-network-wired me-1"></i>网络访问</h6>
+                                <div class="row g-2">
+                                    <div class="col-12">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-white" style="font-size: 0.75rem;">局域网</span>
+                                            <input type="text" class="form-control form-control-sm" id="localUrlInput" value="{{ local_url or '' }}" readonly style="font-size: 0.75rem;">
+                                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="copyToClipboard(document.getElementById('localUrlInput').value)" style="font-size: 0.75rem;">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </div>
+                                        <small class="text-muted" style="font-size: 0.65rem;">同一WiFi下访问更快</small>
+                                    </div>
+                                    {% if public_url %}
+                                    <div class="col-12">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text bg-white" style="font-size: 0.75rem;">公网</span>
+                                            <input type="text" class="form-control form-control-sm" id="publicUrlInput" value="{{ public_url }}" readonly style="font-size: 0.75rem;">
+                                            <button class="btn btn-outline-success btn-sm" type="button" onclick="copyToClipboard(document.getElementById('publicUrlInput').value)" style="font-size: 0.75rem;">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </div>
+                                        <small class="text-muted" style="font-size: 0.65rem;">不在同一WiFi时使用</small>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="mt-2 p-2 bg-light rounded" style="font-size: 0.7rem;">
+                                    <strong>分享给亲朋：</strong>复制上方地址发送给他们即可访问。同一WiFi用局域网地址更快，否则用公网地址。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center mb-3">
+                        <i class="fas fa-edit fa-2x text-primary mb-2"></i>
+                        <p class="text-muted small mb-0">点击下方按钮进入设置修改页面</p>
+                    </div>
+                    <div class="d-grid">
+                        <button class="btn btn-primary" onclick="showSettingsPasswordVerify()">
+                            <i class="fas fa-sign-in-alt me-2"></i>进入修改页面
+                        </button>
+                    </div>
+                    <div class="text-center mt-3">
+                        <small class="text-muted" style="font-size: 0.75rem;">
+                            <i class="fas fa-info-circle me-1"></i>
+                            为保护设置安全，进入修改页面需要验证密码
+                        </small>
+                    </div>
+                </div>
+
+                <!-- 密码验证区域（初始隐藏） -->
+                <div id="passwordVerifySection" class="d-none">
+                    <div class="text-center mb-4">
+                        <i class="fas fa-lock fa-3x text-primary mb-3"></i>
+                        <h5>请输入管理密码</h5>
+                        <p class="text-muted">为保护设置安全，需要验证密码</p>
+                    </div>
+                    <div class="mb-3">
+                        <input type="password" class="form-control form-control-lg" id="settingsPassword" 
+                               placeholder="输入管理密码" onkeypress="if(event.key==='Enter')verifySettingsPassword()">
+                    </div>
+                    <div class="d-grid">
+                        <button class="btn btn-primary btn-lg" onclick="verifySettingsPassword()">
+                            <i class="fas fa-unlock me-2"></i>验证密码
+                        </button>
+                    </div>
+                    <div id="passwordError" class="alert alert-danger mt-3 d-none">
+                        <i class="fas fa-exclamation-triangle me-2"></i>密码错误，请重试
+                    </div>
+                    <div class="text-center mt-3">
+                        <button class="btn btn-link text-muted" onclick="backToEnterSection()">
+                            <i class="fas fa-arrow-left me-1"></i>返回
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 设置内容区域（验证通过后显示） -->
+                <div id="settingsContentSection" class="d-none">
+                    <!-- 头像设置 -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-camera me-2"></i>宝宝头像</h6>
+                        </div>
+                        <div class="card-body text-center">
+                            <div class="mb-3">
+                                <div class="avatar-upload-settings" onclick="document.getElementById('settingsAvatarInput').click()">
+                                    <img id="settingsAvatarPreview" src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                    <div class="avatar-overlay-settings">
+                                        <i class="fas fa-camera"></i>
+                                    </div>
+                                </div>
+                                <input type="file" id="settingsAvatarInput" accept="image/*" style="display: none;" onchange="uploadSettingsAvatar(this)">
+                            </div>
+                            <p class="text-muted small mb-0">点击头像更换新照片</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 基本信息 -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>基本信息</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">宝宝名字</label>
+                                <input type="text" class="form-control" id="modalBabyName" value="{{ baby_name }}">
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-6">
+                                    <label class="form-label">宝宝性别</label>
+                                    <select class="form-select" id="modalGender">
+                                        <option value="">请选择</option>
+                                        <option value="male" {% if baby_gender == 'male' %}selected{% endif %}>👦 男孩</option>
+                                        <option value="female" {% if baby_gender == 'female' %}selected{% endif %}>👧 女孩</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">宝宝生日</label>
+                                    <input type="date" class="form-control" id="modalBirthday" value="{{ baby_birthday or '' }}">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">所在城市</label>
+                                <div class="row g-2">
+                                    <div class="col-6">
+                                        <select class="form-select" id="modalProvince">
+                                            <option value="">选择省份</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-6">
+                                        <select class="form-select" id="modalCity">
+                                            <option value="">选择城市</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <small class="text-muted">用于获取当地天气信息</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 日志风格设置 -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-pen-fancy me-2"></i>日志风格</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <select class="form-select" id="logStyle" onchange="toggleCustomStyleInput(); saveLogStyleFromSettings();">
+                                    <option value="简练" selected>简练 - 简洁明了，100字左右</option>
+                                    <option value="诗意">诗意 - 文艺清新，诗意比喻</option>
+                                    <option value="东北腔">东北腔 - 幽默风趣，东北话口吻</option>
+                                    <option value="详细">详细 - 记录细节，200字左右</option>
+                                    <option value="童趣">童趣 - 轻松可爱，像讲故事</option>
+                                    <option value="深情">深情 - 温暖感人，表达父母之爱</option>
+                                    <option value="IT男风格">IT男风格 - 程序员风格，代码注释风</option>
+                                    <option value="自定义">自定义 - 输入您想要的风格</option>
+                                </select>
+                            </div>
+                            <div class="mb-2 mt-2" id="customStyleInput" style="display:none;">
+                                <input type="text" class="form-control" id="customStyleText" 
+                                       placeholder="例如：用古诗词风格写，每句话都要押韵..."
+                                       onchange="saveLogStyleFromSettings()" onblur="saveLogStyleFromSettings()">
+                                <small class="text-muted">请描述您想要的日志风格，AI会按照您的要求生成</small>
+                            </div>
+                            <small class="text-muted">选择AI生成日志的风格，影响语言表达方式</small>
+                        </div>
+                    </div>
+
+                    <!-- 照片文件夹 -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-folder me-2"></i>照片和视频保存文件夹</h6>
+                        </div>
+                        <div class="card-body">
+                            <div id="modalFolderList">
+                                <div class="input-group mb-2">
+                                    <input type="text" class="form-control media-folder"
+                                           placeholder="例如：C:\Users\用户名\Pictures\宝宝照片（按 Enter 确认）">
+                                    <button class="btn btn-outline-danger remove-folder-btn" type="button" disabled>
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addModalFolder()">
+                                <i class="fas fa-plus me-1"></i>添加更多文件夹
+                            </button>
+                            <div class="form-text text-muted mt-2">
+                                <i class="fas fa-info-circle me-1"></i>
+                                请输入完整的文件夹路径，按 Enter 确认<br>
+                                支持多个文件夹，系统会自动扫描所有文件夹中的照片和视频
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 修改密码 -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-lock me-2"></i>修改管理密码</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-2">
+                                <input type="password" class="form-control" id="modalNewPassword" 
+                                       placeholder="输入新密码（留空则不修改）">
+                            </div>
+                            <div class="mb-2">
+                                <input type="password" class="form-control" id="modalConfirmPassword" 
+                                       placeholder="再次输入新密码">
+                            </div>
+                            <small class="text-muted">提示：localhost 或 127.0.0.1 访问可免密码</small>
+                        </div>
+                    </div>
+                    
+                    <!-- 高级选项 -->
+                    <div class="card mb-3">
+                        <div class="card-header" data-bs-toggle="collapse" data-bs-target="#advancedSettings" role="button" style="cursor: pointer;">
+                            <h6 class="mb-0">
+                                <i class="fas fa-sliders-h me-2"></i>媒体质量设置
+                                <i class="fas fa-chevron-down float-end mt-1"></i>
+                            </h6>
+                        </div>
+                        <div id="advancedSettings" class="collapse">
+                            <div class="card-body">
+                                <!-- FFmpeg 状态 -->
+                                <div class="mb-3">
+                                    <div class="d-flex align-items-center">
+                                        <span class="me-2">FFmpeg 状态:</span>
+                                        <span id="ffmpegStatus" class="badge bg-secondary">检测中...</span>
+                                    </div>
+                                    <small class="text-muted">视频压缩需要 FFmpeg 支持</small>
+                                </div>
+                                
+                                <!-- 视频压缩质量 -->
+                                <div class="mb-3">
+                                    <label class="form-label">视频质量</label>
+                                    <select class="form-select" id="videoQuality" onchange="saveCompressionSettings()">
+                                        <option value="原图">不压缩 - 原视频（适合局域网）</option>
+                                        <option value="省流">省流（480p，约1MB/分钟）</option>
+                                        <option value="均衡" selected>均衡（720p，约2MB/分钟）</option>
+                                        <option value="高清">高清（1080p，约4MB/分钟）</option>
+                                    </select>
+                                    <small class="text-muted">选择不压缩将直接播放原视频；压缩后文件存储在 compressed 目录，不修改源文件</small>
+                                </div>
+                                
+                                <!-- 图片压缩质量 -->
+                                <div class="mb-3">
+                                    <label class="form-label">图片质量</label>
+                                    <select class="form-select" id="imageQuality" onchange="saveCompressionSettings()">
+                                        <option value="原图">不压缩 - 原图（适合局域网）</option>
+                                        <option value="省流">省流（1280px）</option>
+                                        <option value="均衡" selected>均衡（1920px）</option>
+                                        <option value="高清">高清（2560px）</option>
+                                    </select>
+                                    <small class="text-muted">选择不压缩将直接显示原图；压缩后图片按最大宽度等比例缩小</small>
+                                </div>
+                                
+                                <!-- 压缩状态 -->
+                                <div class="mb-3">
+                                    <label class="form-label">压缩状态</label>
+                                    <div id="compressionStatus" class="p-2 bg-light rounded">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <span>视频:</span>
+                                            <span id="videoStatus">0 / 0</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <span>图片:</span>
+                                            <span id="imageStatus">0 / 0</span>
+                                        </div>
+                                        <div id="currentCompressing" class="text-muted small" style="display:none;">
+                                            正在处理: <span id="currentFileName"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- 重新生成压缩文件 -->
+                                <div class="mb-3">
+                                    <button type="button" class="btn btn-warning w-100 mb-2" id="regenerateBtn" onclick="regenerateCompression()">
+                                        <i class="fas fa-sync me-2"></i>重新生成压缩文件
+                                    </button>
+                                    <small class="text-muted">更改质量设置后，需要重新生成压缩文件</small>
+                                </div>
+                                
+                                <!-- 提示信息 -->
+                                <div class="alert alert-info mb-0">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <strong>说明：</strong>
+                                    <ul class="mb-0 mt-1 ps-3">
+                                        <li>压缩在后台自动运行，不影响上传速度</li>
+                                        <li>压缩不修改源文件，压缩版单独存储</li>
+                                        <li>网络慢时请在此调整质量设置，系统按设置直接提供对应版本</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 索引管理 -->
+                    <div class="card mb-3">
+                        <div class="card-header" data-bs-toggle="collapse" data-bs-target="#indexSettings" role="button" style="cursor: pointer;">
+                            <h6 class="mb-0">
+                                <i class="fas fa-database me-2"></i>索引管理
+                                <i class="fas fa-chevron-down float-end mt-1"></i>
+                            </h6>
+                        </div>
+                        <div id="indexSettings" class="collapse">
+                            <div class="card-body">
+                                <!-- 重建素材索引 -->
+                                <div class="mb-3">
+                                    <div class="row g-2 mb-2">
+                                        <div class="col-12">
+                                            <label class="form-label small text-muted mb-1">只显示此日期之后的照片（设置后不会删除新加入的照片）</label>
+                                            <input type="date" class="form-control form-control-sm" id="rebuildIndexStartDate">
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-info w-100 mb-2" id="rebuildIndexBtn" onclick="rebuildPhotoIndex()">
+                                        <i class="fas fa-sync-alt me-2"></i>重建素材索引
+                                    </button>
+                                    <small class="text-muted">设置起始日期后，将删除该日期之前的索引。新加入的照片会在客户端启动时自动索引，无需手动重建。</small>
+                                </div>
+                                
+                                <!-- 提示信息 -->
+                                <div class="alert alert-warning mb-0">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    <strong>注意：</strong>
+                                    <ul class="mb-0 mt-1 ps-3">
+                                        <li>重建索引会重新扫描所有媒体文件夹</li>
+                                        <li>压缩文件目录(compressed)会被自动排除</li>
+                                        <li>索引重建可能需要一些时间，请耐心等待</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 保存按钮 -->
+                    <div class="d-grid">
+                        <button class="btn btn-primary" onclick="saveModalSettings()">
+                            <i class="fas fa-save me-2"></i>保存设置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* 设置模态框头像样式 */
+.avatar-upload-settings {
+    position: relative;
+    display: inline-block;
+    border-radius: 50%;
+    overflow: hidden;
+    cursor: pointer;
+}
+.avatar-upload-settings img {
+    transition: all 0.3s ease;
+}
+.avatar-upload-settings:hover img {
+    opacity: 0.8;
+}
+.avatar-overlay-settings {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.2rem;
+    opacity: 0;
+    transition: all 0.3s ease;
+    border-radius: 50%;
+}
+.avatar-upload-settings:hover .avatar-overlay-settings {
+    opacity: 1;
+}
+</style>
+
+<script>
+// 上传设置模态框头像
+function uploadSettingsAvatar(input) {
+    if (!input.files || input.files.length === 0) return;
+    
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('avatar', file);
+    
+    fetch('/api/settings/avatar', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // 更新设置模态框头像
+            const newUrl = data.avatar_url + '?t=' + Date.now();
+            document.getElementById('settingsAvatarPreview').src = newUrl;
+            
+            // 更新导航栏头像
+            const navAvatar = document.querySelector('.navbar-brand img');
+            if (navAvatar) navAvatar.src = newUrl;
+            
+            showNotification('头像更新成功', 'success');
+        } else {
+            showNotification(data.message || '上传失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('上传失败: ' + err.message, 'error');
+    });
+}
+
+// 复制用户ID
+function copyModalClientId() {
+    const clientId = document.getElementById('modalClientIdDisplay').textContent.trim();
+    if (!clientId || clientId === '未注册') {
+        showNotification('用户ID未注册', 'error');
+        return;
+    }
+    
+    navigator.clipboard.writeText(clientId).then(function() {
+        showNotification('用户ID已复制', 'success');
+    }).catch(function(err) {
+        // 降级方案
+        const textArea = document.createElement('textarea');
+        textArea.value = clientId;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showNotification('用户ID已复制', 'success');
+        } catch (err) {
+            showNotification('复制失败，请手动复制', 'error');
+        }
+        document.body.removeChild(textArea);
+    });
+}
+
+// 复制到剪贴板
+function copyToClipboard(text) {
+    if (!text) {
+        showNotification('无内容可复制', 'error');
+        return;
+    }
+    navigator.clipboard.writeText(text).then(function() {
+        showNotification('已复制到剪贴板', 'success');
+    }).catch(function(err) {
+        // 降级方案
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showNotification('已复制到剪贴板', 'success');
+        } catch (err) {
+            showNotification('复制失败', 'error');
+        }
+        document.body.removeChild(textArea);
+    });
+}
+
+// 显示密码验证界面
+function showSettingsPasswordVerify() {
+    // 先检查是否需要密码验证（localhost 免密码）
+    fetch('/api/settings/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: '' })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // localhost 免密码或未设置密码，直接进入设置
+            document.getElementById('enterModifySection').classList.add('d-none');
+            document.getElementById('settingsContentSection').classList.remove('d-none');
+            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
+            loadCurrentSettings();
+        } else {
+            // 需要密码验证
+            document.getElementById('enterModifySection').classList.add('d-none');
+            document.getElementById('passwordVerifySection').classList.remove('d-none');
+            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-lock me-2"></i>密码验证';
+            document.getElementById('settingsPassword').focus();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        // 出错时也显示密码验证
+        document.getElementById('enterModifySection').classList.add('d-none');
+        document.getElementById('passwordVerifySection').classList.remove('d-none');
+        document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-lock me-2"></i>密码验证';
+        document.getElementById('settingsPassword').focus();
+    });
+}
+
+// 返回进入修改页面界面
+function backToEnterSection() {
+    document.getElementById('passwordVerifySection').classList.add('d-none');
+    document.getElementById('enterModifySection').classList.remove('d-none');
+    document.getElementById('settingsPassword').value = '';
+    document.getElementById('passwordError').classList.add('d-none');
+    document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>系统设置';
+}
+
+function verifySettingsPassword() {
+    const password = document.getElementById('settingsPassword').value;
+    
+    fetch('/api/settings/verify', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: password })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // 验证成功，显示设置内容
+            document.getElementById('passwordVerifySection').classList.add('d-none');
+            document.getElementById('settingsContentSection').classList.remove('d-none');
+            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
+            
+            // 加载当前设置
+            loadCurrentSettings();
+        } else {
+            // 验证失败
+            document.getElementById('passwordError').classList.remove('d-none');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('验证失败，请稍后重试', 'error');
+    });
+}
+
+function saveModalSettings() {
+    const babyName = document.getElementById('modalBabyName').value;
+    const babyGender = document.getElementById('modalGender').value;
+    const babyBirthday = document.getElementById('modalBirthday').value;
+    const province = document.getElementById('modalProvince').value;
+    const city = document.getElementById('modalCity').value;
+    const fullCity = city || province || '';
+    
+    const folders = [];
+    document.querySelectorAll('#modalFolderList .media-folder').forEach(input => {
+        if (input.value.trim()) {
+            folders.push(input.value.trim());
+        }
+    });
+    
+    const newPassword = document.getElementById('modalNewPassword').value;
+    const confirmPassword = document.getElementById('modalConfirmPassword').value;
+    
+    if (newPassword && newPassword !== confirmPassword) {
+        showNotification('两次输入的新密码不一致', 'error');
+        return;
+    }
+    
+    const requestData = {
+        baby_name: babyName,
+        baby_gender: babyGender,
+        baby_birthday: babyBirthday,
+        user_city: fullCity,
+        media_folders: folders,
+        log_style: document.getElementById('logStyle').value,
+        custom_style: document.getElementById('logStyle').value === '自定义' ? document.getElementById('customStyleText').value : '',
+        index_after_date: document.getElementById('rebuildIndexStartDate').value
+    };
+    
+    if (newPassword) {
+        requestData.admin_password = newPassword;
+    }
+    
+    fetch('/api/setup', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('设置已保存', 'success');
+            // 关闭模态框
+            var modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
+            modal.hide();
+            // 刷新页面
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showNotification('保存失败：' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('保存失败，请稍后重试', 'error');
+    });
+}
+
+// 添加文件夹
+function addModalFolder() {
+    const folderList = document.getElementById('modalFolderList');
+    const newRow = document.createElement('div');
+    newRow.className = 'input-group mb-2';
+    newRow.innerHTML = `
+        <input type="text" class="form-control media-folder"
+               placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
+        <button class="btn btn-outline-danger remove-folder-btn" type="button">
+            <i class="fas fa-trash"></i>
+        </button>
+    `;
+    
+    // 添加 Enter 键监听
+    const input = newRow.querySelector('input');
+    input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            addModalFolder();
+        }
+    });
+    
+    folderList.appendChild(newRow);
+    
+    // 启用所有删除按钮
+    document.querySelectorAll('#modalFolderList .remove-folder-btn').forEach(btn => {
+        btn.disabled = false;
+    });
+}
+
+// 删除文件夹
+document.addEventListener('click', function(e) {
+    if (e.target.closest('#modalFolderList .remove-folder-btn')) {
+        const row = e.target.closest('.input-group');
+        const remaining = document.querySelectorAll('#modalFolderList .media-folder').length;
+        if (remaining > 1) {
+            row.remove();
+        }
+    }
+});
+
+// 初始化省份城市选择器
+function initModalCitySelector(savedCity) {
+    let defaultProvince = '';
+    let defaultCity = '';
+    
+    if (savedCity) {
+        const provinces = getProvinces();
+        let found = false;
+        
+        for (const province of provinces) {
+            if (savedCity === province) {
+                defaultProvince = province;
+                const cities = getCitiesByProvince(province);
+                if (cities.length > 0) {
+                    defaultCity = cities[0];
+                }
+                found = true;
+                break;
+            }
+            
+            if (savedCity.startsWith(province)) {
+                defaultProvince = province;
+                const cityPart = savedCity.substring(province.length);
+                const cities = getCitiesByProvince(province);
+                for (const city of cities) {
+                    if (cityPart.includes(city.replace(province, '')) || cityPart === city || city === cityPart) {
+                        defaultCity = city;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+        }
+        
+        if (!found && savedCity) {
+            for (const province of provinces) {
+                const cities = getCitiesByProvince(province);
+                for (const city of cities) {
+                    const cityNameOnly = city.replace(province, '');
+                    if ((cityNameOnly && savedCity.includes(cityNameOnly)) || savedCity === cityNameOnly || savedCity === city) {
+                        defaultProvince = province;
+                        defaultCity = city;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+        }
+    }
+    
+    initRegionSelector({
+        provinceSelect: 'modalProvince',
+        citySelect: 'modalCity',
+        defaultProvince: defaultProvince,
+        defaultCity: defaultCity,
+        onChange: function(data) {
+            console.log('Selected:', data);
+        }
+    });
+}
+
+// 加载当前设置
+function loadCurrentSettings() {
+    fetch('/api/settings/current')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('modalBabyName').value = data.baby_name || '';
+                document.getElementById('modalGender').value = data.baby_gender || '';
+                document.getElementById('modalBirthday').value = data.baby_birthday || '';
+                document.getElementById('logStyle').value = data.log_style || '简练';
+                if (data.custom_style) {
+                    document.getElementById('customStyleText').value = data.custom_style;
+                }
+                toggleCustomStyleInput();
+                initModalCitySelector(data.user_city || '');
+                
+                const folderList = document.getElementById('modalFolderList');
+                folderList.innerHTML = '';
+                
+                if (data.media_folders && data.media_folders.length > 0) {
+                    data.media_folders.forEach(folder => {
+                        const newRow = document.createElement('div');
+                        newRow.className = 'input-group mb-2';
+                        newRow.innerHTML = `
+                            <input type="text" class="form-control media-folder" value="${folder}"
+                                   placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
+                            <button class="btn btn-outline-danger remove-folder-btn" type="button">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        `;
+                        folderList.appendChild(newRow);
+                    });
+                } else {
+                    addModalFolder();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading settings:', error);
+            addModalFolder();
+        });
+}
+
+// 切换自定义风格输入框显示
+function toggleCustomStyleInput() {
+    const logStyle = document.getElementById('logStyle').value;
+    const customInput = document.getElementById('customStyleInput');
+    if (logStyle === '自定义') {
+        customInput.style.display = 'block';
+    } else {
+        customInput.style.display = 'none';
+    }
+}
+
+// 从设置页面保存日志风格（实时保存到服务端）
+function saveLogStyleFromSettings() {
+    const logStyle = document.getElementById('logStyle').value;
+    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleText').value : '';
+    
+    fetch('/api/settings/log-style', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            log_style: logStyle,
+            custom_style: customStyle
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            console.log('日志风格已保存:', logStyle, customStyle);
+        }
+    })
+    .catch(e => console.error('保存日志风格失败:', e));
+}
+
+// 重置模态框状态
+document.getElementById('settingsModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('enterModifySection').classList.remove('d-none');
+    document.getElementById('passwordVerifySection').classList.add('d-none');
+    document.getElementById('settingsContentSection').classList.add('d-none');
+    document.getElementById('passwordError').classList.add('d-none');
+    document.getElementById('settingsPassword').value = '';
+    document.getElementById('modalNewPassword').value = '';
+    document.getElementById('modalConfirmPassword').value = '';
+    document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>系统设置';
+});
+
+// ==================== 压缩功能相关 ====================
+
+let compressionEnabled = false;
+let savedCompressionSettings = {};
+
+// 检查 FFmpeg 状态
+function checkFFmpegStatus() {
+    fetch('/api/compression/check-ffmpeg')
+        .then(r => r.json())
+        .then(data => {
+            const statusEl = document.getElementById('ffmpegStatus');
+            if (data.available) {
+                statusEl.className = 'badge bg-success';
+                statusEl.textContent = '可用';
+            } else {
+                statusEl.className = 'badge bg-warning';
+                statusEl.textContent = '不可用';
+            }
+        })
+        .catch(err => {
+            const statusEl = document.getElementById('ffmpegStatus');
+            statusEl.className = 'badge bg-danger';
+            statusEl.textContent = '检测失败';
+        });
+}
+
+// 加载压缩状态
+function loadCompressionStatus() {
+    fetch('/api/compression/status')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const status = data.data;
+                compressionEnabled = status.enabled;
+                savedCompressionSettings = {
+                    video_quality: status.video_quality,
+                    image_quality: status.image_quality
+                };
+                
+                // 更新显示
+                document.getElementById('videoQuality').value = status.video_quality || '均衡';
+                document.getElementById('imageQuality').value = status.image_quality || '均衡';
+                document.getElementById('videoStatus').textContent = 
+                    `${status.videos_compressed} / ${status.total_videos || status.videos_compressed}`;
+                document.getElementById('imageStatus').textContent = 
+                    `${status.images_compressed} / ${status.total_images || status.images_compressed}`;
+                
+                // 更新按钮状态
+                updateCompressionButton();
+                
+                // 显示当前处理文件
+                if (status.current_file) {
+                    document.getElementById('currentCompressing').style.display = 'block';
+                    document.getElementById('currentFileName').textContent = status.current_file;
+                } else {
+                    document.getElementById('currentCompressing').style.display = 'none';
+                }
+                
+                // 如果正在压缩，定时刷新
+                if (status.queue_length > 0 || status.current_file) {
+                    setTimeout(loadCompressionStatus, 2000);
+                }
+            }
+        })
+        .catch(err => console.error('加载压缩状态失败:', err));
+}
+
+// 保存压缩设置（自动触发）
+function saveCompressionSettings() {
+    const videoQuality = document.getElementById('videoQuality').value;
+    const imageQuality = document.getElementById('imageQuality').value;
+    
+    fetch('/api/compression/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            video_quality: videoQuality,
+            image_quality: imageQuality
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            savedCompressionSettings = { video_quality: videoQuality, image_quality: imageQuality };
+            loadCompressionStatus();
+        }
+    })
+    .catch(err => console.error('保存压缩设置失败:', err));
+}
+
+// 重新生成压缩文件
+function regenerateCompression() {
+    const btn = document.getElementById('regenerateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在重新生成...';
+    
+    fetch('/api/compression/regenerate', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(data.message, 'success');
+                loadCompressionStatus();
+            } else {
+                showNotification(data.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync me-2"></i>重新生成压缩文件';
+        })
+        .catch(err => {
+            showNotification('操作失败: ' + err.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync me-2"></i>重新生成压缩文件';
+        });
+}
+
+// 当设置面板打开时加载压缩状态
+document.getElementById('settingsModal').addEventListener('shown.bs.modal', function () {
+     checkFFmpegStatus();
+     loadCompressionStatus();
+     // 初始化索引起始日期输入框
+     const indexAfterDate = '{{ index_after_date|default("") }}';
+     if (indexAfterDate) {
+         document.getElementById('rebuildIndexStartDate').value = indexAfterDate;
+     }
+});
+
+// 重建素材索引
+function rebuildPhotoIndex() {
+    const btn = document.getElementById('rebuildIndexBtn');
+    const startDate = document.getElementById('rebuildIndexStartDate').value;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在启动扫描...';
+    
+    const payload = {};
+    if (startDate) payload.start_date = startDate;
+    
+    fetch('/api/photos/scan', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                pollScanProgress();
+            } else {
+                showNotification(data.message, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
+            }
+        })
+        .catch(err => {
+            showNotification('操作失败: ' + err.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
+        });
+}
+
+function pollScanProgress() {
+    const btn = document.getElementById('rebuildIndexBtn');
+    
+    fetch('/api/photos/scan/progress')
+        .then(r => r.json())
+        .then(data => {
+            if (data.running) {
+                const percent = data.total > 0 ? Math.round(data.current / data.total * 100) : 0;
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>扫描中 ${data.current}/${data.total} (${percent}%)`;
+                if (data.message) {
+                    btn.innerHTML += `<br><small>${data.message}</small>`;
+                }
+                setTimeout(pollScanProgress, 1000);
+            } else if (data.result && data.result.error) {
+                showNotification('扫描失败: ' + data.result.error, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
+            } else if (data.result) {
+                showNotification(`索引重建完成！新增 ${data.result.new} 个，已有 ${data.result.existing} 个，总计 ${data.result.total} 个文件`, 'success');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
+            } else {
+                btn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>${data.message || '处理中...'}`;
+                setTimeout(pollScanProgress, 1000);
+            }
+        })
+        .catch(err => {
+            setTimeout(pollScanProgress, 2000);
+        });
+}
+</script>
