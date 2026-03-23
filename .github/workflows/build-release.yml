@@ -69,21 +69,18 @@ jobs:
         run: |
           mkdir release
           copy dist\CZRZClient.exe release\mumu-windows.exe
-          copy cloudflare.exe release\
 
       - name: Create package (Linux)
         if: runner.os == 'Linux'
         run: |
           mkdir -p release
           cp dist/CZRZClient release/mumu-linux
-          cp cloudflared release/cloudflared-linux
 
       - name: Create package (macOS)
         if: runner.os == 'macOS'
         run: |
           mkdir -p release
           cp dist/CZRZClient release/mumu-macos
-          cp cloudflared release/cloudflared-darwin
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -125,6 +122,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            release-windows/*
-            release-linux/*
-            release-macos/*
+            release-windows/mumu-windows.exe
+            release-linux/mumu-linux
+            release-macos/mumu-macos
