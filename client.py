@@ -348,12 +348,16 @@ class PublicClient:
             self.connect_to_public_server()
 
     def is_first_run(self) -> bool:
+        """检查是否首次运行
+
+        只检查 baby_name 和 media_folders，不检查 client_id
+        因为 client_id 可能在注册时因服务端未就绪而未保存
+        """
         return (
             not USER_CONFIG_FILE.exists()
             or not self.baby_name
             or self.baby_name == "宝宝"
             or not self.media_folders
-            or not self.client_id
         )
 
     def load_config(self):
@@ -1214,13 +1218,16 @@ class PublicClient:
 
     def load_local_credentials(self):
         """读取本地保存的 tunnel 凭证
-        
+
         优先级：
-        1. client_tunnels/{client_id}/credentials.json（服务端分配的凭证）
-        2. data/cloudflared_credentials.json（备用位置）
+        1. client_tunnels/{client_id}/credentials.json（如果有 client_id）
+        2. 遍历 client_tunnels/ 下所有子目录（如果没有 client_id 或上述不存在）
+        3. cloudflared_credentials.json（备用位置）
+
+        不依赖 client_id，确保即使注册失败也能加载本地凭证
         """
         try:
-            # 1. 优先从 client_tunnels 目录读取（服务端分配的凭证）
+            # 1. 如果有 client_id，优先从对应目录读取
             if self.client_id:
                 client_tunnel_dir = self.data_dir / "client_tunnels" / self.client_id
                 client_creds_file = client_tunnel_dir / "credentials.json"
@@ -1237,7 +1244,6 @@ class PublicClient:
                         else:
                             # 凭证文件不存在，需要创建
                             print(f"⚠ cloudflared 目录缺少凭证文件，尝试创建...")
-                            # 创建凭证文件
                             creds_dir = Path.home() / ".cloudflared"
                             creds_dir.mkdir(parents=True, exist_ok=True)
                             with open(creds_file, "w", encoding="utf-8") as f:
@@ -1245,7 +1251,37 @@ class PublicClient:
                             print(f"✅ 已创建凭证文件: {creds_file}")
                             return credentials
 
-            # 2. 从备用位置读取
+            # 2. 遍历 client_tunnels 下所有子目录（不依赖 client_id）
+            client_tunnels_dir = self.data_dir / "client_tunnels"
+            if client_tunnels_dir.exists() and client_tunnels_dir.is_dir():
+                for subdir in client_tunnels_dir.iterdir():
+                    if subdir.is_dir():
+                        creds_file = subdir / "credentials.json"
+                        if creds_file.exists():
+                            with open(creds_file, "r", encoding="utf-8") as f:
+                                credentials = json.load(f)
+                            tunnel_id = credentials.get("TunnelID", "")
+                            if tunnel_id:
+                                cf_creds_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                                if cf_creds_file.exists():
+                                    print(f"📂 发现本地凭证(遍历): {tunnel_id[:8]}...")
+                                    # 同时恢复 client_id
+                                    if not self.client_id:
+                                        self.client_id = subdir.name
+                                        print(f"📝 从凭证目录恢复 client_id: {self.client_id[:8]}...")
+                                    return credentials
+                                else:
+                                    # 创建凭证文件
+                                    creds_dir = Path.home() / ".cloudflared"
+                                    creds_dir.mkdir(parents=True, exist_ok=True)
+                                    with open(cf_creds_file, "w", encoding="utf-8") as f:
+                                        json.dump(credentials, f, indent=2)
+                                    print(f"✅ 已创建凭证文件: {cf_creds_file}")
+                                    if not self.client_id:
+                                        self.client_id = subdir.name
+                                    return credentials
+
+            # 3. 从备用位置读取
             client_creds_file = self.data_dir / "cloudflared_credentials.json"
             if client_creds_file.exists():
                 with open(client_creds_file, "r", encoding="utf-8") as f:
