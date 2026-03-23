@@ -212,37 +212,6 @@
     border-color: transparent;
 }
 
-/* 生成卡片按钮 */
-.card-generate-section {
-    text-align: center;
-    margin: 24px 0;
-}
-
-.btn-generate-card {
-    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
-    border: none;
-    color: white;
-    padding: 16px 32px;
-    border-radius: 30px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s;
-    box-shadow: 0 4px 15px rgba(255, 182, 193, 0.3);
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.btn-generate-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(255, 182, 193, 0.4);
-}
-
-.btn-generate-card i {
-    font-size: 20px;
-}
-
 /* 数据详情区域（可折叠） */
 .data-section {
     margin-top: 24px;
@@ -483,9 +452,6 @@
         grid-template-columns: 1fr;
     }
     
-    .btn-generate-card {
-        padding: 14px 24px;
-        font-size: 15px;
     }
 }
 </style>
@@ -553,15 +519,11 @@
             <div class="tags-cloud" id="tagsCloud">
                 <span style="color: #999;">加载中...</span>
             </div>
-        </div>
-
-        <!-- 生成成长卡片按钮 -->
-        <div class="card-generate-section">
-            <button class="btn-generate-card" onclick="openCardGenerator()">
-                <i class="fas fa-magic"></i>
-                <span>生成成长卡片</span>
-                <small style="opacity: 0.8; font-size: 12px;">分享宝宝的独特光芒</small>
-            </button>
+            <div id="showAllTagsBtn" style="text-align: center; margin-top: 12px; display: none;">
+                <button class="btn btn-sm btn-outline-primary" onclick="showAllTags()">
+                    <i class="fas fa-plus me-1"></i>显示全部标签
+                </button>
+            </div>
         </div>
     </div>
 
@@ -787,6 +749,7 @@ function switchTagType(type) {
 
 function displayTagsByType(type) {
     const container = document.getElementById('tagsCloud');
+    const showAllBtn = document.getElementById('showAllTagsBtn');
     let filteredTags = allTags;
 
     if (type !== 'all') {
@@ -797,14 +760,39 @@ function displayTagsByType(type) {
     }
 
     if (filteredTags && filteredTags.length > 0) {
-        container.innerHTML = filteredTags.map((item, index) => {
+        // 只显示前8个标签
+        const displayTags = filteredTags.slice(0, 8);
+        container.innerHTML = displayTags.map((item, index) => {
             const gradient = gradients[index % gradients.length];
             const tag = typeof item === 'object' ? item.tag : item;
             return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
         }).join('');
+
+        // 如果有更多标签，显示"显示全部"按钮
+        if (filteredTags.length > 8) {
+            showAllBtn.style.display = 'block';
+            showAllBtn.dataset.allTags = JSON.stringify(filteredTags);
+        } else {
+            showAllBtn.style.display = 'none';
+        }
     } else {
         container.innerHTML = '<span style="color: #999;">暂无标签</span>';
+        showAllBtn.style.display = 'none';
     }
+}
+
+function showAllTags() {
+    const container = document.getElementById('tagsCloud');
+    const showAllBtn = document.getElementById('showAllTagsBtn');
+    const allTagsData = JSON.parse(showAllBtn.dataset.allTags);
+
+    container.innerHTML = allTagsData.map((item, index) => {
+        const gradient = gradients[index % gradients.length];
+        const tag = typeof item === 'object' ? item.tag : item;
+        return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+    }).join('');
+
+    showAllBtn.style.display = 'none';
 }
 
 function toggleDataSection(el) {
@@ -920,595 +908,6 @@ function renderGrowthChart(data) {
     });
 }
 
-function openCardGenerator() {
-    // 打开卡片生成器模态框
-    const modal = new bootstrap.Modal(document.getElementById('cardGeneratorModal'));
-    modal.show();
-
-    // 加载卡片生成器内容
-    loadCardGenerator();
-}
-
-// ========== 卡片生成器 ==========
-
-let currentCardData = null;
-let selectedCardType = 'trait';
-let selectedCardStyle = 'warm';
-
-function loadCardGenerator() {
-    const container = document.getElementById('cardGeneratorContent');
-
-    // 显示加载状态
-    container.innerHTML = `
-        <div class="text-center py-5">
-            <i class="fas fa-spinner fa-spin fa-2x" style="color: #FFB6C1;"></i>
-            <p class="text-muted mt-3">AI正在准备卡片...</p>
-        </div>
-    `;
-
-    // 加载卡片类型和风格
-    Promise.all([
-        fetch('/api/card/types').then(r => r.json()),
-        fetch('/api/card/styles').then(r => r.json())
-    ])
-    .then(([typesData, stylesData]) => {
-        if (!typesData.success || !stylesData.success) {
-            container.innerHTML = '<div class="alert alert-warning">加载失败，请稍后重试</div>';
-            return;
-        }
-
-        renderCardGeneratorUI(typesData.types, stylesData.styles);
-    })
-    .catch(err => {
-        console.error('加载卡片配置失败:', err);
-        container.innerHTML = '<div class="alert alert-warning">加载失败，请稍后重试</div>';
-    });
-}
-
-function renderCardGeneratorUI(types, styles) {
-    const container = document.getElementById('cardGeneratorContent');
-
-    container.innerHTML = `
-        <!-- 步骤1：选择卡片类型 -->
-        <div class="card-step mb-4">
-            <h6 class="text-muted mb-3"><i class="fas fa-list-check me-2"></i>选择卡片类型</h6>
-            <div class="row g-2">
-                ${types.map(t => `
-                    <div class="col-md-4">
-                        <div class="card-type-option ${t.available ? '' : 'disabled'} ${selectedCardType === t.type ? 'selected' : ''}"
-                             onclick="${t.available ? `selectCardType('${t.type}')` : ''}"
-                             data-type="${t.type}">
-                            <div class="card-type-icon">${t.icon}</div>
-                            <div class="card-type-name">${t.name}</div>
-                            <div class="card-type-desc">${t.description}</div>
-                            ${!t.available ? `<div class="card-type-reason">${t.reason || '暂不可用'}</div>` : ''}
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-
-        <!-- 步骤2：选择风格 -->
-        <div class="card-step mb-4">
-            <h6 class="text-muted mb-3"><i class="fas fa-palette me-2"></i>选择卡片风格</h6>
-            <div class="d-flex gap-2 flex-wrap">
-                ${styles.map(s => `
-                    <div class="card-style-option ${selectedCardStyle === s.id ? 'selected' : ''}"
-                         onclick="selectCardStyle('${s.id}')"
-                         data-style="${s.id}">
-                        <div class="style-preview" style="background: ${s.bg_gradient};"></div>
-                        <span>${s.name}</span>
-                    </div>
-                `).join('')}
-            </div>
-        </div>
-
-        <!-- 步骤3：预览和生成 -->
-        <div class="card-step">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h6 class="text-muted mb-0"><i class="fas fa-eye me-2"></i>卡片预览</h6>
-                <button class="btn btn-sm btn-outline-secondary" onclick="regenerateCard()">
-                    <i class="fas fa-sync-alt me-1"></i>换一个
-                </button>
-            </div>
-            <div id="cardPreviewContainer">
-                <div class="text-center py-4">
-                    <button class="btn btn-lg" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none; border-radius: 30px; padding: 12px 32px;" onclick="generateCard()">
-                        <i class="fas fa-magic me-2"></i>生成卡片
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // 添加样式
-    addCardGeneratorStyles();
-}
-
-function addCardGeneratorStyles() {
-    if (document.getElementById('cardGeneratorStyles')) return;
-
-    const style = document.createElement('style');
-    style.id = 'cardGeneratorStyles';
-    style.textContent = `
-        .card-type-option {
-            background: #FAFAFA;
-            border: 2px solid #EEE;
-            border-radius: 12px;
-            padding: 16px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .card-type-option:hover:not(.disabled) {
-            border-color: #FFB6C1;
-            background: #FFF5F5;
-        }
-        .card-type-option.selected {
-            border-color: #FFB6C1;
-            background: linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%);
-        }
-        .card-type-option.disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .card-type-icon {
-            font-size: 28px;
-            margin-bottom: 8px;
-        }
-        .card-type-name {
-            font-weight: 600;
-            color: #4A4A4A;
-            margin-bottom: 4px;
-        }
-        .card-type-desc {
-            font-size: 12px;
-            color: #888;
-        }
-        .card-type-reason {
-            font-size: 11px;
-            color: #FFB6C1;
-            margin-top: 6px;
-        }
-        .card-style-option {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border: 2px solid #EEE;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: all 0.2s;
-            background: white;
-        }
-        .card-style-option:hover {
-            border-color: #FFB6C1;
-        }
-        .card-style-option.selected {
-            border-color: #FFB6C1;
-            background: #FFF5F5;
-        }
-        .style-preview {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-        }
-        /* 卡片预览样式 */
-        .growth-card {
-            width: 100%;
-            max-width: 360px;
-            margin: 0 auto;
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
-        }
-        .card-header-section {
-            padding: 24px 20px 16px;
-            text-align: center;
-        }
-        .card-baby-name {
-            font-size: 24px;
-            font-weight: 600;
-            color: #4A4A4A;
-            margin-bottom: 4px;
-        }
-        .card-age {
-            font-size: 14px;
-            color: #888;
-        }
-        .card-traits-section {
-            padding: 0 20px 20px;
-        }
-        .card-traits-title {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 16px;
-        }
-        .card-trait-item {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: white;
-            border-radius: 12px;
-            padding: 12px;
-            margin-bottom: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .card-trait-icon {
-            width: 36px;
-            height: 36px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            background: #FFF0F5;
-        }
-        .card-trait-info {
-            flex: 1;
-        }
-        .card-trait-name {
-            font-weight: 600;
-            color: #4A4A4A;
-            font-size: 14px;
-        }
-        .card-trait-desc {
-            font-size: 12px;
-            color: #888;
-        }
-        .card-warm-text {
-            text-align: center;
-            padding: 16px 20px;
-            font-size: 15px;
-            color: #666;
-            font-style: italic;
-            line-height: 1.6;
-        }
-        .card-footer-section {
-            padding: 16px 20px;
-            text-align: center;
-            border-top: 1px solid rgba(0,0,0,0.05);
-        }
-        .card-brand {
-            font-size: 12px;
-            color: #999;
-        }
-        .card-brand-name {
-            font-weight: 600;
-            color: #FFB6C1;
-        }
-        .card-slogan {
-            font-size: 11px;
-            color: #BBB;
-            margin-top: 2px;
-        }
-        /* 操作按钮 */
-        .card-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            margin-top: 20px;
-        }
-        .card-actions .btn {
-            border-radius: 20px;
-            padding: 10px 24px;
-        }
-    `;
-    document.head.appendChild(style);
-}
-
-function selectCardType(type) {
-    selectedCardType = type;
-    document.querySelectorAll('.card-type-option').forEach(el => {
-        el.classList.toggle('selected', el.dataset.type === type);
-    });
-    // 清空预览
-    document.getElementById('cardPreviewContainer').innerHTML = `
-        <div class="text-center py-4">
-            <button class="btn btn-lg" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none; border-radius: 30px; padding: 12px 32px;" onclick="generateCard()">
-                <i class="fas fa-magic me-2"></i>生成卡片
-            </button>
-        </div>
-    `;
-}
-
-function selectCardStyle(style) {
-    selectedCardStyle = style;
-    document.querySelectorAll('.card-style-option').forEach(el => {
-        el.classList.toggle('selected', el.dataset.style === style);
-    });
-    // 如果已有卡片数据，重新渲染
-    if (currentCardData) {
-        currentCardData.style = style;
-        renderCardPreview(currentCardData);
-    }
-}
-
-function generateCard() {
-    const previewContainer = document.getElementById('cardPreviewContainer');
-    previewContainer.innerHTML = `
-        <div class="text-center py-4">
-            <i class="fas fa-spinner fa-spin" style="color: #FFB6C1; font-size: 24px;"></i>
-            <p class="text-muted mt-2 mb-0">AI正在生成卡片...</p>
-        </div>
-    `;
-
-    fetch('/api/card/generate', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            card_type: selectedCardType,
-            style: selectedCardStyle
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            currentCardData = data.card;
-            renderCardPreview(currentCardData);
-        } else {
-            previewContainer.innerHTML = `<div class="alert alert-warning">${data.message || '生成失败'}</div>`;
-        }
-    })
-    .catch(err => {
-        previewContainer.innerHTML = '<div class="alert alert-warning">生成失败，请稍后重试</div>';
-    });
-}
-
-function regenerateCard() {
-    generateCard();
-}
-
-function renderCardPreview(card) {
-    const container = document.getElementById('cardPreviewContainer');
-    const styleConfig = card.style_config || {};
-
-    // 根据卡片类型渲染不同内容
-    let traitsHtml = '';
-    if (card.card_type === 'trait' && card.traits) {
-        traitsHtml = card.traits.map(t => `
-            <div class="card-trait-item">
-                <div class="card-trait-icon">${t.icon}</div>
-                <div class="card-trait-info">
-                    <div class="card-trait-name">${t.name}</div>
-                    <div class="card-trait-desc">${t.description}</div>
-                </div>
-            </div>
-        `).join('');
-    } else if (card.card_type === 'monthly') {
-        traitsHtml = `
-            <div class="text-center mb-3">
-                <div style="font-size: 14px; color: #888;">${card.month || ''}</div>
-            </div>
-            ${card.new_traits?.map(t => `
-                <div class="card-trait-item">
-                    <div class="card-trait-icon">✨</div>
-                    <div class="card-trait-info">
-                        <div class="card-trait-name">${t}</div>
-                        <div class="card-trait-desc">新发现的特质</div>
-                    </div>
-                </div>
-            `).join('') || ''}
-        `;
-    } else if (card.card_type === 'milestone') {
-        traitsHtml = `
-            <div class="text-center mb-3">
-                <div style="font-size: 32px; font-weight: 600; color: #FFB6C1;">${card.days || 0}</div>
-                <div style="font-size: 14px; color: #888;">天的成长</div>
-            </div>
-            <div class="d-flex justify-content-around text-center mb-3">
-                <div>
-                    <div style="font-size: 20px; font-weight: 600; color: #4A4A4A;">${card.total_events || 0}</div>
-                    <div style="font-size: 12px; color: #888;">个瞬间</div>
-                </div>
-                <div>
-                    <div style="font-size: 20px; font-weight: 600; color: #4A4A4A;">${card.total_tags || 0}</div>
-                    <div style="font-size: 12px; color: #888;">个标签</div>
-                </div>
-            </div>
-        `;
-    }
-
-    container.innerHTML = `
-        <div class="growth-card" id="growthCard" style="background: ${styleConfig.bg_gradient || 'linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%)'};">
-            <div class="card-header-section">
-                <div class="card-baby-name">${card.baby_name || '宝宝'}</div>
-                <div class="card-age">${card.age_text || ''}</div>
-            </div>
-
-            <div class="card-traits-section">
-                <div class="card-traits-title">
-                    <i class="fas fa-brain" style="color: ${styleConfig.accent_color || '#FFB6C1'};"></i>
-                    <span>AI成长画像</span>
-                </div>
-                ${traitsHtml}
-            </div>
-
-            <div class="card-warm-text">
-                "${card.warm_text || '你的每一次成长，都是爸爸妈妈的宝藏'}"
-            </div>
-
-            <div class="card-footer-section">
-                <div class="card-brand">
-                    <span class="card-brand-name">🦶 ${card.brand?.name || '小脚印成长记录'}</span>
-                </div>
-                <div class="card-slogan">${card.brand?.slogan || 'AI画像 · 发现宝宝的独特光芒'}</div>
-            </div>
-        </div>
-
-        <div class="card-actions">
-            <button class="btn btn-outline-secondary" onclick="regenerateCard()">
-                <i class="fas fa-sync-alt me-1"></i>换一个
-            </button>
-            <button class="btn" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none;" onclick="saveCard()">
-                <i class="fas fa-download me-1"></i>保存图片
-            </button>
-        </div>
-    `;
-}
-
-function saveCard() {
-    const card = document.getElementById('growthCard');
-    if (!card) {
-        showNotification('请先生成卡片', 'warning');
-        return;
-    }
-
-    // 使用 html2canvas 生成图片
-    if (typeof html2canvas === 'undefined') {
-        // 动态加载 html2canvas
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
-        script.onload = () => doSaveCard(card);
-        document.head.appendChild(script);
-    } else {
-        doSaveCard(card);
-    }
-}
-
-function doSaveCard(card) {
-    html2canvas(card, {
-        scale: 2,
-        backgroundColor: null,
-        useCORS: true
-    }).then(canvas => {
-        // 创建下载链接
-        const link = document.createElement('a');
-        link.download = `成长卡片_${new Date().toISOString().slice(0,10)}.png`;
-        link.href = canvas.toDataURL('image/png');
-        link.click();
-        showNotification('卡片已保存到相册', 'success');
-    }).catch(err => {
-        console.error('保存卡片失败:', err);
-        showNotification('保存失败，请重试', 'error');
-    });
-}
-
-function startAIReview() {
-    const modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
-    modal.show();
-}
-
-function executeAIReview(force) {
-    const modalEl = document.getElementById('aiReviewModal');
-    bootstrap.Modal.getInstance(modalEl).hide();
-
-    const btn = document.getElementById('aiReviewBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>处理中';
-
-    fetch('/api/ai/auto-review', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({force: force})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            showAIReviewProgress(data.task_id);
-        } else {
-            showNotification(data.message || '启动失败', 'error');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
-        }
-    })
-    .catch(err => {
-        showNotification('请求失败', 'error');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
-    });
-}
-
-function showAIReviewProgress(taskId) {
-    const footer = document.getElementById('aiProgressFooter');
-    const progressText = document.getElementById('footerProgressText');
-    const progressBar = document.getElementById('footerProgressBar');
-
-    footer.classList.add('show');
-    footer.classList.remove('completed');
-    progressBar.style.width = '0%';
-    progressText.textContent = 'AI正在重新认识宝宝...';
-
-    pollReviewProgress(taskId);
-}
-
-function pollReviewProgress(taskId) {
-    const progressText = document.getElementById('footerProgressText');
-    const progressBar = document.getElementById('footerProgressBar');
-    const footer = document.getElementById('aiProgressFooter');
-    const btn = document.getElementById('aiReviewBtn');
-
-    const poll = () => {
-        fetch(`/api/ai/auto-review/status/${taskId}`)
-            .then(r => r.json())
-            .then(data => {
-                if (!data.success) return;
-                const status = data.status;
-                const percent = status.total > 0 ? Math.round(status.processed / status.total * 100) : 0;
-                progressBar.style.width = percent + '%';
-                progressText.textContent = status.message || `处理中 ${percent}%`;
-
-                if (status.completed) {
-                    footer.classList.add('completed');
-                    progressText.innerHTML = `<i class="fas fa-check-circle me-1"></i>完成！`;
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
-                    setTimeout(() => {
-                        loadProfileData();
-                        setTimeout(() => footer.classList.remove('show'), 3000);
-                    }, 500);
-                } else {
-                    setTimeout(poll, 1000);
-                }
-            });
-    };
-    poll();
-}
-
-function hideProgressFooter() {
-    document.getElementById('aiProgressFooter').classList.remove('show');
-}
-
-function submitFeedback() {
-    const text = document.getElementById('feedbackText').value.trim();
-    if (!text) {
-        showNotification('请输入内容', 'warning');
-        return;
-    }
-
-    fetch(`/api/ai/children/${currentChildId}/feedback`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({feedback_text: text, feedback_type: 'correction'})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            showNotification('已分享，AI会参考的~', 'success');
-            document.getElementById('feedbackText').value = '';
-            loadFeedbackHistory();
-        } else {
-            showNotification('提交失败', 'error');
-        }
-    });
-}
-
-function loadFeedbackHistory() {
-    fetch(`/api/ai/children/${currentChildId}/feedback?limit=5`)
-    .then(r => r.json())
-    .then(data => {
-        if (data.success && data.feedbacks?.length > 0) {
-            document.getElementById('feedbackHistory').innerHTML = 
-                '<div class="small text-muted mt-2">已分享：' + 
-                data.feedbacks.map(f => f.feedback_text).join('、').slice(0, 50) + '...</div>';
-        }
-    });
-}
-
 function showNotification(message, type) {
     const toast = document.createElement('div');
     toast.className = `alert alert-${type === 'success' ? 'success' : 'warning'} position-fixed`;
@@ -1561,23 +960,4 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <!-- 卡片生成器模态框 -->
-<div class="modal fade" id="cardGeneratorModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 20px; border: none;">
-            <div class="modal-header border-0" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); border-radius: 20px 20px 0 0;">
-                <h5 class="modal-title text-white">
-                    <i class="fas fa-magic me-2"></i>生成成长卡片
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4" id="cardGeneratorContent">
-                <!-- 卡片生成器内容将通过JS加载 -->
-                <div class="text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x" style="color: #FFB6C1;"></i>
-                    <p class="text-muted mt-3">AI正在准备卡片...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
