@@ -1,0 +1,630 @@
+{% extends "base.html" %}
+
+{% block title %}初次设置 - 成长记录系统{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <!-- 欢迎卡片 -->
+            <div class="welcome-banner mb-4 animate-fade-in">
+                <div class="text-center">
+                    <h1 class="display-5 fw-bold mb-3">欢迎使用成长记录系统</h1>
+                    <p class="lead mb-0 opacity-90">完成以下设置，开始记录宝宝的成长点滴 💕</p>
+                </div>
+            </div>
+            
+            <!-- 设置表单 -->
+            <div class="card border-0 shadow-lg animate-fade-in" style="animation-delay: 0.2s;">
+                <div class="card-body p-5">
+                    <form id="setupForm">
+                        <!-- 宝宝头像 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold d-flex align-items-center mb-3">
+                                <div class="me-3" style="font-size: 1.5rem;">📷</div>
+                                <div>
+                                    <div>宝宝头像</div>
+                                    <small class="text-muted fw-normal">头像会显示在导航栏（可选）</small>
+                                </div>
+                            </label>
+                            <div class="d-flex align-items-center">
+                                <div class="me-4">
+                                    <div class="avatar-upload" onclick="document.getElementById('avatarInput').click()">
+                                        <img id="avatarPreview" src="/static/images/default-avatar.png" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                        <div class="avatar-overlay">
+                                            <i class="fas fa-camera"></i>
+                                        </div>
+                                    </div>
+                                    <input type="file" id="avatarInput" accept="image/*" style="display: none;" onchange="previewAvatar(this)">
+                                </div>
+                                <div>
+                                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('avatarInput').click()">
+                                        <i class="fas fa-upload me-1"></i>选择头像
+                                    </button>
+                                    <p class="text-muted small mt-2 mb-0">支持 JPG、PNG 格式</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 宝宝名字 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold d-flex align-items-center mb-3">
+                                <div>
+                                    <div>宝宝名字 *</div>
+                                    <small class="text-muted fw-normal">这个名字将用于生成成长日志</small>
+                                </div>
+                            </label>
+                            <input type="text" class="form-control form-control-lg" id="babyName" 
+                                   placeholder="请输入宝宝的名字" required
+                                   value="{{ baby_name or '' }}"
+                                   style="border-radius: var(--radius-md); padding: 16px 20px; font-size: 1.1rem;">
+                        </div>
+                        
+                        <!-- 宝宝性别和生日 -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-venus-mars me-2 text-primary"></i>宝宝性别
+                                </label>
+                                <select class="form-select" id="babyGender" style="border-radius: var(--radius-md); padding: 14px 18px;">
+                                    <option value="">请选择</option>
+                                    <option value="male" {% if baby_gender == 'male' %}selected{% endif %}>👦 男孩</option>
+                                    <option value="female" {% if baby_gender == 'female' %}selected{% endif %}>👧 女孩</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-birthday-cake me-2 text-primary"></i>宝宝生日
+                                </label>
+                                <input type="date" class="form-control" id="babyBirthday" 
+                                       value="{{ baby_birthday or '' }}"
+                                       style="border-radius: var(--radius-md); padding: 14px 18px;">
+                            </div>
+                        </div>
+                        
+                        <!-- 所在城市 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold d-flex align-items-center mb-3">
+                                <div class="me-3" style="font-size: 1.5rem;">📍</div>
+                                <div>
+                                    <div>所在地区</div>
+                                    <small class="text-muted fw-normal">用于获取当地天气信息（可选）</small>
+                                </div>
+                            </label>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <select class="form-select" id="province" style="border-radius: var(--radius-md); padding: 14px 18px;">
+                                        <option value="">选择省份</option>
+                                    </select>
+                                </div>
+                                <div class="col-6">
+                                    <select class="form-select" id="city" style="border-radius: var(--radius-md); padding: 14px 18px;">
+                                        <option value="">选择城市</option>
+                                    </select>
+                                </div>
+                            </div>
+                        <!-- 网络环境 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold d-flex align-items-center mb-3">
+                                <div class="me-3" style="font-size: 1.5rem;">🌐</div>
+                                <div>
+                                    <div>使用环境 *</div>
+                                    <small class="text-muted fw-normal">影响默认的图片和视频压缩设置（后续可在设置中修改）</small>
+                                </div>
+                            </label>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <div class="form-check card p-3 h-100" style="cursor: pointer;" onclick="document.getElementById('networkLocal').click()">
+                                        <input class="form-check-input" type="radio" name="networkType" id="networkLocal" value="local" checked>
+                                        <label class="form-check-label fw-bold" for="networkLocal">
+                                            <i class="fas fa-home me-2 text-success"></i>局域网使用
+                                        </label>
+                                        <div class="small text-muted mt-1">
+                                            默认使用原图/原视频，适合家庭WiFi内使用
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check card p-3 h-100" style="cursor: pointer;" onclick="document.getElementById('networkPublic').click()">
+                                        <input class="form-check-input" type="radio" name="networkType" id="networkPublic" value="public">
+                                        <label class="form-check-label fw-bold" for="networkPublic">
+                                            <i class="fas fa-globe me-2 text-primary"></i>公网访问
+                                        </label>
+                                        <div class="small text-muted mt-1">
+                                            默认使用压缩版本，适合移动网络或外网访问
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                         
+                        <!-- 媒体文件夹 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-images me-2 text-primary"></i>照片和视频保存文件夹 *
+                            </label>
+                            <div id="folderList">
+                                <div class="input-group mb-2">
+                                    <input type="text" class="form-control media-folder"
+                                           placeholder="例如: C:\Users\用户名\Pictures\宝宝照片（按 Enter 确认）" required>
+                                    <button class="btn btn-outline-danger remove-folder-btn" type="button" disabled>
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="addFolder()">
+                                <i class="fas fa-plus me-1"></i>添加更多文件夹
+                            </button>
+                            <div class="form-text text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                请输入完整的文件夹路径，如 <code>C:\Users\用户名\Pictures\宝宝照片</code><br>
+                                系统会自动创建不存在的文件夹
+                            </div>
+                        </div>
+                        
+                        <!-- 管理密码 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-lock me-2 text-primary"></i>管理密码 *
+                            </label>
+                            <input type="password" class="form-control" id="adminPassword" 
+                                   placeholder="设置管理密码" required>
+                            <div class="form-text">用于保护设置页面，防止他人修改</div>
+                        </div>
+                        
+                        <!-- 确认密码 -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-lock me-2 text-primary"></i>确认密码 *
+                            </label>
+                            <input type="password" class="form-control" id="confirmPassword" 
+                                   placeholder="再次输入密码" required>
+                        </div>
+                        
+                        <!-- 提交按钮 -->
+                        <div class="d-grid gap-2 mt-5">
+                            <button type="submit" id="submitBtn" class="btn btn-primary btn-lg">
+                                <i class="fas fa-check-circle me-2"></i>完成设置，开始记录
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- 说明 -->
+            <div class="text-center mt-4 text-muted">
+                <small>
+                    <i class="fas fa-info-circle me-1"></i>
+                    所有数据保存在本地，您可以随时在设置页面修改
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.card {
+    border-radius: 15px;
+}
+
+.card-header {
+    border-radius: 15px 15px 0 0 !important;
+}
+
+.form-control:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
+
+/* 头像上传样式 */
+.avatar-upload {
+    position: relative;
+    display: inline-block;
+    border-radius: 50%;
+    overflow: hidden;
+}
+.avatar-upload img {
+    transition: all 0.3s ease;
+}
+.avatar-upload:hover img {
+    opacity: 0.8;
+}
+.avatar-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 1.5rem;
+    opacity: 0;
+    transition: all 0.3s ease;
+    border-radius: 50%;
+}
+.avatar-upload:hover .avatar-overlay {
+    opacity: 1;
+}
+</style>
+
+<script>
+// 头像预览
+function previewAvatar(input) {
+    if (!input.files || input.files.length === 0) return;
+    
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        document.getElementById('avatarPreview').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// 已保存的城市值
+const savedCity = "{{ user_city or '' }}";
+
+// 根据城市名查找省份
+function findProvinceByCity(cityName) {
+    if (!cityName) return null;
+    for (const province in CHINA_REGIONS) {
+        const cities = CHINA_REGIONS[province];
+        if (cities[cityName]) {
+            return province;
+        }
+        // 也检查城市名是否以省份名开头（直辖市如"北京市"）
+        for (const city in cities) {
+            if (city === cityName) {
+                return province;
+            }
+        }
+    }
+    return null;
+}
+
+// 初始化省市区选择器
+document.addEventListener('DOMContentLoaded', function() {
+    // 计算默认值
+    let defaultProvince = '';
+    let defaultCity = '';
+    
+    if (savedCity) {
+        // 尝试查找省份
+        const province = findProvinceByCity(savedCity);
+        if (province) {
+            defaultProvince = province;
+            defaultCity = savedCity;
+        } else {
+            // 如果没找到，可能是直辖市只保存了省份名（如"北京"）
+            // 尝试匹配省份
+            if (CHINA_REGIONS[savedCity + '市']) {
+                defaultProvince = savedCity + '市';
+                defaultCity = savedCity + '市';
+            }
+        }
+    }
+    
+    initRegionSelector({
+        provinceSelect: 'province',
+        citySelect: 'city',
+        defaultProvince: defaultProvince,
+        defaultCity: defaultCity,
+        onChange: function(data) {
+            // 选择变化时的回调
+            console.log('Selected:', data);
+        }
+    });
+    
+    // 为第一个文件夹输入框添加 Enter 键监听
+    const firstFolderInput = document.querySelector('#folderList .media-folder');
+    if (firstFolderInput) {
+        firstFolderInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                addFolder();
+            }
+        });
+    }
+});
+
+document.getElementById('setupForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const babyName = document.getElementById('babyName').value.trim();
+    const babyGender = document.getElementById('babyGender').value.trim();
+    const babyBirthday = document.getElementById('babyBirthday').value.trim();
+    const province = document.getElementById('province').value.trim();
+    const city = document.getElementById('city').value.trim();
+    const password = document.getElementById('adminPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const avatarFile = document.getElementById('avatarInput').files[0];
+    const networkType = document.querySelector('input[name="networkType"]:checked')?.value || 'local';
+
+    const fullCity = city || province || '';
+    
+    // 根据网络环境设置默认压缩参数
+    let defaultCompression = {};
+    if (networkType === 'public') {
+        // 公网：使用省流设置
+        defaultCompression = {
+            enabled: true,
+            video_quality: '省流',
+            image_quality: '省流'
+        };
+    } else {
+        // 局域网：不压缩
+        defaultCompression = {
+            enabled: false,
+            video_quality: '原图',
+            image_quality: '原图'
+        };
+    }
+    
+    const folders = [];
+    document.querySelectorAll('.media-folder').forEach(input => {
+        if (input.value.trim()) {
+            folders.push(input.value.trim());
+        }
+    });
+    
+    if (!babyName) {
+        showNotification('请输入宝宝名字', 'error');
+        return;
+    }
+    
+    if (folders.length === 0) {
+        showNotification('请至少选择一个文件夹', 'error');
+        return;
+    }
+    
+    if (!password) {
+        showNotification('请设置管理密码', 'error');
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showNotification('两次输入的密码不一致', 'error');
+        return;
+    }
+    
+    // 禁用按钮并显示加载状态
+    const submitBtn = document.getElementById('submitBtn');
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在调整，请稍候...';
+    
+    const setLoadingError = (msg) => {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+        showNotification(msg, 'error');
+    };
+    
+    if (avatarFile) {
+        try {
+            const formData = new FormData();
+            formData.append('avatar', avatarFile);
+            
+            const avatarResp = await fetch('/api/settings/avatar', {
+                method: 'POST',
+                body: formData
+            });
+            const avatarData = await avatarResp.json();
+            
+            if (!avatarData.success) {
+                setLoadingError('头像上传失败：' + avatarData.message);
+                return;
+            }
+        } catch (error) {
+            console.error('头像上传失败:', error);
+        }
+    }
+    
+    fetch('/api/setup', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            baby_name: babyName,
+            baby_gender: babyGender,
+            baby_birthday: babyBirthday,
+            user_city: fullCity,
+            media_folders: folders,
+            admin_password: password,
+            compression_settings: defaultCompression
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>设置完成！';
+            showNotification('设置完成！', 'success');
+            
+            // 检查是否需要首次建立索引
+            if (data.index_info && data.index_info.first_time) {
+                const indexInfo = data.index_info;
+                const estimatedFiles = indexInfo.estimated_files || 0;
+                const estimatedMinutes = indexInfo.estimated_minutes || 1;
+                
+                // 显示索引建立提示
+                showIndexBuildPrompt(estimatedFiles, estimatedMinutes);
+            } else {
+                // 直接跳转
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
+            }
+        } else {
+            setLoadingError('设置失败：' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        setLoadingError('设置失败，请稍后重试');
+    });
+});
+
+// 绑定删除文件夹按钮事件
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.remove-folder-btn')) {
+        const row = e.target.closest('.input-group');
+        if (document.querySelectorAll('.media-folder').length > 1) {
+            row.remove();
+        }
+        // 更新删除按钮状态
+        const remainingButtons = document.querySelectorAll('.remove-folder-btn');
+        if (remainingButtons.length === 1) {
+            remainingButtons[0].disabled = true;
+        }
+    }
+});
+
+function addFolder() {
+    const folderList = document.getElementById('folderList');
+    const newRow = document.createElement('div');
+    newRow.className = 'input-group mb-2';
+    newRow.innerHTML = `
+        <input type="text" class="form-control media-folder"
+               placeholder="例如: C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
+        <button class="btn btn-outline-danger remove-folder-btn" type="button">
+            <i class="fas fa-trash"></i>
+        </button>
+    `;
+    folderList.appendChild(newRow);
+    
+    // 添加 Enter 键监听
+    const input = newRow.querySelector('input');
+    input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            addFolder();
+        }
+    });
+
+    // 启用所有删除按钮
+    document.querySelectorAll('.remove-folder-btn').forEach(btn => {
+        btn.disabled = false;
+    });
+}
+
+function showNotification(message, type) {
+    // 创建通知元素
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = `
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        min-width: 300px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-triangle' : 'info-circle';
+    
+    notification.innerHTML = `
+        <i class="fas fa-${icon} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 自动消失
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// 显示索引建立提示
+function showIndexBuildPrompt(estimatedFiles, estimatedMinutes) {
+    const timeText = estimatedMinutes < 1 ? '不到1分钟' : `约 ${estimatedMinutes} 分钟`;
+    const message = `📸 检测到 ${estimatedFiles} 个素材文件，索引建立需要 ${timeText}。建立期间素材可能显示不全，请耐心等待。`;
+    
+    // 显示通知
+    const notification = document.createElement('div');
+    notification.className = 'alert alert-info alert-dismissible fade show position-fixed';
+    notification.style.cssText = `
+        top: 20px;
+        right: 20px;
+        z-index: 9999;
+        min-width: 350px;
+        max-width: 450px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    notification.innerHTML = `
+        <div class="d-flex align-items-start">
+            <div class="spinner-border spinner-border-sm text-primary me-2 mt-1" role="status" id="indexSpinner">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div>
+                <strong>正在建立素材索引...</strong>
+                <p class="mb-0 mt-1 small">${message}</p>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // 调用建立索引 API
+    fetch('/api/photo-index/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            notification.className = 'alert alert-success alert-dismissible fade show position-fixed';
+            notification.innerHTML = `
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>索引建立完成！</strong>
+                <p class="mb-0 mt-1 small">共索引 ${data.result?.total || 0} 个文件</p>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // 3秒后跳转
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 3000);
+        } else {
+            notification.className = 'alert alert-warning alert-dismissible fade show position-fixed';
+            notification.innerHTML = `
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>索引建立遇到问题</strong>
+                <p class="mb-0 mt-1 small">${data.error || '请稍后手动重建索引'}</p>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // 5秒后跳转
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 5000);
+        }
+    })
+    .catch(error => {
+        console.error('索引建立失败:', error);
+        notification.className = 'alert alert-warning alert-dismissible fade show position-fixed';
+        notification.innerHTML = `
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>索引建立失败</strong>
+            <p class="mb-0 mt-1 small">请稍后在设置中手动重建索引</p>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // 5秒后跳转
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 5000);
+    });
+}
+</script>
+{% endblock %}

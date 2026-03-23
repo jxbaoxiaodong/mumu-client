@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_title }} - 仪表盘</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin-style.css">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css">
+    <style>
+        /* 内联样式 */
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .sidebar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            width: 250px;
+            padding-top: 20px;
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+        .sidebar-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .sidebar-header h3 {
+            margin: 0;
+            font-weight: bold;
+        }
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+            text-align: center;
+        }
+        .main-content {
+            margin-left: 250px;
+            padding: 20px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #333;
+        }
+        .stat-title {
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .card-1 .stat-icon { background: rgba(102, 126, 234, 0.1); color: #667eea; }
+        .card-2 .stat-icon { background: rgba(40, 167, 69, 0.1); color: #28a745; }
+        .card-3 .stat-icon { background: rgba(255, 193, 7, 0.1); color: #ffc107; }
+        .card-4 .stat-icon { background: rgba(220, 53, 69, 0.1); color: #dc3545; }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        .header h1 {
+            color: #333;
+            margin: 0;
+            font-weight: bold;
+        }
+        .header p {
+            color: #666;
+            margin: 5px 0 0 0;
+        }
+        .quick-actions {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+        .action-btn {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            text-decoration: none;
+            color: #333;
+            transition: all 0.3s;
+        }
+        .action-btn:hover {
+            background: #667eea;
+            color: white;
+            transform: translateX(5px);
+        }
+        .action-btn i {
+            margin-right: 10px;
+            font-size: 1.2rem;
+        }
+        .logout-btn {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+        }
+    </style>
+<style>
+        /* 移动端响应式 */
+        .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+        @media (max-width: 768px) { .menu-toggle { display: block; } .sidebar { transform: translateX(-100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-left: 0; padding-top: 70px; } }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="bi bi-shield-lock"></i> {{ site_title }}</h3>
+            <small>管理后台</small>
+        </div>
+        
+        <nav class="nav flex-column mt-4">
+            <a class="nav-link active" href="/admin/dashboard">
+                <i class="bi bi-speedometer2"></i> 仪表盘
+            </a>
+            <a class="nav-link" href="/admin/clients">
+                <i class="bi bi-device-ssd"></i> 设备管理
+            </a>
+            <a class="nav-link" href="/admin/credentials">
+                <i class="bi bi-key"></i> 凭证管理
+            </a>
+            <a class="nav-link" href="/admin/tunnel-pool">
+                <i class="bi bi-hdd-network"></i> Tunnel池
+            </a>
+            <a class="nav-link" href="/admin/news-pool">
+                <i class="bi bi-newspaper"></i> 新闻池
+            </a>
+            <a class="nav-link" href="/admin/feedback">
+                <i class="bi bi-chat-dots"></i> 用户反馈
+            </a>
+            <a class="nav-link" href="/admin/settings">
+                <i class="bi bi-gear"></i> 系统设置
+            </a>
+            <a class="nav-link" href="/czrz/health" target="_blank">
+                <i class="bi bi-heart-pulse"></i> 健康检查
+            </a>
+            <a class="nav-link" href="/" target="_blank">
+                <i class="bi bi-code-slash"></i> API 文档
+            </a>
+        </nav>
+        
+        <div class="logout-btn">
+            <a href="/admin" class="btn btn-outline-light w-100">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </a>
+        </div>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <!-- 异常提醒横幅 -->
+        <div id="anomalyAlert" class="alert alert-danger alert-dismissible fade show d-none" role="alert" style="margin-bottom: 20px;">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <strong>客户端调用异常!</strong>
+            <div id="anomalyDetails"></div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        <div class="header">
+            <h1><i class="bi bi-speedometer2"></i> 系统仪表盘</h1>
+            <p>实时监控系统状态和统计数据</p>
+        </div>
+        
+        <!-- 统计卡片 -->
+        <div class="row">
+            <div class="col-md-3">
+                <div class="stat-card card-1">
+                    <div class="stat-icon">
+                        <i class="bi bi-device-ssd"></i>
+                    </div>
+                    <div class="stat-number">{{ total_clients }}</div>
+                    <div class="stat-title">总设备数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card card-2">
+                    <div class="stat-icon">
+                        <i class="bi bi-wifi"></i>
+                    </div>
+                    <div class="stat-number">{{ online_clients }}</div>
+                    <div class="stat-title">在线设备</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card card-3">
+                    <div class="stat-icon">
+                        <i class="bi bi-currency-dollar"></i>
+                    </div>
+                    <div class="stat-number">{{ paid_clients }}</div>
+                    <div class="stat-title">付费用户</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card card-4">
+                    <div class="stat-icon">
+                        <i class="bi bi-activity"></i>
+                    </div>
+                    <div class="stat-number">{{ total_tokens_used }}</div>
+                    <div class="stat-title">总Token使用</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 快速操作 -->
+        <div class="quick-actions">
+            <h5><i class="bi bi-lightning-charge"></i> 快速操作</h5>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <a href="/admin/clients" class="action-btn">
+                        <i class="bi bi-list-check"></i>
+                        <div>
+                            <strong>查看所有设备</strong>
+                            <small>管理客户端列表和状态</small>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <a href="/admin/credentials" class="action-btn">
+                        <i class="bi bi-key"></i>
+                        <div>
+                            <strong>管理凭证</strong>
+                            <small>查看和更新 Cloudflare 凭证</small>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <a href="/admin/settings" class="action-btn">
+                        <i class="bi bi-gear"></i>
+                        <div>
+                            <strong>系统设置</strong>
+                            <small>修改密码和系统配置</small>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <a href="/czrz/health" target="_blank" class="action-btn">
+                        <i class="bi bi-heart-pulse"></i>
+                        <div>
+                            <strong>健康检查</strong>
+                            <small>查看系统运行状态</small>
+                        </div>
+                    </a>
+                </div>
+                <div class="col-md-6">
+                    <button type="button" class="action-btn w-100" data-bs-toggle="modal" data-bs-target="#generateLogModal" onclick="loadLogStatus()">
+                        <i class="bi bi-journal-text"></i>
+                        <div class="text-start">
+                            <strong>手动生成日志</strong>
+                            <small>根据优选照片和新闻生成成长日记</small>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 系统信息 -->
+        <div class="quick-actions mt-4">
+            <h5><i class="bi bi-info-circle"></i> 系统信息</h5>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <strong>服务器时间:</strong>
+                        <div class="text-muted" id="current-time"></div>
+                    </div>
+                    <div class="mb-3">
+                        <strong>API 版本:</strong>
+                        <div class="text-muted">2.0-with-admin</div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <strong>服务状态:</strong>
+                        <div>
+                            <span class="badge bg-success">运行正常</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <strong>凭证状态:</strong>
+                        <div>
+                            <span class="badge bg-success">已配置</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 发送通知卡片 -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-bullhorn me-2"></i>发送通知</h5>
+                <span class="badge bg-primary">广播消息</span>
+            </div>
+            <div class="card-body">
+                <form id="notificationForm">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="mb-3">
+                                <label class="form-label">目标客户端</label>
+                                <select class="form-select" id="targetClient">
+                                    <option value="">📢 全员广播</option>
+                                    <!-- 动态加载客户端列表 -->
+                                </select>
+                                <div class="form-text">选择特定客户端或全员广播</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">通知级别</label>
+                                <select class="form-select" id="notificationLevel">
+                                    <option value="info">ℹ️ 信息</option>
+                                    <option value="warning">⚠️ 警告</option>
+                                    <option value="error">❌ 错误</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label class="form-label">有效期（天）</label>
+                                <input type="number" class="form-control" id="expiresDays" value="7" min="1" max="30">
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <div class="mb-3">
+                                <label class="form-label">&nbsp;</label>
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-paper-plane me-1"></i>发送
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">通知内容</label>
+                        <textarea class="form-control" id="notificationMessage" rows="2" 
+                                  placeholder="输入要发送的通知内容..."></textarea>
+                    </div>
+                </form>
+                
+                <!-- 发送结果提示 -->
+                <div id="notificationResult" class="alert" style="display: none;"></div>
+            </div>
+        </div>
+        
+        <!-- 推送更新卡片 -->
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-rocket me-2"></i>推送客户端更新（多平台）</h5>
+            <span class="badge bg-dark">系统更新</span>
+        </div>
+        <div class="card-body">
+            <!-- 版本状态显示 -->
+            <div id="versionStatus" class="mb-3">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <h6 class="mb-1"><i class="fab fa-windows me-1"></i>Windows</h6>
+                                <small id="winVersion" class="text-muted">加载中...</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <h6 class="mb-1"><i class="fab fa-linux me-1"></i>Linux</h6>
+                                <small id="linuxVersion" class="text-muted">加载中...</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body py-2">
+                                <h6 class="mb-1"><i class="fab fa-apple me-1"></i>macOS</h6>
+                                <small id="macVersion" class="text-muted">加载中...</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 多平台文件上传 -->
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="row align-items-end mb-3">
+                    <div class="col-md-2">
+                        <label class="form-label">选择平台</label>
+                        <select class="form-select" id="uploadPlatform">
+                            <option value="windows">Windows (.exe)</option>
+                            <option value="linux">Linux (.tar.gz)</option>
+                            <option value="macos">macOS (.zip/.tar.gz)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">上传客户端文件</label>
+                        <input type="file" class="form-control" id="clientFile" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">版本号</label>
+                        <input type="text" class="form-control" id="uploadVersion" placeholder="例如：2.1.0" required>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-secondary w-100">
+                            <i class="fas fa-upload me-1"></i>上传并保存
+                        </button>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <div id="uploadStatus" class="text-muted small"></div>
+                    </div>
+                </div>
+            </form>
+            
+            <hr class="my-3">
+            
+            <form id="updatePushForm">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">版本号</label>
+                            <input type="text" class="form-control" id="updateVersion" 
+                                   placeholder="例如：2.1.0" required>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">推送平台</label>
+                            <select class="form-select" id="updatePlatform">
+                                <option value="all">全部平台</option>
+                                <option value="windows">仅 Windows</option>
+                                <option value="linux">仅 Linux</option>
+                                <option value="macos">仅 macOS</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">下载链接（可选）</label>
+                            <input type="url" class="form-control" id="updateUrl" 
+                                   placeholder="https://...">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">强制更新</label>
+                            <select class="form-select" id="updateForce">
+                                <option value="false">否（用户可选择）</option>
+                                <option value="true">是（必须更新）</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="mb-3">
+                            <label class="form-label">&nbsp;</label>
+                            <button type="submit" class="btn btn-warning w-100">
+                                <i class="fas fa-paper-plane me-1"></i>推送更新
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">更新说明</label>
+                    <textarea class="form-control" id="updateDescription" rows="2" 
+                              placeholder="描述这次更新的内容...">修复了一些问题，提升了稳定性</textarea>
+                </div>
+            </form>
+            
+            <!-- 推送结果提示 -->
+            <div id="updatePushResult" class="alert" style="display: none;"></div>
+            
+            <div class="text-muted small mt-2">
+                <i class="fas fa-info-circle me-1"></i>
+                <strong>使用流程：</strong>1. 选择平台→ 2. 选择文件→ 3. 填写版本号→ 4. 点击上传→ 5. 推送更新。<br>
+                <strong>文件格式：</strong>Windows: .exe | Linux: .tar.gz (完整包) | macOS: .zip 或 .tar.gz<br>
+                推送后各平台客户端会自动下载对应版本的更新。
+            </div>
+        </div>
+    </div>
+    
+    </div>
+    
+    <script src="/static/vendor/bootstrap/bootstrap-5.3.0.bundle.min.js"></script>
+    <script>
+        // 更新当前时间
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('current-time').textContent = 
+                now.toLocaleString('zh-CN', { 
+                    year: 'numeric', 
+                    month: '2-digit', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+        }
+        updateTime();
+        setInterval(updateTime, 1000);
+        
+        // 自动刷新页面（每30秒）
+        setTimeout(() => {
+            window.location.reload();
+        }, 30000);
+        
+        // 加载客户端列表
+        async function loadClientsForNotification() {
+            try {
+                const response = await fetch('/admin/api/clients');
+                const data = await response.json();
+                
+                if (data.success && data.clients) {
+                    const select = document.getElementById('targetClient');
+                    data.clients.forEach(client => {
+                        const option = document.createElement('option');
+                        option.value = client.id;
+                        option.textContent = `${client.baby_name || '未知'} (${client.id.substring(0, 8)}...)`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('加载客户端列表失败:', error);
+            }
+        }
+        
+        // 发送通知
+        document.getElementById('notificationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const clientId = document.getElementById('targetClient').value;
+            const message = document.getElementById('notificationMessage').value.trim();
+            const level = document.getElementById('notificationLevel').value;
+            const expiresDays = parseInt(document.getElementById('expiresDays').value);
+            
+            if (!message) {
+                showNotificationResult('请输入通知内容', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/notifications/send', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        client_id: clientId || null,
+                        message: message,
+                        level: level,
+                        expires_days: expiresDays
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showNotificationResult(data.message, 'success');
+                    document.getElementById('notificationMessage').value = '';
+                } else {
+                    showNotificationResult(data.message || '发送失败', 'danger');
+                }
+            } catch (error) {
+                showNotificationResult('发送失败: ' + error.message, 'danger');
+            }
+        });
+        
+        // 显示发送结果
+        function showNotificationResult(message, type) {
+            const resultDiv = document.getElementById('notificationResult');
+            resultDiv.className = `alert alert-${type}`;
+            resultDiv.textContent = message;
+            resultDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                resultDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // 页面加载时初始化
+        loadClientsForNotification();
+        
+        // 推送更新表单提交（支持多平台）
+        document.getElementById('updatePushForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const version = document.getElementById('updateVersion').value.trim();
+            const platform = document.getElementById('updatePlatform').value;
+            const url = document.getElementById('updateUrl').value.trim();
+            const description = document.getElementById('updateDescription').value.trim();
+            const force = document.getElementById('updateForce').value === 'true';
+            
+            if (!version) {
+                showUpdateResult('请输入版本号', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/version/push', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        version: version,
+                        platform: platform,
+                        download_url: url,
+                        description: description,
+                        force: force
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showUpdateResult(data.message, 'success');
+                    // 清空表单
+                    document.getElementById('updateVersion').value = '';
+                    document.getElementById('updateUrl').value = '';
+                    // 刷新版本状态
+                    loadVersionStatus();
+                } else {
+                    showUpdateResult(data.message || '推送失败', 'danger');
+                }
+            } catch (error) {
+                showUpdateResult('推送失败: ' + error.message, 'danger');
+            }
+        });
+        
+        // 显示推送结果
+        function showUpdateResult(message, type) {
+            const resultDiv = document.getElementById('updatePushResult');
+            resultDiv.className = `alert alert-${type}`;
+            resultDiv.textContent = message;
+            resultDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                resultDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // 加载版本状态
+        async function loadVersionStatus() {
+            try {
+                const response = await fetch('/admin/api/versions');
+                const data = await response.json();
+                
+                if (data.success && data.platforms) {
+                    // Windows
+                    const win = data.platforms.windows;
+                    document.getElementById('winVersion').innerHTML = win.version !== '未设置' 
+                        ? `<span class="text-success">${win.version}</span> <small>(${(win.file_size/1024/1024).toFixed(1)}MB)</small>`
+                        : '<span class="text-muted">未上传</span>';
+                    
+                    // Linux
+                    const linux = data.platforms.linux;
+                    document.getElementById('linuxVersion').innerHTML = linux.version !== '未设置'
+                        ? `<span class="text-success">${linux.version}</span> <small>(${(linux.file_size/1024/1024).toFixed(1)}MB)</small>`
+                        : '<span class="text-muted">未上传</span>';
+                    
+                    // macOS
+                    const mac = data.platforms.macos;
+                    document.getElementById('macVersion').innerHTML = mac.version !== '未设置'
+                        ? `<span class="text-success">${mac.version}</span> <small>(${(mac.file_size/1024/1024).toFixed(1)}MB)</small>`
+                        : '<span class="text-muted">未上传</span>';
+                }
+            } catch (error) {
+                console.error('加载版本状态失败:', error);
+            }
+        }
+        
+        // 页面加载时获取版本状态
+        loadVersionStatus();
+        
+        // 文件上传表单（多平台）
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('clientFile');
+            const file = fileInput.files[0];
+            const version = document.getElementById('uploadVersion').value.trim();
+            const platform = document.getElementById('uploadPlatform').value;
+            
+            if (!file) {
+                showUploadStatus('请选择文件', 'danger');
+                return;
+            }
+            
+            if (!version) {
+                showUploadStatus('请填写版本号', 'warning');
+                document.getElementById('uploadVersion').focus();
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('version', version);
+            formData.append('platform', platform);
+            
+            showUploadStatus('上传中...', 'info');
+            
+            try {
+                const response = await fetch('/admin/client-updates/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showUploadStatus(`✓ ${data.message} (${(data.size/1024/1024).toFixed(2)} MB, 类型: ${data.file_type})`, 'success');
+                    fileInput.value = '';
+                    // 刷新版本状态
+                    loadVersionStatus();
+                } else {
+                    showUploadStatus(`✗ ${data.message}`, 'danger');
+                }
+            } catch (error) {
+                showUploadStatus(`✗ 上传失败: ${error.message}`, 'danger');
+            }
+        });
+        
+        function showUploadStatus(message, type) {
+            const statusDiv = document.getElementById('uploadStatus');
+            const colors = {
+                'info': '#0dcaf0',
+                'success': '#198754',
+                'warning': '#ffc107',
+                'danger': '#dc3545'
+            };
+            statusDiv.innerHTML = `<span style="color: ${colors[type] || '#333'}">${message}</span>`;
+        }
+    </script>
+    
+    <!-- 手动生成日志模态框 -->
+    <div class="modal fade" id="generateLogModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-journal-text me-2"></i>手动生成成长日志
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 日期选择和选项 -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label">选择日期</label>
+                            <input type="date" class="form-control" id="logDatePicker" value="">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">选项</label>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="forceGenerate">
+                                <label class="form-check-label" for="forceGenerate">
+                                    强制覆盖（即使已生成过也重新生成）
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 生成按钮 -->
+                    <div class="d-grid mb-4">
+                        <button type="button" class="btn btn-primary" id="generateLogBtn" onclick="generateLogs()">
+                            <i class="bi bi-play-circle me-2"></i>开始生成日志
+                        </button>
+                    </div>
+                    
+                    <!-- 状态提示 -->
+                    <div id="generateLogStatus" class="alert d-none"></div>
+                    
+                    <!-- 客户端状态列表 -->
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>客户端</th>
+                                    <th>优选照片</th>
+                                    <th>日志状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logStatusTable">
+                                <!-- 动态填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 设置默认日期为今天
+        document.getElementById('logDatePicker').value = new Date().toISOString().split('T')[0];
+        
+        // 加载日志状态
+        async function loadLogStatus() {
+            const date = document.getElementById('logDatePicker').value;
+            const tableBody = document.getElementById('logStatusTable');
+            tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">加载中...</td></tr>';
+            
+            try {
+                const response = await fetch(`/admin/logs/status?date=${date}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.clients.length === 0) {
+                        tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">暂无客户端</td></tr>';
+                        return;
+                    }
+                    
+                    tableBody.innerHTML = data.clients.map(client => `
+                        <tr>
+                            <td>
+                                <strong>${client.baby_name}</strong>
+                                <br><small class="text-muted">${client.client_id.substring(0, 8)}...</small>
+                            </td>
+                            <td>
+                                ${client.has_featured_photo 
+                                    ? `<span class="badge bg-success"><i class="bi bi-check-circle"></i> ${client.featured_photo}</span>`
+                                    : '<span class="badge bg-secondary">无</span>'
+                                }
+                            </td>
+                            <td>
+                                ${client.has_log 
+                                    ? '<span class="badge bg-success">已生成</span>'
+                                    : '<span class="badge bg-warning text-dark">未生成</span>'
+                                }
+                            </td>
+                            <td>
+                                <a href="/admin/client-data?client_id=${client.client_id}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> 查看
+                                </a>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败: ${data.message}</td></tr>`;
+                }
+            } catch (error) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">加载失败: ${error.message}</td></tr>`;
+            }
+        }
+        
+        // 生成日志
+        async function generateLogs() {
+            const date = document.getElementById('logDatePicker').value;
+            const force = document.getElementById('forceGenerate').checked;
+            const btn = document.getElementById('generateLogBtn');
+            const statusDiv = document.getElementById('generateLogStatus');
+            
+            // 禁用按钮
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>生成中...';
+            statusDiv.className = 'alert alert-info';
+            statusDiv.textContent = '正在生成日志，请稍候...';
+            statusDiv.classList.remove('d-none');
+            
+            try {
+                const response = await fetch('/admin/logs/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: date, force: force })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusDiv.className = 'alert alert-success';
+                    statusDiv.innerHTML = `<i class="bi bi-check-circle me-2"></i>${data.message}`;
+                    
+                    // 刷新状态表
+                    loadLogStatus();
+                } else {
+                    statusDiv.className = 'alert alert-danger';
+                    statusDiv.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i>${data.message}`;
+                }
+            } catch (error) {
+                statusDiv.className = 'alert alert-danger';
+                statusDiv.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i>请求失败: ${error.message}`;
+            } finally {
+                // 恢复按钮
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-play-circle me-2"></i>开始生成日志';
+            }
+        }
+        
+        // 日期改变时刷新状态
+        document.getElementById('logDatePicker').addEventListener('change', loadLogStatus);
+        
+        // 移动端侧边栏切换
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+            document.querySelector('.sidebar-overlay').classList.toggle('show');
+        }
+        
+        // 异常监控检查
+        async function checkAnomalyStatus() {
+            try {
+                const response = await fetch('/admin/api/anomaly-status');
+                const data = await response.json();
+                
+                const alertDiv = document.getElementById('anomalyAlert');
+                const detailsDiv = document.getElementById('anomalyDetails');
+                
+                if (data.success && data.alerts && data.alerts.length > 0) {
+                    const criticalAlerts = data.alerts.filter(a => a.level === 'critical');
+                    const warningAlerts = data.alerts.filter(a => a.level === 'warning');
+                    
+                    if (criticalAlerts.length > 0) {
+                        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                    } else if (warningAlerts.length > 0) {
+                        alertDiv.className = 'alert alert-warning alert-dismissible fade show';
+                    } else {
+                        alertDiv.className = 'alert alert-info alert-dismissible fade show';
+                    }
+                    
+                    const alertsHtml = data.alerts.slice(0, 5).map(a => {
+                        const icon = a.level === 'critical' ? '❌' : '⚠️';
+                        const typeText = a.type === 'call' ? '调用次数' : 'Token消耗';
+                        return `<div class="mt-1"><strong>${a.baby_name}</strong>: ${icon} ${a.message}</div>`;
+                    }).join('');
+                    
+                    detailsDiv.innerHTML = alertsHtml;
+                    alertDiv.classList.remove('d-none');
+                } else {
+                    alertDiv.classList.add('d-none');
+                }
+            } catch (error) {
+                console.error('检查异常状态失败:', error);
+            }
+        }
+        
+        // 页面加载时检查一次，然后每30秒检查一次
+        checkAnomalyStatus();
+        setInterval(checkAnomalyStatus, 30000);
+    </script>
+</body>
+</html>

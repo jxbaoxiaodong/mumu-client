@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_title }} - Tunnel池管理</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin-style.css">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css">
+    <style>
+        /* 内联样式 */
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .sidebar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; min-height: 100vh; position: fixed; width: 250px; z-index: 1000; transition: transform 0.3s ease; z-index: 1000; transition: transform 0.3s ease; padding-top: 20px; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .sidebar-header h3 { margin: 0; font-weight: bold; }
+        .nav-link { color: rgba(255, 255, 255, 0.8); padding: 12px 20px; margin: 5px 10px; border-radius: 10px; transition: all 0.3s; }
+        .nav-link:hover, .nav-link.active { color: white; background: rgba(255, 255, 255, 0.1); }
+        .nav-link i { margin-right: 10px; width: 20px; text-align: center; }
+        .main-content { margin-left: 250px; transition: margin-left 0.3s ease; transition: margin-left 0.3s ease; padding: 20px; }
+        .header { background: white; padding: 20px; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .stats-card { background: white; border-radius: 15px; padding: 20px; text-align: center; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .stats-number { font-size: 2rem; font-weight: bold; color: #667eea; }
+        .stats-label { color: #6c757d; font-size: 0.9rem; }
+        .table-container { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .badge-available { background: #28a745; }
+        .badge-allocated { background: #ffc107; color: #000; }
+        .tunnel-id { font-family: monospace; font-size: 0.85rem; }
+    </style>
+<style>
+        /* 移动端响应式 */
+        .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+        @media (max-width: 768px) { .menu-toggle { display: block; } .sidebar { transform: translateX(-100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-left: 0; padding-top: 70px; } }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="bi bi-shield-lock"></i> {{ site_title }}</h3>
+            <small>管理后台</small>
+        </div>
+        
+        <nav class="nav flex-column mt-4">
+            <a class="nav-link" href="/admin/dashboard">
+                <i class="bi bi-speedometer2"></i> 仪表盘
+            </a>
+            <a class="nav-link" href="/admin/clients">
+                <i class="bi bi-device-ssd"></i> 设备管理
+            </a>
+            <a class="nav-link" href="/admin/credentials">
+                <i class="bi bi-key"></i> 凭证管理
+            </a>
+            <a class="nav-link active" href="/admin/tunnel-pool">
+                <i class="bi bi-hdd-network"></i> Tunnel池
+            </a>
+            <a class="nav-link" href="/admin/news-pool">
+                <i class="bi bi-newspaper"></i> 新闻池
+            </a>
+            <a class="nav-link" href="/admin/feedback">
+                <i class="bi bi-chat-dots"></i> 用户反馈
+            </a>
+            <a class="nav-link" href="/admin/settings">
+                <i class="bi bi-gear"></i> 系统设置
+            </a>
+            <a class="nav-link" href="/admin/logout">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </a>
+        </nav>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="bi bi-hdd-network"></i> Tunnel池管理</h1>
+            <p>管理 Cloudflare Tunnel 池，为客户端分配独立隧道</p>
+        </div>
+        
+        <!-- 统计卡片 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number">{{ stats.total }}</div>
+                    <div class="stats-label">总 Tunnel 数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number text-success">{{ stats.available }}</div>
+                    <div class="stats-label">可用</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number text-warning">{{ stats.allocated }}</div>
+                    <div class="stats-label">已分配</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="stats-number">{{ stats.utilization }}%</div>
+                    <div class="stats-label">使用率</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="mb-4">
+            <button class="btn btn-primary" onclick="showCreateModal()">
+                <i class="bi bi-plus-lg"></i> 批量创建 Tunnel
+            </button>
+            <button class="btn btn-success ms-2" onclick="showAddModal()">
+                <i class="bi bi-upload"></i> 手动导入
+            </button>
+            <button class="btn btn-info ms-2" onclick="refreshPage()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新
+            </button>
+        </div>
+        
+        <!-- Tunnel 列表 -->
+        <div class="table-container">
+            <h5 class="mb-3">Tunnel 列表</h5>
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Tunnel ID</th>
+                        <th>子域名</th>
+                        <th>状态</th>
+                        <th>分配给客户端</th>
+                        <th>创建时间</th>
+                        <th>分配时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tunnel in pool.tunnels %}
+                    <tr>
+                        <td>{{ tunnel.id }}</td>
+                        <td class="tunnel-id">{{ tunnel.tunnel_id[:16] }}...</td>
+                        <td>{{ tunnel.subdomain }}</td>
+                        <td>
+                            {% if tunnel.status == 'available' %}
+                            <span class="badge badge-available">可用</span>
+                            {% else %}
+                            <span class="badge badge-allocated">已分配</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if tunnel.client_id %}
+                            <code>{{ tunnel.client_id[:16] }}...</code>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ tunnel.created_at[:10] if tunnel.created_at else '-' }}</td>
+                        <td>{{ tunnel.allocated_at[:10] if tunnel.allocated_at else '-' }}</td>
+                        <td>
+                            {% if tunnel.status == 'allocated' and tunnel.client_id %}
+                            <button class="btn btn-sm btn-outline-warning me-1" onclick="releaseTunnel('{{ tunnel.client_id }}')">
+                                回收
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteTunnel('{{ tunnel.tunnel_id }}')">
+                                删除
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+            {% if not pool.tunnels %}
+            <div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                <p class="mt-3">Tunnel 池为空，请先创建或导入 Tunnel</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- 批量创建 Modal -->
+    <div class="modal fade" id="createModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">批量创建 Tunnel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 将使用 Cloudflare API 自动创建指定数量的 Tunnel
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">创建数量</label>
+                        <input type="number" class="form-control" id="createCount" value="5" min="1" max="50">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">子域名前缀</label>
+                        <input type="text" class="form-control" id="subdomainPrefix" value="client" placeholder="如: client">
+                        <small class="text-muted">实际子域名为: {prefix}{id}mumu.your-domain.com</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="createTunnels()">开始创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 手动导入 Modal -->
+    <div class="modal fade" id="addModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">手动导入 Tunnel</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Tunnel ID</label>
+                        <input type="text" class="form-control" id="tunnelId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Tunnel Secret</label>
+                        <input type="text" class="form-control" id="tunnelSecret" placeholder="Base64 encoded secret">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Account Tag</label>
+                        <input type="text" class="form-control" id="accountTag" placeholder="YOUR_ACCOUNT_ID">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">子域名</label>
+                        <input type="text" class="form-control" id="subdomain" placeholder="xxxmumu.your-domain.com">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="addTunnel()">添加</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/vendor/bootstrap/bootstrap-5.3.0.bundle.min.js"></script>
+    <script>
+        // 显示创建 Modal
+        function showCreateModal() {
+            new bootstrap.Modal(document.getElementById('createModal')).show();
+        }
+        
+        // 显示导入 Modal
+        function showAddModal() {
+            new bootstrap.Modal(document.getElementById('addModal')).show();
+        }
+        
+        // 刷新页面
+        function refreshPage() {
+            location.reload();
+        }
+        
+        // 批量创建 Tunnel
+        async function createTunnels() {
+            const count = document.getElementById('createCount').value;
+            const prefix = document.getElementById('subdomainPrefix').value;
+            
+            if (!confirm(`确定要创建 ${count} 个 Tunnel 吗？`)) {
+                return;
+            }
+            
+            const btn = document.querySelector('#createModal .btn-primary');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 创建中...';
+            
+            try {
+                const response = await fetch('/admin/tunnel-pool/create-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ count: parseInt(count), prefix: prefix })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let msg = data.message;
+                    if (data.errors && data.errors.length > 0) {
+                        msg += '\n\n错误详情:\n' + data.errors.join('\n');
+                        alert(msg);
+                    } else {
+                        alert(msg);
+                    }
+                    location.reload();
+                } else {
+                    alert('创建失败: ' + data.message);
+                    btn.disabled = false;
+                    btn.innerHTML = '开始创建';
+                }
+            } catch (error) {
+                alert('请求失败: ' + error);
+                btn.disabled = false;
+                btn.innerHTML = '开始创建';
+            }
+        }
+        
+        // 手动添加 Tunnel
+        async function addTunnel() {
+            const tunnelId = document.getElementById('tunnelId').value;
+            const tunnelSecret = document.getElementById('tunnelSecret').value;
+            const accountTag = document.getElementById('accountTag').value;
+            const subdomain = document.getElementById('subdomain').value;
+            
+            if (!tunnelId || !tunnelSecret || !subdomain) {
+                alert('请填写所有必填字段');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/tunnel-pool/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tunnel_id: tunnelId,
+                        tunnel_secret: tunnelSecret,
+                        account_tag: accountTag,
+                        subdomain: subdomain
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('添加成功！');
+                    location.reload();
+                } else {
+                    alert('添加失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error);
+            }
+        }
+        
+        // 回收 Tunnel
+        async function releaseTunnel(clientId) {
+            if (!confirm('确定要回收这个 Tunnel 吗？')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/tunnel-pool/release/${clientId}`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('回收成功！');
+                    location.reload();
+                } else {
+                    alert('回收失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error);
+            }
+        }
+        
+        // 删除 Tunnel
+        async function deleteTunnel(tunnelId) {
+            if (!confirm('确定要从池中删除这个 Tunnel 吗？此操作不可恢复！')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/tunnel-pool/${tunnelId}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('删除成功！');
+                    location.reload();
+                } else {
+                    alert('删除失败: ' + data.message);
+                }
+            } catch (error) {
+                alert('请求失败: ' + error);
+            }
+        }
+        
+        // 移动端侧边栏切换
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+            document.querySelector('.sidebar-overlay').classList.toggle('show');
+        }
+    </script>
+</body>
+</html>

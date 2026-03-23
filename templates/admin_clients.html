@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_title }} - 设备管理</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin-style.css">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css">
+    <link rel="stylesheet" href="/static/vendor/datatables/datatables.bootstrap5.min.css">
+    <style>
+        /* 内联样式 */
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .sidebar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; min-height: 100vh; position: fixed; width: 250px; padding-top: 20px; z-index: 1000; transition: transform 0.3s ease; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .sidebar-header h3 { margin: 0; font-weight: bold; }
+        .nav-link { color: rgba(255, 255, 255, 0.8); padding: 12px 20px; margin: 5px 10px; border-radius: 10px; transition: all 0.3s; }
+        .nav-link:hover, .nav-link.active { color: white; background: rgba(255, 255, 255, 0.1); }
+        .nav-link i { margin-right: 10px; width: 20px; text-align: center; }
+        .main-content { margin-left: 250px; padding: 20px; transition: margin-left 0.3s ease; }
+        .header { background: white; padding: 20px; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .header h1 { color: #333; margin: 0; font-weight: bold; }
+        .table-container { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .table { font-size: 0.85rem; }
+        .table th { font-size: 0.8rem; white-space: nowrap; }
+        .table td { font-size: 0.8rem; vertical-align: middle; }
+        .badge-online { background: #28a745; }
+        .badge-offline { background: #6c757d; }
+        .badge-paid { background: #ffc107; color: #000; }
+        .badge-free { background: #6c757d; }
+        .action-btn { padding: 3px 8px; margin: 1px; font-size: 0.75rem; }
+        .logout-btn { position: absolute; bottom: 20px; left: 20px; right: 20px; }
+        .public-url { font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .quota-info { font-size: 0.75rem; }
+        
+        /* 汉堡菜单按钮 */
+        .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+        .menu-toggle i { font-size: 1.2rem; }
+        
+        /* 遮罩层 */
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+        
+        /* 移动端响应式 */
+        @media (max-width: 768px) {
+            .menu-toggle { display: block; }
+            .sidebar { transform: translateX(-100%); width: 250px; }
+            .sidebar.show { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 15px; padding-top: 70px; }
+            .sidebar-overlay.show { display: block; }
+            .table-container { padding: 15px; border-radius: 10px; }
+            .header { padding: 15px; border-radius: 10px; margin-bottom: 15px; }
+            .header h1 { font-size: 1.2rem; }
+            .table { font-size: 0.75rem; }
+            .table th, .table td { font-size: 0.7rem; padding: 8px 4px; }
+            .action-btn { padding: 2px 6px; font-size: 0.65rem; }
+            .d-flex { flex-wrap: wrap; }
+            .btn { padding: 6px 10px; font-size: 0.8rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- 汉堡菜单按钮 -->
+    <button class="menu-toggle" onclick="toggleSidebar()">
+        <i class="bi bi-list"></i>
+    </button>
+    
+    <!-- 遮罩层 -->
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="bi bi-shield-lock"></i> {{ site_title }}</h3>
+            <small>管理后台</small>
+        </div>
+        
+        <nav class="nav flex-column mt-4">
+            <a class="nav-link" href="/admin/dashboard">
+                <i class="bi bi-speedometer2"></i> 仪表盘
+            </a>
+            <a class="nav-link active" href="/admin/clients">
+                <i class="bi bi-device-ssd"></i> 设备管理
+            </a>
+            <a class="nav-link" href="/admin/credentials">
+                <i class="bi bi-key"></i> 凭证管理
+            </a>
+            <a class="nav-link" href="/admin/tunnel-pool">
+                <i class="bi bi-hdd-network"></i> Tunnel池
+            </a>
+            <a class="nav-link" href="/admin/news-pool">
+                <i class="bi bi-newspaper"></i> 新闻池
+            </a>
+            <a class="nav-link" href="/admin/feedback">
+                <i class="bi bi-chat-dots"></i> 用户反馈
+            </a>
+            <a class="nav-link" href="/admin/settings">
+                <i class="bi bi-gear"></i> 系统设置
+            </a>
+            <a class="nav-link" href="/admin/logout">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </a>
+        </nav>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="bi bi-device-ssd"></i> 设备管理</h1>
+            <p>管理所有客户端设备，查看状态和修改设置</p>
+        </div>
+        
+        <div class="table-container">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="d-flex align-items-center">
+                    <h5 class="me-4 mb-0">客户端列表 (<span id="clientCount">{{ clients|length }}</span> 台设备)</h5>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="showDisabled" onchange="toggleDisabledRows()">
+                        <label class="form-check-label" for="showDisabled">
+                            显示禁用设备
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <button class="btn btn-success me-2" onclick="exportCSV()">
+                        <i class="bi bi-download"></i> 导出CSV
+                    </button>
+                    <button class="btn btn-primary" onclick="refreshTable()">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+            </div>
+            
+            <table id="clientsTable" class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>宝宝名字</th>
+                        <th>状态</th>
+                        <th>付费</th>
+                        <th>Token使用</th>
+                        <th>公网地址</th>
+                        <th>IP:端口</th>
+                        <th>MAC</th>
+                        <th>隧道</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for client in clients %}
+                    <tr class="{% if client.enabled == false %}disabled-row{% endif %}" style="{% if client.enabled == false %}opacity: 0.6;{% endif %}">
+                        <td><code>{{ client.short_id }}</code></td>
+                        <td>{{ client.baby_name }}</td>
+                        <td>
+                            {% if client.enabled == false %}
+                            <span class="badge bg-danger">已禁用</span>
+                            {% elif client.status == 'online' %}
+                            <span class="badge badge-online">在线</span>
+                            {% else %}
+                            <span class="badge badge-offline">离线</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if client.is_paid %}
+                            <span class="badge badge-paid">付</span>
+                            {% else %}
+                            <span class="badge badge-free">免</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="quota-info">{{ "{:,}".format(client.token_used) }}/{{ "{:,}".format(client.token_limit) }}</span>
+                            {% if client.custom_token_limit %}
+                            <span class="badge bg-info ms-1" title="自定义限额">自</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{{ client.public_url }}" target="_blank" class="public-url" title="{{ client.public_url }}">
+                                {{ client.subdomain }}
+                            </a>
+                        </td>
+                        <td>{{ client.ip }}:{{ client.port }}</td>
+                        <td><small>{{ client.mac_address[:8] }}...</small></td>
+                        <td>
+                            {% if client.tunnel_active %}
+                            <span class="badge bg-success">✓</span>
+                            {% else %}
+                            <span class="badge bg-secondary">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-success action-btn link-ai-btn" 
+                                    onclick="linkAIService(event, '{{ client.id }}')"
+                                    data-client-id="{{ client.id }}"
+                                    title="关联到Baby Health AI服务">
+                                🤖 关联AI
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary action-btn" 
+                                    onclick="togglePaid('{{ client.id }}', {{ 'true' if client.is_paid else 'false' }})">
+                                {% if client.is_paid %}取消付费{% else %}设为付费{% endif %}
+                            </button>
+                            <button class="btn btn-sm btn-outline-info action-btn" 
+                                    onclick="reassignTunnel('{{ client.id }}')"
+                                    title="重新分配独立的 Cloudflare Tunnel">
+                                重分Tunnel
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary action-btn" 
+                                    onclick="setQuota('{{ client.id }}', {{ client.custom_token_limit or 'null' }})"
+                                    title="设置自定义Token限额">
+                                调节限额
+                            </button>
+                            {% if client.enabled != false %}
+                            <button class="btn btn-sm btn-outline-danger action-btn" 
+                                    onclick="disableClient('{{ client.id }}')">
+                                禁用
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm btn-outline-success action-btn" 
+                                    onclick="enableClient('{{ client.id }}')">
+                                启用
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-dark action-btn" 
+                                    onclick="deleteClient('{{ client.id }}', '{{ client.baby_name }}')"
+                                    title="彻底删除客户端及所有数据">
+                                删除
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="alert alert-info mt-4">
+            <h6><i class="bi bi-info-circle"></i> 使用说明</h6>
+            <ul class="mb-0">
+                <li><strong>Token配额</strong>: 免费用户 {{ "{:,}".format(admin_config.quota_settings.free_token_quota|default(50000)) }} tokens，付费用户 {{ "{:,}".format(admin_config.quota_settings.paid_token_quota|default(500000)) }} tokens</li>
+                <li><strong>禁用/启用</strong>: 禁用的客户端无法获取凭证和使用AI服务</li>
+                <li><strong>隧道状态</strong>: 显示客户端的Cloudflare Tunnel是否活跃</li>
+                <li>表格每30秒自动刷新一次</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script src="/static/vendor/bootstrap/bootstrap-5.3.0.bundle.min.js"></script>
+    <script src="/static/vendor/jquery/jquery-3.7.0.min.js"></script>
+    <script src="/static/vendor/datatables/datatables.min.js"></script>
+    <script src="/static/vendor/datatables/datatables.bootstrap5.min.js"></script>
+    <script>
+        // 初始化表格
+        $(document).ready(function() {
+            $('#clientsTable').DataTable({
+                pageLength: 10,
+                language: {
+                    url: '/static/vendor/datatables/zh.json'
+                }
+            });
+            
+            // 从localStorage读取勾选状态
+            const savedShowDisabled = localStorage.getItem('showDisabledClients') === 'true';
+            document.getElementById('showDisabled').checked = savedShowDisabled;
+            
+            // 检查所有客户端的AI状态并更新按钮
+            updateAllAILinkButtons();
+            
+            // 根据保存的状态显示/隐藏禁用设备
+            toggleDisabledRows();
+        });
+        
+        // 切换显示/隐藏禁用设备
+        function toggleDisabledRows() {
+            const showDisabled = document.getElementById('showDisabled').checked;
+            
+            // 保存勾选状态到localStorage
+            localStorage.setItem('showDisabledClients', showDisabled);
+            
+            const disabledRows = document.querySelectorAll('.disabled-row');
+            let visibleCount = 0;
+            
+            disabledRows.forEach(row => {
+                row.style.display = showDisabled ? '' : 'none';
+            });
+            
+            // 更新显示数量
+            const allRows = document.querySelectorAll('#clientsTable tbody tr');
+            allRows.forEach(row => {
+                if (row.style.display !== 'none') {
+                    visibleCount++;
+                }
+            });
+            document.getElementById('clientCount').textContent = visibleCount;
+        }
+        
+        // 检查客户端的AI状态并更新按钮
+        async function updateAILinkButton(button) {
+            const clientId = button.getAttribute('data-client-id');
+            if (!clientId) return;
+            
+            try {
+                const response = await fetch(`/admin/clients/${clientId}/ai-status`);
+                const data = await response.json();
+                
+                if (data.child_exists) {
+                    // 宝宝存在，按钮显示已关联
+                    button.innerHTML = '✅ 已关联';
+                    button.disabled = true;
+                    button.classList.remove('btn-outline-success');
+                    button.classList.add('btn-success');
+                    button.setAttribute('title', '已关联到Baby Health AI服务');
+                    button.onclick = null; // 移除点击事件
+                } else if (data.ai_linked) {
+                    // 配置已更新但宝宝不存在（可能是被删除了）
+                    button.innerHTML = '🤖 重新关联';
+                    button.disabled = false;
+                    button.classList.remove('btn-success');
+                    button.classList.add('btn-outline-warning');
+                    button.setAttribute('title', '宝宝记录可能已被删除，点击重新关联');
+                    button.onclick = function(event) { linkAIService(event, clientId); };
+                } else {
+                    // 未关联
+                    button.innerHTML = '🤖 关联AI';
+                    button.disabled = false;
+                    button.classList.remove('btn-success', 'btn-outline-warning');
+                    button.classList.add('btn-outline-success');
+                    button.setAttribute('title', '关联到Baby Health AI服务');
+                    button.onclick = function(event) { linkAIService(event, clientId); };
+                }
+            } catch (error) {
+                // 检查失败，保持原状
+                console.error('检查AI状态失败:', error);
+            }
+        }
+        
+        // 更新所有关联AI按钮
+        async function updateAllAILinkButtons() {
+            const buttons = document.querySelectorAll('.link-ai-btn');
+            for (let button of buttons) {
+                await updateAILinkButton(button);
+            }
+        }
+        
+        // 关联AI服务
+        function linkAIService(event, clientId) {
+            if (!clientId) {
+                // 从onclick属性中提取clientId
+                const onclickAttr = event.target.getAttribute('onclick');
+                const match = onclickAttr && onclickAttr.match(/linkAIService\('([^']+)'\)/);
+                clientId = match ? match[1] : event.target.getAttribute('data-client-id');
+            }
+            
+            if (!clientId) return;
+            
+            if (!confirm('确定要关联AI服务吗？\n\n这将：\n1. 在Baby Health AI中创建或更新宝宝记录（ID=' + clientId + '）\n2. 自动配置child_id\n3. 启用AI数据同步功能\n\n请确保Baby Health AI服务正在运行。')) {
+                return;
+            }
+            
+            const button = event.target;
+            button.disabled = true;
+            button.innerHTML = '关联中...';
+            
+            fetch(`/admin/clients/${clientId}/link-ai`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 更新按钮状态为已关联
+                    button.innerHTML = '✅ 已关联';
+                    button.disabled = true;
+                    button.classList.remove('btn-outline-success', 'btn-outline-warning');
+                    button.classList.add('btn-success');
+                    button.setAttribute('title', '已关联到Baby Health AI服务');
+                    button.onclick = null; // 移除点击事件
+                    
+                    alert('✅ ' + data.message + '\n\nChild ID: ' + data.child_id + '\n宝宝名字: ' + data.child_name + '\n\n请重启客户端使配置生效。');
+                } else {
+                    // 关联失败，恢复按钮状态
+                    updateAILinkButton(button);
+                    alert('❌ 关联失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                // 请求失败，恢复按钮状态
+                updateAILinkButton(button);
+                alert('❌ 请求失败: ' + error + '\n\n请确认Baby Health AI服务正在运行（http://localhost:8080）');
+            });
+        }
+        
+        // 切换付费状态
+        function togglePaid(clientId, isCurrentlyPaid) {
+            fetch(`/admin/clients/${clientId}/toggle-paid`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    alert('操作失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 禁用客户端
+        function disableClient(clientId) {
+            if (confirm('确定要禁用这个客户端吗？禁用后将无法使用服务。')) {
+                fetch(`/admin/clients/${clientId}/disable`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        alert('操作失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+        }
+        
+        // 启用客户端
+        function enableClient(clientId) {
+            fetch(`/admin/clients/${clientId}/enable`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    alert('操作失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 彻底删除客户端
+        function deleteClient(clientId, babyName) {
+            if (!confirm(`⚠️ 危险操作 ⚠️\n\n确定要彻底删除客户端「${babyName}」吗？\n\n此操作将永久删除：\n1. 服务端所有数据（配置、日志、照片描述等）\n2. 健康AI数据库中的宝宝数据（画像、事件等）\n\n此操作不可恢复！`)) {
+                return;
+            }
+            
+            if (!confirm(`再次确认：真的要删除「${babyName}」的所有数据吗？\n\n输入客户端ID前8位确认：${clientId.substring(0, 8)}`)) {
+                return;
+            }
+            
+            fetch(`/admin/clients/${clientId}/delete`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ 删除成功\n\n' + data.message);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    alert('❌ 删除失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('❌ 请求失败: ' + error);
+            });
+        }
+        
+        // 导出 CSV
+        function exportCSV() {
+            window.location.href = '/admin/clients/export';
+        }
+        
+        // 刷新表格
+        function refreshTable() {
+            location.reload();
+        }
+        
+        // 重新分配 Tunnel
+        function reassignTunnel(clientId) {
+            if (confirm('确定要重新分配 Tunnel 吗？\n\n这将：\n1. 回收当前的 tunnel（如果有）\n2. 从 pool 分配一个新的独立 tunnel\n3. 客户端需要重启才能获取新凭证')) {
+                fetch(`/admin/clients/${clientId}/reassign-tunnel`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        alert('操作失败: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+        }
+        
+        function setQuota(clientId, currentLimit) {
+            const limit = prompt('设置自定义 Token 限额：\n\n留空或输入 0 表示使用默认配额\n当前限额: ' + (currentLimit || '默认'), currentLimit || '');
+            
+            if (limit === null) return;
+            
+            const customLimit = limit.trim() === '' || limit.trim() === '0' ? null : parseInt(limit);
+            
+            if (limit.trim() !== '' && limit.trim() !== '0' && isNaN(customLimit)) {
+                alert('请输入有效的数字');
+                return;
+            }
+            
+            fetch(`/admin/clients/${clientId}/set-quota`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({custom_token_limit: customLimit})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    setTimeout(() => location.reload(), 500);
+                } else {
+                    alert('操作失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 自动刷新（每30秒）
+        setTimeout(() => {
+            location.reload();
+        }, 30000);
+        
+        // 移动端侧边栏切换
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+            document.querySelector('.sidebar-overlay').classList.toggle('show');
+        }
+    </script>
+</body>
+</html>

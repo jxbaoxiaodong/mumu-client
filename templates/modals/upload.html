@@ -1,0 +1,496 @@
+<!-- 上传模态框 -->
+<div class="modal fade" id="uploadModal" tabindex="-1" aria-labelledby="uploadModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="uploadModalLabel">
+                    <i class="fas fa-cloud-upload-alt me-2"></i>上传照片/视频
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="upload-area" id="dropZone">
+                    <div class="text-center py-5">
+                        <i class="fas fa-cloud-upload-alt fa-4x text-primary mb-3"></i>
+                        <h4>上传照片/视频</h4>
+                        <p class="text-muted mb-1" id="uploadHint">可一次选择多张，也可多次添加</p>
+                        <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display: none;">
+                        <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+                            <i class="fas fa-images me-2"></i>选择照片/视频
+                        </button>
+                        <p class="text-muted mt-3 mb-0">
+                            <small>支持：JPG, PNG, GIF, WebP, MP4, MOV</small>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- 预览区域 -->
+                <div id="previewArea" class="mt-4" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">已选择 <span id="fileCount">0</span> 个文件</h6>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="addMoreFiles()">
+                                <i class="fas fa-plus me-1"></i>继续添加
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearSelectedFiles()">
+                                <i class="fas fa-times me-1"></i>清空
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row" id="previewGrid"></div>
+                </div>
+                
+                <!-- 标注输入 -->
+                <div class="mt-4">
+                    <label class="form-label">
+                        <i class="fas fa-tag me-2"></i>照片标注（可选）
+                    </label>
+                    <input type="text" class="form-control" id="photoCaption" 
+                           placeholder="例如：第一次抬头、第一次叫妈妈...">
+                    <small class="text-muted">为每张照片添加有意义的标注，记录成长瞬间</small>
+                </div>
+                
+                <!-- 上传进度 -->
+                <div id="uploadProgress" class="mt-4" style="display: none;">
+                    <div class="progress mb-2" style="height: 20px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between text-muted small mb-1">
+                        <span id="uploadSizeInfo">0 KB / 0 KB</span>
+                        <span id="uploadSpeedInfo">-- KB/s</span>
+                    </div>
+                    <p class="text-center mt-2" id="uploadStatus">正在上传...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="uploadBtn" onclick="uploadFiles()" disabled>
+                    <i class="fas fa-upload me-2"></i>开始上传
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.upload-area:hover,
+.upload-area.dragover {
+    border-color: #0d6efd;
+    background-color: #f8f9ff;
+}
+
+.upload-area i {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.preview-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8f9fa;
+}
+
+.preview-item img,
+.preview-item video {
+    width: 100%;
+    height: 120px;
+    object-fit: cover;
+}
+
+.preview-item .remove-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(0, 0, 0, 0.5);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-item.is-video::after {
+    content: '\f144';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    color: white;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+</style>
+
+<script>
+let selectedFiles = [];
+let autoContinueMode = false;
+
+// 检测浏览器是否支持多选
+function checkMultipleSupport() {
+    const testInput = document.createElement('input');
+    testInput.type = 'file';
+    testInput.multiple = true;
+    
+    const ua = navigator.userAgent.toLowerCase();
+    const problematicBrowsers = ['vivo', 'oppo', 'coloros', 'funtouch', 'ucbrowser', 'baidu', 'huawei'];
+    const isProblematic = problematicBrowsers.some(b => ua.includes(b));
+    
+    // 检测是否是 Android 且可能是问题设备
+    const isAndroid = ua.includes('android');
+    
+    if (isProblematic || (isAndroid && !('multiple' in testInput))) {
+        console.log('检测到多选受限设备，启用快速连续选择模式');
+        autoContinueMode = true;
+        // 更新提示文字
+        const hint = document.getElementById('uploadHint');
+        if (hint) {
+            hint.innerHTML = '<span class="text-warning"><i class="fas fa-info-circle"></i> 当前浏览器不支持一次多选，请多次点击"继续添加"</span>';
+        }
+        return false;
+    }
+    return true;
+}
+
+// 页面加载时检测
+checkMultipleSupport();
+
+document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+
+function handleFileSelect(event) {
+    const files = event.target.files;
+    if (files.length > 0) {
+        addFilesToSelection(files);
+    }
+    event.target.value = '';
+    
+    // 如果是不支持多选的设备，显示快速选择提示
+    if (autoContinueMode && selectedFiles.length > 0) {
+        showQuickAddBar();
+    }
+}
+
+function showQuickAddBar() {
+    const previewArea = document.getElementById('previewArea');
+    let quickBar = document.getElementById('quickAddBar');
+    
+    if (!quickBar) {
+        quickBar = document.createElement('div');
+        quickBar.id = 'quickAddBar';
+        quickBar.className = 'position-fixed bottom-0 start-0 end-0 p-3 bg-white border-top shadow-lg';
+        quickBar.style.cssText = 'z-index: 1060;';
+        quickBar.innerHTML = `
+            <div class="d-flex justify-content-center align-items-center gap-3">
+                <button class="btn btn-outline-secondary" onclick="clearSelectedFiles(); hideQuickAddBar();">
+                    <i class="fas fa-trash me-1"></i>清空
+                </button>
+                <button class="btn btn-primary btn-lg px-4" onclick="triggerFileSelect()">
+                    <i class="fas fa-plus me-1"></i>继续添加
+                </button>
+                <button class="btn btn-success btn-lg px-4" onclick="startUpload()">
+                    <i class="fas fa-upload me-1"></i>上传 (${selectedFiles.length}张)
+                </button>
+            </div>
+        `;
+        document.body.appendChild(quickBar);
+    } else {
+        // 更新数量
+        const uploadBtn = quickBar.querySelector('.btn-success');
+        if (uploadBtn) {
+            uploadBtn.innerHTML = `<i class="fas fa-upload me-1"></i>上传 (${selectedFiles.length}张)`;
+        }
+        quickBar.style.display = 'block';
+    }
+}
+
+function hideQuickAddBar() {
+    const quickBar = document.getElementById('quickAddBar');
+    if (quickBar) {
+        quickBar.style.display = 'none';
+    }
+}
+
+function triggerFileSelect() {
+    document.getElementById('fileInput').click();
+}
+
+function startUpload() {
+    hideQuickAddBar();
+    uploadFiles();
+}
+
+function addFilesToSelection(files) {
+    const newFiles = Array.from(files);
+    
+    newFiles.forEach(file => {
+        const isDuplicate = selectedFiles.some(f => 
+            f.name === file.name && f.size === file.size
+        );
+        if (!isDuplicate) {
+            selectedFiles.push(file);
+        }
+    });
+    
+    updatePreview();
+}
+
+function updatePreview() {
+    const previewArea = document.getElementById('previewArea');
+    const previewGrid = document.getElementById('previewGrid');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileCount = document.getElementById('fileCount');
+    
+    previewGrid.innerHTML = '';
+    
+    if (selectedFiles.length === 0) {
+        previewArea.style.display = 'none';
+        uploadBtn.disabled = true;
+        hideQuickAddBar();
+        return;
+    }
+    
+    selectedFiles.forEach((file, index) => {
+        const col = document.createElement('div');
+        col.className = 'col-md-3 col-6 mb-2';
+        
+        const previewItem = document.createElement('div');
+        previewItem.className = 'preview-item';
+        
+        if (file.type.startsWith('video/')) {
+            previewItem.classList.add('is-video');
+            const video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.muted = true;
+            previewItem.appendChild(video);
+        } else {
+            const img = document.createElement('img');
+            img.src = URL.createObjectURL(file);
+            previewItem.appendChild(img);
+        }
+        
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-btn';
+        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        removeBtn.onclick = function(e) {
+            e.preventDefault();
+            selectedFiles.splice(index, 1);
+            updatePreview();
+        };
+        previewItem.appendChild(removeBtn);
+        
+        col.appendChild(previewItem);
+        previewGrid.appendChild(col);
+    });
+    
+    if (fileCount) fileCount.textContent = selectedFiles.length;
+    previewArea.style.display = 'block';
+    uploadBtn.disabled = false;
+}
+
+function addMoreFiles() {
+    document.getElementById('fileInput').click();
+}
+
+function clearSelectedFiles() {
+    selectedFiles = [];
+    document.getElementById('fileInput').value = '';
+    document.getElementById('previewArea').style.display = 'none';
+    document.getElementById('uploadBtn').disabled = true;
+    hideQuickAddBar();
+}
+
+// 拖拽上传
+const dropZone = document.getElementById('dropZone');
+
+dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    this.classList.add('dragover');
+});
+
+dropZone.addEventListener('dragleave', function(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+});
+
+dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    this.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        addFilesToSelection(files);
+    }
+});
+
+function previewFiles(files) {
+    addFilesToSelection(files);
+}
+
+function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+    
+    const formData = new FormData();
+    const caption = document.getElementById('photoCaption').value;
+    
+    formData.append('caption', caption);
+    
+    // 计算总大小
+    let totalSize = 0;
+    selectedFiles.forEach(file => {
+        formData.append('files', file);
+        totalSize += file.size;
+    });
+    
+    const progressArea = document.getElementById('uploadProgress');
+    const progressBar = progressArea.querySelector('.progress-bar');
+    const statusText = document.getElementById('uploadStatus');
+    const sizeInfo = document.getElementById('uploadSizeInfo');
+    const speedInfo = document.getElementById('uploadSpeedInfo');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    progressArea.style.display = 'block';
+    uploadBtn.disabled = true;
+    
+    // 初始化进度信息
+    let startTime = Date.now();
+    let lastLoaded = 0;
+    let lastTime = startTime;
+    
+    sizeInfo.textContent = `0 KB / ${formatSize(totalSize)}`;
+    speedInfo.textContent = '计算中...';
+    statusText.textContent = `正在上传 ${selectedFiles.length} 个文件...`;
+    
+    const xhr = new XMLHttpRequest();
+    
+    // 进度事件
+    xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            progressBar.style.width = percent + '%';
+            
+            // 计算上传速度
+            const now = Date.now();
+            const timeDiff = (now - lastTime) / 1000;
+            const bytesDiff = e.loaded - lastLoaded;
+            
+            if (timeDiff > 0.5) {
+                const speed = bytesDiff / timeDiff;
+                speedInfo.textContent = `${formatSize(speed)}/s`;
+                lastLoaded = e.loaded;
+                lastTime = now;
+            }
+            
+            // 更新已上传大小
+            sizeInfo.textContent = `${formatSize(e.loaded)} / ${formatSize(e.total)}`;
+            
+            // 计算预计剩余时间
+            const elapsed = (now - startTime) / 1000;
+            if (elapsed > 1 && e.loaded > 0) {
+                const avgSpeed = e.loaded / elapsed;
+                const remaining = (e.total - e.loaded) / avgSpeed;
+                if (remaining > 60) {
+                    statusText.textContent = `上传中 ${percent}% · 预计剩余 ${Math.round(remaining / 60)} 分钟`;
+                } else if (remaining > 1) {
+                    statusText.textContent = `上传中 ${percent}% · 预计剩余 ${Math.round(remaining)} 秒`;
+                } else {
+                    statusText.textContent = `上传中 ${percent}%`;
+                }
+            } else {
+                statusText.textContent = `上传中 ${percent}%`;
+            }
+        }
+    };
+    
+    // 完成事件
+    xhr.onload = function() {
+        let data;
+        try {
+            data = JSON.parse(xhr.responseText);
+        } catch (e) {
+            data = { success: false, message: '解析响应失败' };
+        }
+
+        if (xhr.status === 200 && data && data.success) {
+            progressBar.style.width = '100%';
+            sizeInfo.textContent = `${formatSize(totalSize)} / ${formatSize(totalSize)}`;
+            speedInfo.textContent = '完成';
+            statusText.textContent = '上传完成！';
+            showNotification(data.message || `成功上传 ${data.count || 0} 个文件`, 'success');
+
+            const modalEl = document.getElementById('uploadModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) {
+                modal.hide();
+            }
+
+            // 重置表单
+            document.getElementById('fileInput').value = '';
+            document.getElementById('photoCaption').value = '';
+            document.getElementById('previewArea').style.display = 'none';
+            document.getElementById('uploadProgress').style.display = 'none';
+            document.getElementById('uploadBtn').disabled = true;
+            selectedFiles = [];
+            hideQuickAddBar();
+
+            // ========== 显示勋章通知 ==========
+            if (data.badges && data.badges.length > 0) {
+                showBadgeNotification(data.badges);
+            }
+
+            // 刷新当前日期数据
+            setTimeout(() => {
+                if (typeof loadDateData === 'function' && typeof window.currentCalendarDate !== 'undefined') {
+                    loadDateData(formatDate(window.currentCalendarDate));
+                } else {
+                    window.location.reload();
+                }
+            }, 500);
+        } else {
+            showNotification('上传失败: ' + (data?.message || `HTTP错误 ${xhr.status}`), 'error');
+            uploadBtn.disabled = false;
+            progressArea.style.display = 'none';
+        }
+    };
+    
+    // 错误事件
+    xhr.onerror = function() {
+        console.error('上传错误');
+        showNotification('上传出错，请稍后重试', 'error');
+        uploadBtn.disabled = false;
+        progressArea.style.display = 'none';
+    };
+    
+    // 中止事件
+    xhr.onabort = function() {
+        showNotification('上传已取消', 'warning');
+        uploadBtn.disabled = false;
+        progressArea.style.display = 'none';
+    };
+    
+    xhr.open('POST', '/upload', true);
+    xhr.send(formData);
+}
+
+// 格式化文件大小
+function formatSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+</script>

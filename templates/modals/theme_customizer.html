@@ -1,0 +1,182 @@
+<!-- 主题定制模态框 -->
+<div class="modal fade" id="themeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">🎨 定制主题</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">描述你想要的风格</label>
+                    <textarea id="themePrompt" class="form-control" rows="4" 
+                        placeholder="例如：深蓝色夜空，有星星闪烁；或粉色樱花风格，浪漫温柔..."></textarea>
+                    <div class="form-text">
+                        <small class="text-success">✅ AI可以：调整配色、添加CSS动画、emoji装饰、渐变背景</small><br>
+                        <small class="text-danger">❌ AI无法：上传图片、绘制特定插画、复杂3D效果</small><br>
+                        <small class="text-info">⏱️ 生成约需1-2分钟，点击后您可以继续浏览页面，完成后自动应用，看不见请刷新</small>
+                    </div>
+                </div>
+                <button class="btn btn-primary w-100 mb-3" onclick="generateCustomTheme()">
+                    <i class="fas fa-magic me-2"></i>生成专属主题
+                </button>
+                <hr>
+                <button class="btn btn-outline-secondary w-100" onclick="resetToDefaultTheme()">
+                    <i class="fas fa-rotate-left me-2"></i>恢复默认主题
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 全局变量存储生成状态
+let themeGenerationInProgress = false;
+
+// 生成自定义主题 - 异步处理，先检查额度
+async function generateCustomTheme() {
+    const prompt = document.getElementById('themePrompt').value.trim();
+    if (!prompt) {
+        showNotification('请输入你想要的风格描述', 'warning');
+        return;
+    }
+    
+    if (themeGenerationInProgress) {
+        showNotification('主题生成中，请稍后再试', 'warning');
+        return;
+    }
+    
+    // 先检查额度，避免额度用完还显示生成中
+    try {
+        const quotaCheck = await fetch('/api/quota/status');
+        const quotaData = await quotaCheck.json();
+        
+        if (quotaData.success && quotaData.quota) {
+            const themeQuota = quotaData.quota.features?.generate_theme;
+            if (themeQuota && themeQuota.remaining <= 0) {
+                showNotification('❌ 今日主题生成额度已用完，请明天再试', 'error', 5000);
+                return;
+            }
+        }
+    } catch (e) {
+        console.log('[主题生成] 额度检查失败，继续尝试生成');
+    }
+    
+    themeGenerationInProgress = true;
+    const startTime = Date.now();
+    console.log('[主题生成] 开始生成，提示词:', prompt);
+    
+    // 关闭模态框，让用户可以浏览其他内容
+    const modal = bootstrap.Modal.getInstance(document.getElementById('themeModal'));
+    if (modal) modal.hide();
+    
+    // 显示开始生成通知（长时间显示）
+    showNotification('🎨 AI正在设计主题，约需40-60秒...您可以继续浏览页面', 'info', 10000);
+    
+    // 异步发送请求，不设置超时（让服务器决定）
+    fetch('/api/theme/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt: prompt})
+    })
+    .then(r => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log('[主题生成] 收到响应，状态:', r.status, '耗时:', elapsed + 's');
+        if (!r.ok) {
+            throw new Error('HTTP ' + r.status);
+        }
+        return r.json();
+    })
+    .then(data => {
+        themeGenerationInProgress = false;
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log('[主题生成] 解析成功，总耗时:', elapsed + 's');
+        
+        if (data.success && data.css) {
+            // 自动应用主题
+            applyThemeCSS(data.css);
+            console.log('[主题生成] 主题已应用');
+            
+            // 构建成功消息
+            let title = `🎉 主题「${data.theme?.name || '自定义'}」已生成！`;
+            let message = 'AI已自动应用新主题';
+            
+            if (data.limitations) {
+                message += '\n💡 ' + data.limitations;
+            }
+            if (data.fallback) {
+                message += '\n⚠️ 使用了本地备选方案';
+            }
+            
+            // 显示成功通知
+            showNotification(title + '\n' + message, 'success', 6000);
+        } else {
+            console.log('[主题生成] 生成失败:', data.message);
+            showNotification(data.message || '生成失败', 'error');
+        }
+    })
+    .catch(err => {
+        themeGenerationInProgress = false;
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error('[主题生成] 错误，耗时:', elapsed + 's', err);
+        showNotification('生成失败: ' + err.message, 'error');
+    });
+}
+
+// 应用主题CSS - 强制刷新确保生效
+function applyThemeCSS(css) {
+    console.log('[主题应用] 开始应用CSS，长度:', css.length);
+    
+    // 移除旧的主题样式
+    let oldStyleEl = document.getElementById('dynamic-theme');
+    if (oldStyleEl) {
+        oldStyleEl.remove();
+        console.log('[主题应用] 移除旧样式');
+    }
+    
+    // 创建新样式元素
+    const styleEl = document.createElement('style');
+    styleEl.id = 'dynamic-theme';
+    styleEl.textContent = css;
+    document.head.appendChild(styleEl);
+    console.log('[主题应用] 新样式已添加到head');
+    
+    // 强制刷新所有卡片样式
+    document.querySelectorAll('.card').forEach(card => {
+        card.style.animation = 'none';
+        card.offsetHeight; // 触发重排
+        card.style.animation = '';
+    });
+    console.log('[主题应用] 样式已强制刷新');
+}
+
+// 恢复默认主题
+function resetToDefaultTheme() {
+    if (!confirm('确定要恢复默认主题吗？')) {
+        return;
+    }
+    
+    fetch('/api/theme/reset', {
+        method: 'POST'
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            // 移除动态主题
+            const styleEl = document.getElementById('dynamic-theme');
+            if (styleEl) styleEl.remove();
+            
+            showNotification('已恢复默认主题', 'success');
+            
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('themeModal'));
+            if (modal) modal.hide();
+        } else {
+            showNotification(data.message || '重置失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('重置失败: ' + err.message, 'error');
+    });
+}
+</script>
