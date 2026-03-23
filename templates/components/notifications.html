@@ -1,0 +1,246 @@
+<!-- 通知系统组件 -->
+<div id="notificationContainer" class="position-fixed top-0 end-0 p-3" style="z-index: 1050; max-width: 400px;">
+    <!-- 通知卡片将动态插入这里 -->
+</div>
+
+<!-- 更新提示模态框 -->
+<div class="modal fade" id="updateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-cloud-download-alt me-2"></i>发现新版本
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <i class="fas fa-rocket fa-3x text-primary mb-2"></i>
+                    <h4>有新版本可用！</h4>
+                </div>
+                
+                <div class="mb-3">
+                    <strong>当前版本：</strong><span id="currentVersion">--</span>
+                </div>
+                <div class="mb-3">
+                    <strong>最新版本：</strong><span id="latestVersion">--</span>
+                </div>
+                
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <span id="updateDescription">修复了一些问题，提升了稳定性</span>
+                </div>
+                
+                <div class="progress mb-3" id="downloadProgress" style="display: none;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%" id="progressBar">0%</div>
+                </div>
+                
+                <div id="downloadStatus" class="text-center text-muted small"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="remindLaterBtn">
+                    稍后提醒
+                </button>
+                <button type="button" class="btn btn-primary" id="downloadUpdateBtn" onclick="downloadUpdate()">
+                    <i class="fas fa-download me-2"></i>立即更新
+                </button>
+                <button type="button" class="btn btn-success" id="installUpdateBtn" style="display: none;" onclick="installUpdate()">
+                    <i class="fas fa-sync-alt me-2"></i>安装并重启
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 检查通知和更新
+function checkNotificationsAndUpdates() {
+    checkServerNotifications();
+    checkForUpdates();
+}
+
+// 检查服务端通知
+function checkServerNotifications() {
+    fetch('/api/notifications')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.notifications && data.notifications.length > 0) {
+                data.notifications.forEach(notif => {
+                    showNotificationCard(notif);
+                });
+            }
+        })
+        .catch(err => console.log('检查通知失败:', err));
+}
+
+// 显示通知卡片
+function showNotificationCard(notif) {
+    const container = document.getElementById('notificationContainer');
+    
+    const levelColors = {
+        'info': 'primary',
+        'warning': 'warning',
+        'error': 'danger'
+    };
+    
+    const color = levelColors[notif.level] || 'primary';
+    
+    const card = document.createElement('div');
+    card.className = `alert alert-${color} alert-dismissible fade show shadow`;
+    card.innerHTML = `
+        <div class="d-flex">
+            <div class="me-2">
+                <i class="fas fa-${notif.level === 'error' ? 'exclamation-circle' : notif.level === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+            </div>
+            <div>${notif.message}</div>
+        </div>
+        <button type="button" class="btn-close" onclick="markNotificationRead('${notif.id}', this.parentElement)"></button>
+    `;
+    
+    container.appendChild(card);
+    
+    // 5秒后自动消失
+    setTimeout(() => {
+        if (card.parentElement) {
+            card.remove();
+        }
+    }, 5000);
+}
+
+// 标记通知为已读
+function markNotificationRead(notificationId, element) {
+    fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({notification_id: notificationId})
+    });
+    
+    if (element) {
+        element.remove();
+    }
+}
+
+// 检查更新
+function checkForUpdates() {
+    fetch('/api/version/check')
+        .then(r => r.json())
+        .then(data => {
+            if (data.success && data.has_update) {
+                showUpdateModal(data);
+            }
+        })
+        .catch(err => console.log('检查更新失败:', err));
+}
+
+// 显示更新模态框
+function showUpdateModal(updateInfo) {
+    document.getElementById('currentVersion').textContent = updateInfo.current_version;
+    document.getElementById('latestVersion').textContent = updateInfo.latest_version;
+    document.getElementById('updateDescription').textContent = updateInfo.description || '修复了一些问题，提升了稳定性';
+    
+    const modal = new bootstrap.Modal(document.getElementById('updateModal'));
+    modal.show();
+}
+
+// 全局变量保存下载的文件路径
+let downloadedUpdateFile = '';
+
+// 下载更新
+function downloadUpdate() {
+    const btn = document.getElementById('downloadUpdateBtn');
+    const progress = document.getElementById('downloadProgress');
+    const progressBar = document.getElementById('progressBar');
+    const status = document.getElementById('downloadStatus');
+    
+    btn.disabled = true;
+    progress.style.display = 'block';
+    status.textContent = '正在下载更新...';
+    
+    // 调用后端下载API
+    fetch('/api/version/download', {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                // 保存文件路径
+                downloadedUpdateFile = data.download_path;
+                
+                // 模拟进度条动画
+                let percent = 0;
+                const interval = setInterval(() => {
+                    percent += 10;
+                    progressBar.style.width = percent + '%';
+                    progressBar.textContent = percent + '%';
+                    
+                    if (percent >= 100) {
+                        clearInterval(interval);
+                        progressBar.classList.remove('progress-bar-animated');
+                        progressBar.classList.add('bg-success');
+                        status.textContent = '下载完成！';
+                        
+                        // 显示安装按钮
+                        document.getElementById('downloadUpdateBtn').style.display = 'none';
+                        document.getElementById('installUpdateBtn').style.display = 'inline-block';
+                    }
+                }, 100);
+            } else {
+                status.innerHTML = '<span class="text-danger">下载失败: ' + data.message + '</span>';
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            status.innerHTML = '<span class="text-danger">下载失败: ' + err.message + '</span>';
+            btn.disabled = false;
+        });
+}
+
+// 安装更新
+function installUpdate() {
+    const status = document.getElementById('downloadStatus');
+    status.textContent = '正在安装更新，请稍候...';
+    
+    // 发送安装请求，传递文件路径
+    fetch('/api/version/install', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({update_file: downloadedUpdateFile})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                status.innerHTML = '<span class="text-success"><i class="fas fa-check-circle me-1"></i>安装已开始，即将重启...</span>';
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
+            } else {
+                status.innerHTML = '<span class="text-danger">安装失败: ' + data.message + '</span>';
+            }
+        })
+        .catch(err => {
+            status.innerHTML = '<span class="text-danger">安装失败: ' + err.message + '</span>';
+        });
+}
+
+// 页面加载完成后检查
+setTimeout(checkNotificationsAndUpdates, 2000);
+
+// 每5分钟检查一次通知
+setInterval(checkNotificationsAndUpdates, 5 * 60 * 1000);
+</script>
+
+<style>
+#notificationContainer .alert {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+</style>

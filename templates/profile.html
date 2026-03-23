@@ -1,0 +1,1583 @@
+{% extends "base.html" %}
+{% block title %}{{ baby_name }}的小世界{% endblock %}
+{% block extra_css %}
+<style>
+/* 温馨风格基础样式 */
+.profile-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* 主卡片 - 温馨风格 */
+.profile-main-card {
+    background: linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%);
+    border-radius: 24px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 20px rgba(255, 182, 193, 0.15);
+}
+
+/* 头部区域 */
+.profile-header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+}
+
+.profile-avatar {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(255, 182, 193, 0.3);
+}
+
+.profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.profile-info h1 {
+    margin: 0 0 8px 0;
+    font-size: 28px;
+    color: #4A4A4A;
+    font-weight: 600;
+}
+
+.profile-info .age-text {
+    color: #888;
+    font-size: 15px;
+}
+
+/* 本月亮点区域 */
+.highlight-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-left: 4px solid #FFB6C1;
+}
+
+.highlight-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.highlight-content {
+    font-size: 18px;
+    color: #4A4A4A;
+    line-height: 1.6;
+}
+
+/* AI特质卡片区域 */
+.traits-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.traits-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.traits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+}
+
+.trait-card {
+    background: linear-gradient(135deg, #FFF5F5 0%, #FFFAF0 100%);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.trait-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 182, 193, 0.2);
+}
+
+.trait-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.trait-info {
+    flex: 1;
+}
+
+.trait-name {
+    font-weight: 600;
+    color: #4A4A4A;
+    font-size: 14px;
+}
+
+.trait-desc {
+    font-size: 12px;
+    color: #888;
+    margin-top: 2px;
+}
+
+/* 标签云区域 */
+.tags-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.tags-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tags-cloud-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tags-cloud {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+}
+
+.tag-item {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: white;
+    cursor: default;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.tag-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.tag-tab {
+    padding: 4px 12px;
+    border: 1px solid #eee;
+    background: white;
+    border-radius: 16px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tag-tab:hover {
+    background: #f8f8f8;
+}
+
+.tag-tab.active {
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    color: white;
+    border-color: transparent;
+}
+
+/* 生成卡片按钮 */
+.card-generate-section {
+    text-align: center;
+    margin: 24px 0;
+}
+
+.btn-generate-card {
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    border: none;
+    color: white;
+    padding: 16px 32px;
+    border-radius: 30px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 4px 15px rgba(255, 182, 193, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-generate-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 182, 193, 0.4);
+}
+
+.btn-generate-card i {
+    font-size: 20px;
+}
+
+/* 数据详情区域（可折叠） */
+.data-section {
+    margin-top: 24px;
+}
+
+.data-toggle {
+    background: white;
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #f0f0f0;
+}
+
+.data-toggle:hover {
+    background: #fafafa;
+}
+
+.data-toggle-title {
+    font-size: 15px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.data-toggle-icon {
+    transition: transform 0.3s;
+    color: #999;
+}
+
+.data-toggle.expanded .data-toggle-icon {
+    transform: rotate(180deg);
+}
+
+.data-content {
+    display: none;
+    padding: 20px;
+    background: white;
+    border-radius: 0 0 12px 12px;
+    margin-top: -1px;
+    border: 1px solid #f0f0f0;
+    border-top: none;
+}
+
+.data-content.show {
+    display: block;
+}
+
+/* 雷达图容器 */
+.radar-container {
+    height: 250px;
+    position: relative;
+    margin: 10px 0;
+}
+
+.chart-container {
+    height: 250px;
+    margin: 15px 0;
+}
+
+/* 时间轴 */
+.timeline-section {
+    position: relative;
+    padding-left: 30px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.timeline-section::before {
+    content: '';
+    position: absolute;
+    left: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #FFE4E1;
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 16px;
+}
+
+.timeline-item::before {
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 5px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #FFB6C1;
+    border: 2px solid white;
+}
+
+.timeline-date {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.timeline-content {
+    background: #FFF8F0;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #555;
+}
+
+/* 反馈区域 */
+.feedback-section {
+    background: white;
+    border-radius: 16px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.feedback-title {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.feedback-input-area textarea {
+    border-radius: 12px;
+    border: 1px solid #eee;
+    resize: none;
+    background: #FAFAFA;
+}
+
+.feedback-input-area textarea:focus {
+    border-color: #FFB6C1;
+    box-shadow: 0 0 0 3px rgba(255, 182, 193, 0.1);
+}
+
+/* 底部进度条 */
+.ai-progress-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%);
+    color: white;
+    padding: 12px 20px;
+    z-index: 9999;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+    display: none;
+}
+
+.ai-progress-footer.show {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.ai-progress-footer .progress-info {
+    flex: 1;
+}
+
+.ai-progress-footer .progress-text {
+    font-size: 14px;
+    margin-bottom: 6px;
+}
+
+.ai-progress-footer .progress {
+    height: 8px;
+    background: rgba(255,255,255,0.3);
+    border-radius: 4px;
+    flex: 1;
+}
+
+.ai-progress-footer .progress-bar {
+    background: white;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.ai-progress-footer .btn-close-progress {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.ai-progress-footer.completed {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+/* 指标网格 */
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.metric-card {
+    background: #FFF8F0;
+    padding: 14px;
+    border-radius: 12px;
+    text-align: center;
+}
+
+.metric-title {
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 6px;
+}
+
+.metric-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: #4A4A4A;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+    .profile-header {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    .profile-info h1 {
+        font-size: 24px;
+    }
+    
+    .traits-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .btn-generate-card {
+        padding: 14px 24px;
+        font-size: 15px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-container">
+    <!-- 主卡片 -->
+    <div class="profile-main-card">
+        <!-- 头部 -->
+        <div class="profile-header">
+            <div class="profile-avatar">
+                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像">
+            </div>
+            <div class="profile-info">
+                <h1>🌟 {{ baby_name }}的小世界</h1>
+                <p class="age-text">
+                    <i class="fas fa-birthday-cake me-1"></i>
+                    <span id="currentAge">{{ age_text if age_text else '未设置生日' }}</span>
+                    <button id="aiReviewBtn" class="btn btn-sm btn-outline-secondary ms-2" onclick="startAIReview()" title="让AI重新认识宝宝">
+                        <i class="fas fa-sync-alt me-1"></i>刷新
+                    </button>
+                </p>
+            </div>
+        </div>
+
+        <!-- 本月亮点 -->
+        <div class="highlight-section">
+            <div class="highlight-title">
+                <i class="fas fa-sparkles" style="color: #FFD700;"></i>
+                <span>本月可爱瞬间</span>
+            </div>
+            <div class="highlight-content" id="highlightContent">
+                <span style="color: #999;">AI正在观察中...</span>
+            </div>
+        </div>
+
+        <!-- AI发现的特质 -->
+        <div class="traits-section">
+            <div class="traits-title">
+                <i class="fas fa-brain" style="color: #FFB6C1;"></i>
+                <span>AI发现了宝宝的可爱特质</span>
+            </div>
+            <div class="traits-grid" id="traitsGrid">
+                <div class="trait-card">
+                    <div class="trait-icon" style="background: #FFF0F5;">💛</div>
+                    <div class="trait-info">
+                        <div class="trait-name">加载中...</div>
+                        <div class="trait-desc">AI正在分析</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 标签云 -->
+        <div class="tags-section">
+            <div class="tags-title">
+                <span><i class="fas fa-tags me-2" style="color: #FFB6C1;"></i>宝宝标签</span>
+                <div id="tagTabs" style="display: flex; gap: 6px;">
+                    <button class="tag-tab active" data-type="all" onclick="switchTagType('all')">全部</button>
+                    <button class="tag-tab" data-type="personality" onclick="switchTagType('personality')">性格</button>
+                    <button class="tag-tab" data-type="interest" onclick="switchTagType('interest')">兴趣</button>
+                </div>
+            </div>
+            <div class="tags-cloud" id="tagsCloud">
+                <span style="color: #999;">加载中...</span>
+            </div>
+        </div>
+
+        <!-- 生成成长卡片按钮 -->
+        <div class="card-generate-section">
+            <button class="btn-generate-card" onclick="openCardGenerator()">
+                <i class="fas fa-magic"></i>
+                <span>生成成长卡片</span>
+                <small style="opacity: 0.8; font-size: 12px;">分享宝宝的独特光芒</small>
+            </button>
+        </div>
+    </div>
+
+    <!-- 数据详情（可折叠） -->
+    <div class="data-section">
+        <div class="data-toggle" onclick="toggleDataSection(this)">
+            <div class="data-toggle-title">
+                <i class="fas fa-chart-bar"></i>
+                <span>查看详细数据</span>
+            </div>
+            <i class="fas fa-chevron-down data-toggle-icon"></i>
+        </div>
+        <div class="data-content" id="dataContent">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-chart-pie me-2"></i>性格维度</h6>
+                    <div class="radar-container">
+                        <canvas id="radarChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-star me-2"></i>兴趣偏好</h6>
+                    <div class="radar-container">
+                        <canvas id="interestChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-chart-line me-2"></i>成长曲线</h6>
+                    <div class="chart-container">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                    <div class="metric-grid">
+                        <div class="metric-card">
+                            <div class="metric-title">累计标签</div>
+                            <div class="metric-value" id="tagCount">0</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-title">累计素材</div>
+                            <div class="metric-value" id="eventCount">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-history me-2"></i>成长轨迹</h6>
+                    <div id="timelineSection" class="timeline-section">
+                        <p class="text-muted">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 告诉AI更多 -->
+    <div class="feedback-section">
+        <div class="feedback-title">
+            <i class="fas fa-comment-dots" style="color: #FFB6C1;"></i>
+            <span>告诉AI更多关于宝宝的事</span>
+        </div>
+        <p class="text-muted small mb-2">分享宝宝的真实特点，帮助AI更准确地认识宝宝</p>
+        <div class="feedback-input-area">
+            <textarea id="feedbackText" class="form-control" rows="2" placeholder="例如：宝宝最近特别喜欢模仿大人说话..."></textarea>
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <small class="text-muted">AI会在下次分析时参考您的分享</small>
+                <button class="btn btn-sm" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none;" onclick="submitFeedback()">
+                    <i class="fas fa-paper-plane me-1"></i>分享
+                </button>
+            </div>
+        </div>
+        <div id="feedbackHistory" class="mt-3"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const currentChildId = '{{ client_id }}';
+let growthChart = null;
+let radarChart = null;
+let interestChart = null;
+let profileData = null;
+
+const gradients = [
+    'linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%)',
+    'linear-gradient(135deg, #87CEEB 0%, #98FB98 100%)',
+    'linear-gradient(135deg, #DDA0DD 0%, #F0E68C 100%)',
+    'linear-gradient(135deg, #FFA07A 0%, #FFDAB9 100%)',
+    'linear-gradient(135deg, #98D8C8 0%, #F7DC6F 100%)',
+    'linear-gradient(135deg, #F8B500 0%, #FF6B6B 100%)',
+];
+
+const traitIcons = {
+    '爱笑': '💛',
+    '好奇': '🔍',
+    '活泼': '⚡',
+    '安静': '🌙',
+    '专注': '🎯',
+    '社交': '👥',
+    '独立': '🌟',
+    '创造': '🎨',
+    '音乐': '🎵',
+    '运动': '🏃',
+    '阅读': '📚',
+    '探索': '🧭',
+    'default': '✨'
+};
+
+function getTraitIcon(traitName) {
+    for (let key in traitIcons) {
+        if (traitName.includes(key)) {
+            return traitIcons[key];
+        }
+    }
+    return traitIcons['default'];
+}
+
+function loadProfileData() {
+    Promise.all([
+        fetch('/api/ai/profile').then(r => r.json()),
+        fetch('/api/ai/features').then(r => r.json())
+    ])
+    .then(([pData, fData]) => {
+        if (pData.success) {
+            profileData = pData.profile;
+            
+            document.getElementById('currentAge').textContent = profileData.age || '暂无数据';
+            document.getElementById('tagCount').textContent = profileData.total_tags || 0;
+            document.getElementById('eventCount').textContent = profileData.total_events || 0;
+
+            renderHighlight(profileData);
+            renderTraits(profileData);
+            renderTagsCloud(profileData.tags || []);
+            renderTimeline(profileData.evolution?.recent_changes || []);
+            renderGrowthChart(profileData.knowledge_growth);
+        }
+
+        if (fData.success) {
+            const features = fData.features;
+            renderRadarChart(features?.personality || {});
+            renderInterests(features?.interest || {});
+        }
+    })
+    .catch(err => {
+        console.error('加载画像数据失败:', err);
+        showNotification('加载失败，请稍后重试', 'error');
+    });
+}
+
+function renderHighlight(profile) {
+    const container = document.getElementById('highlightContent');
+    const summary = profile.guidance?.summary || '';
+    
+    if (summary && !summary.includes('暂无足够数据')) {
+        container.innerHTML = `"${summary}"`;
+    } else if (profile.evolution?.recent_changes?.length > 0) {
+        const recent = profile.evolution.recent_changes[0];
+        container.innerHTML = `"${recent.change}"`;
+    } else {
+        container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
+    }
+}
+
+function renderTraits(profile) {
+    const container = document.getElementById('traitsGrid');
+    const tags = profile.tags || [];
+    
+    if (tags.length === 0) {
+        container.innerHTML = `
+            <div class="trait-card">
+                <div class="trait-icon" style="background: #FFF0F5;">🌱</div>
+                <div class="trait-info">
+                    <div class="trait-name">等待发现</div>
+                    <div class="trait-desc">继续记录，AI会发现更多特质</div>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // 取前4个标签作为特质展示
+    const topTraits = tags.slice(0, 4);
+    container.innerHTML = topTraits.map((item, index) => {
+        const tag = typeof item === 'object' ? item.tag : item;
+        const confidence = typeof item === 'object' ? item.confidence : 0.8;
+        const icon = getTraitIcon(tag);
+        const bgColors = ['#FFF0F5', '#F0FFF0', '#FFF8DC', '#F0F8FF'];
+        
+        let desc = '宝宝的小特点';
+        if (tag.includes('笑')) desc = '笑容治愈力满满';
+        else if (tag.includes('好奇')) desc = '对世界充满好奇';
+        else if (tag.includes('活泼')) desc = '活力四射';
+        else if (tag.includes('安静')) desc = '安静的小天使';
+        else if (tag.includes('专注')) desc = '做事很认真';
+        else if (tag.includes('音乐')) desc = '听到音乐就开心';
+        else if (tag.includes('运动')) desc = '运动小健将';
+        
+        return `
+            <div class="trait-card">
+                <div class="trait-icon" style="background: ${bgColors[index % 4]};">${icon}</div>
+                <div class="trait-info">
+                    <div class="trait-name">${tag}</div>
+                    <div class="trait-desc">${desc}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+let allTags = [];
+function renderTagsCloud(tags) {
+    allTags = tags;
+    displayTagsByType('all');
+}
+
+function switchTagType(type) {
+    document.querySelectorAll('.tag-tab').forEach(tab => tab.classList.remove('active'));
+    document.querySelector(`.tag-tab[data-type="${type}"]`).classList.add('active');
+    displayTagsByType(type);
+}
+
+function displayTagsByType(type) {
+    const container = document.getElementById('tagsCloud');
+    let filteredTags = allTags;
+
+    if (type !== 'all') {
+        filteredTags = allTags.filter(t => {
+            const category = typeof t === 'object' ? t.category : 'other';
+            return category === type;
+        });
+    }
+
+    if (filteredTags && filteredTags.length > 0) {
+        container.innerHTML = filteredTags.map((item, index) => {
+            const gradient = gradients[index % gradients.length];
+            const tag = typeof item === 'object' ? item.tag : item;
+            return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+        }).join('');
+    } else {
+        container.innerHTML = '<span style="color: #999;">暂无标签</span>';
+    }
+}
+
+function toggleDataSection(el) {
+    el.classList.toggle('expanded');
+    document.getElementById('dataContent').classList.toggle('show');
+}
+
+function renderRadarChart(scores) {
+    const ctx = document.getElementById('radarChart').getContext('2d');
+    if (radarChart) radarChart.destroy();
+
+    const labels = ['活跃度', '好奇心', '社交性', '专注力', '情绪稳定', '适应力'];
+    const keys = ['activity', 'curiosity', 'social', 'focus', 'emotion_stability', 'adaptability'];
+    const data = keys.map(k => scores[k] || 5);
+
+    radarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '性格维度',
+                data: data,
+                backgroundColor: 'rgba(255, 182, 193, 0.3)',
+                borderColor: 'rgba(255, 182, 193, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(255, 182, 193, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2 } } }
+        }
+    });
+}
+
+function renderInterests(interest) {
+    const ctx = document.getElementById('interestChart').getContext('2d');
+    if (interestChart) interestChart.destroy();
+
+    const labels = ['音乐', '运动', '阅读', '艺术', '自然', '科技'];
+    const keys = ['music', 'sports', 'reading', 'art', 'nature', 'technology'];
+    const data = keys.map(k => interest[k] || 5);
+
+    interestChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '兴趣偏好',
+                data: data,
+                backgroundColor: 'rgba(255, 215, 0, 0.3)',
+                borderColor: 'rgba(255, 215, 0, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(255, 215, 0, 1)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: { r: { beginAtZero: true, max: 10, ticks: { stepSize: 2 } } }
+        }
+    });
+}
+
+function renderTimeline(changes) {
+    const container = document.getElementById('timelineSection');
+    if (changes && changes.length > 0) {
+        const sorted = [...changes].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
+        container.innerHTML = sorted.map(c => `
+            <div class="timeline-item">
+                <div class="timeline-date">${c.date || ''}</div>
+                <div class="timeline-content">${c.change}</div>
+            </div>
+        `).join('');
+    } else {
+        container.innerHTML = '<p class="text-muted">暂无成长轨迹</p>';
+    }
+}
+
+function renderGrowthChart(data) {
+    const ctx = document.getElementById('growthChart').getContext('2d');
+    if (growthChart) growthChart.destroy();
+
+    growthChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data?.dates || [],
+            datasets: [
+                {
+                    label: '标签数',
+                    data: data?.tags || [],
+                    borderColor: '#FFB6C1',
+                    backgroundColor: 'rgba(255, 182, 193, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: '素材数',
+                    data: data?.events || [],
+                    borderColor: '#FFD700',
+                    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+                    tension: 0.4,
+                    fill: false
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+}
+
+function openCardGenerator() {
+    // 打开卡片生成器模态框
+    const modal = new bootstrap.Modal(document.getElementById('cardGeneratorModal'));
+    modal.show();
+
+    // 加载卡片生成器内容
+    loadCardGenerator();
+}
+
+// ========== 卡片生成器 ==========
+
+let currentCardData = null;
+let selectedCardType = 'trait';
+let selectedCardStyle = 'warm';
+
+function loadCardGenerator() {
+    const container = document.getElementById('cardGeneratorContent');
+
+    // 显示加载状态
+    container.innerHTML = `
+        <div class="text-center py-5">
+            <i class="fas fa-spinner fa-spin fa-2x" style="color: #FFB6C1;"></i>
+            <p class="text-muted mt-3">AI正在准备卡片...</p>
+        </div>
+    `;
+
+    // 加载卡片类型和风格
+    Promise.all([
+        fetch('/api/card/types').then(r => r.json()),
+        fetch('/api/card/styles').then(r => r.json())
+    ])
+    .then(([typesData, stylesData]) => {
+        if (!typesData.success || !stylesData.success) {
+            container.innerHTML = '<div class="alert alert-warning">加载失败，请稍后重试</div>';
+            return;
+        }
+
+        renderCardGeneratorUI(typesData.types, stylesData.styles);
+    })
+    .catch(err => {
+        console.error('加载卡片配置失败:', err);
+        container.innerHTML = '<div class="alert alert-warning">加载失败，请稍后重试</div>';
+    });
+}
+
+function renderCardGeneratorUI(types, styles) {
+    const container = document.getElementById('cardGeneratorContent');
+
+    container.innerHTML = `
+        <!-- 步骤1：选择卡片类型 -->
+        <div class="card-step mb-4">
+            <h6 class="text-muted mb-3"><i class="fas fa-list-check me-2"></i>选择卡片类型</h6>
+            <div class="row g-2">
+                ${types.map(t => `
+                    <div class="col-md-4">
+                        <div class="card-type-option ${t.available ? '' : 'disabled'} ${selectedCardType === t.type ? 'selected' : ''}"
+                             onclick="${t.available ? `selectCardType('${t.type}')` : ''}"
+                             data-type="${t.type}">
+                            <div class="card-type-icon">${t.icon}</div>
+                            <div class="card-type-name">${t.name}</div>
+                            <div class="card-type-desc">${t.description}</div>
+                            ${!t.available ? `<div class="card-type-reason">${t.reason || '暂不可用'}</div>` : ''}
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+
+        <!-- 步骤2：选择风格 -->
+        <div class="card-step mb-4">
+            <h6 class="text-muted mb-3"><i class="fas fa-palette me-2"></i>选择卡片风格</h6>
+            <div class="d-flex gap-2 flex-wrap">
+                ${styles.map(s => `
+                    <div class="card-style-option ${selectedCardStyle === s.id ? 'selected' : ''}"
+                         onclick="selectCardStyle('${s.id}')"
+                         data-style="${s.id}">
+                        <div class="style-preview" style="background: ${s.bg_gradient};"></div>
+                        <span>${s.name}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+
+        <!-- 步骤3：预览和生成 -->
+        <div class="card-step">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="text-muted mb-0"><i class="fas fa-eye me-2"></i>卡片预览</h6>
+                <button class="btn btn-sm btn-outline-secondary" onclick="regenerateCard()">
+                    <i class="fas fa-sync-alt me-1"></i>换一个
+                </button>
+            </div>
+            <div id="cardPreviewContainer">
+                <div class="text-center py-4">
+                    <button class="btn btn-lg" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none; border-radius: 30px; padding: 12px 32px;" onclick="generateCard()">
+                        <i class="fas fa-magic me-2"></i>生成卡片
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 添加样式
+    addCardGeneratorStyles();
+}
+
+function addCardGeneratorStyles() {
+    if (document.getElementById('cardGeneratorStyles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'cardGeneratorStyles';
+    style.textContent = `
+        .card-type-option {
+            background: #FAFAFA;
+            border: 2px solid #EEE;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .card-type-option:hover:not(.disabled) {
+            border-color: #FFB6C1;
+            background: #FFF5F5;
+        }
+        .card-type-option.selected {
+            border-color: #FFB6C1;
+            background: linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%);
+        }
+        .card-type-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .card-type-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .card-type-name {
+            font-weight: 600;
+            color: #4A4A4A;
+            margin-bottom: 4px;
+        }
+        .card-type-desc {
+            font-size: 12px;
+            color: #888;
+        }
+        .card-type-reason {
+            font-size: 11px;
+            color: #FFB6C1;
+            margin-top: 6px;
+        }
+        .card-style-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 2px solid #EEE;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: white;
+        }
+        .card-style-option:hover {
+            border-color: #FFB6C1;
+        }
+        .card-style-option.selected {
+            border-color: #FFB6C1;
+            background: #FFF5F5;
+        }
+        .style-preview {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+        }
+        /* 卡片预览样式 */
+        .growth-card {
+            width: 100%;
+            max-width: 360px;
+            margin: 0 auto;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.1);
+        }
+        .card-header-section {
+            padding: 24px 20px 16px;
+            text-align: center;
+        }
+        .card-baby-name {
+            font-size: 24px;
+            font-weight: 600;
+            color: #4A4A4A;
+            margin-bottom: 4px;
+        }
+        .card-age {
+            font-size: 14px;
+            color: #888;
+        }
+        .card-traits-section {
+            padding: 0 20px 20px;
+        }
+        .card-traits-title {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 16px;
+        }
+        .card-trait-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: white;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .card-trait-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            background: #FFF0F5;
+        }
+        .card-trait-info {
+            flex: 1;
+        }
+        .card-trait-name {
+            font-weight: 600;
+            color: #4A4A4A;
+            font-size: 14px;
+        }
+        .card-trait-desc {
+            font-size: 12px;
+            color: #888;
+        }
+        .card-warm-text {
+            text-align: center;
+            padding: 16px 20px;
+            font-size: 15px;
+            color: #666;
+            font-style: italic;
+            line-height: 1.6;
+        }
+        .card-footer-section {
+            padding: 16px 20px;
+            text-align: center;
+            border-top: 1px solid rgba(0,0,0,0.05);
+        }
+        .card-brand {
+            font-size: 12px;
+            color: #999;
+        }
+        .card-brand-name {
+            font-weight: 600;
+            color: #FFB6C1;
+        }
+        .card-slogan {
+            font-size: 11px;
+            color: #BBB;
+            margin-top: 2px;
+        }
+        /* 操作按钮 */
+        .card-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .card-actions .btn {
+            border-radius: 20px;
+            padding: 10px 24px;
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+function selectCardType(type) {
+    selectedCardType = type;
+    document.querySelectorAll('.card-type-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.type === type);
+    });
+    // 清空预览
+    document.getElementById('cardPreviewContainer').innerHTML = `
+        <div class="text-center py-4">
+            <button class="btn btn-lg" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none; border-radius: 30px; padding: 12px 32px;" onclick="generateCard()">
+                <i class="fas fa-magic me-2"></i>生成卡片
+            </button>
+        </div>
+    `;
+}
+
+function selectCardStyle(style) {
+    selectedCardStyle = style;
+    document.querySelectorAll('.card-style-option').forEach(el => {
+        el.classList.toggle('selected', el.dataset.style === style);
+    });
+    // 如果已有卡片数据，重新渲染
+    if (currentCardData) {
+        currentCardData.style = style;
+        renderCardPreview(currentCardData);
+    }
+}
+
+function generateCard() {
+    const previewContainer = document.getElementById('cardPreviewContainer');
+    previewContainer.innerHTML = `
+        <div class="text-center py-4">
+            <i class="fas fa-spinner fa-spin" style="color: #FFB6C1; font-size: 24px;"></i>
+            <p class="text-muted mt-2 mb-0">AI正在生成卡片...</p>
+        </div>
+    `;
+
+    fetch('/api/card/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            card_type: selectedCardType,
+            style: selectedCardStyle
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            currentCardData = data.card;
+            renderCardPreview(currentCardData);
+        } else {
+            previewContainer.innerHTML = `<div class="alert alert-warning">${data.message || '生成失败'}</div>`;
+        }
+    })
+    .catch(err => {
+        previewContainer.innerHTML = '<div class="alert alert-warning">生成失败，请稍后重试</div>';
+    });
+}
+
+function regenerateCard() {
+    generateCard();
+}
+
+function renderCardPreview(card) {
+    const container = document.getElementById('cardPreviewContainer');
+    const styleConfig = card.style_config || {};
+
+    // 根据卡片类型渲染不同内容
+    let traitsHtml = '';
+    if (card.card_type === 'trait' && card.traits) {
+        traitsHtml = card.traits.map(t => `
+            <div class="card-trait-item">
+                <div class="card-trait-icon">${t.icon}</div>
+                <div class="card-trait-info">
+                    <div class="card-trait-name">${t.name}</div>
+                    <div class="card-trait-desc">${t.description}</div>
+                </div>
+            </div>
+        `).join('');
+    } else if (card.card_type === 'monthly') {
+        traitsHtml = `
+            <div class="text-center mb-3">
+                <div style="font-size: 14px; color: #888;">${card.month || ''}</div>
+            </div>
+            ${card.new_traits?.map(t => `
+                <div class="card-trait-item">
+                    <div class="card-trait-icon">✨</div>
+                    <div class="card-trait-info">
+                        <div class="card-trait-name">${t}</div>
+                        <div class="card-trait-desc">新发现的特质</div>
+                    </div>
+                </div>
+            `).join('') || ''}
+        `;
+    } else if (card.card_type === 'milestone') {
+        traitsHtml = `
+            <div class="text-center mb-3">
+                <div style="font-size: 32px; font-weight: 600; color: #FFB6C1;">${card.days || 0}</div>
+                <div style="font-size: 14px; color: #888;">天的成长</div>
+            </div>
+            <div class="d-flex justify-content-around text-center mb-3">
+                <div>
+                    <div style="font-size: 20px; font-weight: 600; color: #4A4A4A;">${card.total_events || 0}</div>
+                    <div style="font-size: 12px; color: #888;">个瞬间</div>
+                </div>
+                <div>
+                    <div style="font-size: 20px; font-weight: 600; color: #4A4A4A;">${card.total_tags || 0}</div>
+                    <div style="font-size: 12px; color: #888;">个标签</div>
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="growth-card" id="growthCard" style="background: ${styleConfig.bg_gradient || 'linear-gradient(135deg, #FFF5F5 0%, #FFF8F0 100%)'};">
+            <div class="card-header-section">
+                <div class="card-baby-name">${card.baby_name || '宝宝'}</div>
+                <div class="card-age">${card.age_text || ''}</div>
+            </div>
+
+            <div class="card-traits-section">
+                <div class="card-traits-title">
+                    <i class="fas fa-brain" style="color: ${styleConfig.accent_color || '#FFB6C1'};"></i>
+                    <span>AI成长画像</span>
+                </div>
+                ${traitsHtml}
+            </div>
+
+            <div class="card-warm-text">
+                "${card.warm_text || '你的每一次成长，都是爸爸妈妈的宝藏'}"
+            </div>
+
+            <div class="card-footer-section">
+                <div class="card-brand">
+                    <span class="card-brand-name">🦶 ${card.brand?.name || '小脚印成长记录'}</span>
+                </div>
+                <div class="card-slogan">${card.brand?.slogan || 'AI画像 · 发现宝宝的独特光芒'}</div>
+            </div>
+        </div>
+
+        <div class="card-actions">
+            <button class="btn btn-outline-secondary" onclick="regenerateCard()">
+                <i class="fas fa-sync-alt me-1"></i>换一个
+            </button>
+            <button class="btn" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none;" onclick="saveCard()">
+                <i class="fas fa-download me-1"></i>保存图片
+            </button>
+        </div>
+    `;
+}
+
+function saveCard() {
+    const card = document.getElementById('growthCard');
+    if (!card) {
+        showNotification('请先生成卡片', 'warning');
+        return;
+    }
+
+    // 使用 html2canvas 生成图片
+    if (typeof html2canvas === 'undefined') {
+        // 动态加载 html2canvas
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+        script.onload = () => doSaveCard(card);
+        document.head.appendChild(script);
+    } else {
+        doSaveCard(card);
+    }
+}
+
+function doSaveCard(card) {
+    html2canvas(card, {
+        scale: 2,
+        backgroundColor: null,
+        useCORS: true
+    }).then(canvas => {
+        // 创建下载链接
+        const link = document.createElement('a');
+        link.download = `成长卡片_${new Date().toISOString().slice(0,10)}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        showNotification('卡片已保存到相册', 'success');
+    }).catch(err => {
+        console.error('保存卡片失败:', err);
+        showNotification('保存失败，请重试', 'error');
+    });
+}
+
+function startAIReview() {
+    const modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
+    modal.show();
+}
+
+function executeAIReview(force) {
+    const modalEl = document.getElementById('aiReviewModal');
+    bootstrap.Modal.getInstance(modalEl).hide();
+
+    const btn = document.getElementById('aiReviewBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>处理中';
+
+    fetch('/api/ai/auto-review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({force: force})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showAIReviewProgress(data.task_id);
+        } else {
+            showNotification(data.message || '启动失败', 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
+        }
+    })
+    .catch(err => {
+        showNotification('请求失败', 'error');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
+    });
+}
+
+function showAIReviewProgress(taskId) {
+    const footer = document.getElementById('aiProgressFooter');
+    const progressText = document.getElementById('footerProgressText');
+    const progressBar = document.getElementById('footerProgressBar');
+
+    footer.classList.add('show');
+    footer.classList.remove('completed');
+    progressBar.style.width = '0%';
+    progressText.textContent = 'AI正在重新认识宝宝...';
+
+    pollReviewProgress(taskId);
+}
+
+function pollReviewProgress(taskId) {
+    const progressText = document.getElementById('footerProgressText');
+    const progressBar = document.getElementById('footerProgressBar');
+    const footer = document.getElementById('aiProgressFooter');
+    const btn = document.getElementById('aiReviewBtn');
+
+    const poll = () => {
+        fetch(`/api/ai/auto-review/status/${taskId}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) return;
+                const status = data.status;
+                const percent = status.total > 0 ? Math.round(status.processed / status.total * 100) : 0;
+                progressBar.style.width = percent + '%';
+                progressText.textContent = status.message || `处理中 ${percent}%`;
+
+                if (status.completed) {
+                    footer.classList.add('completed');
+                    progressText.innerHTML = `<i class="fas fa-check-circle me-1"></i>完成！`;
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>刷新';
+                    setTimeout(() => {
+                        loadProfileData();
+                        setTimeout(() => footer.classList.remove('show'), 3000);
+                    }, 500);
+                } else {
+                    setTimeout(poll, 1000);
+                }
+            });
+    };
+    poll();
+}
+
+function hideProgressFooter() {
+    document.getElementById('aiProgressFooter').classList.remove('show');
+}
+
+function submitFeedback() {
+    const text = document.getElementById('feedbackText').value.trim();
+    if (!text) {
+        showNotification('请输入内容', 'warning');
+        return;
+    }
+
+    fetch(`/api/ai/children/${currentChildId}/feedback`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({feedback_text: text, feedback_type: 'correction'})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('已分享，AI会参考的~', 'success');
+            document.getElementById('feedbackText').value = '';
+            loadFeedbackHistory();
+        } else {
+            showNotification('提交失败', 'error');
+        }
+    });
+}
+
+function loadFeedbackHistory() {
+    fetch(`/api/ai/children/${currentChildId}/feedback?limit=5`)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success && data.feedbacks?.length > 0) {
+            document.getElementById('feedbackHistory').innerHTML = 
+                '<div class="small text-muted mt-2">已分享：' + 
+                data.feedbacks.map(f => f.feedback_text).join('、').slice(0, 50) + '...</div>';
+        }
+    });
+}
+
+function showNotification(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `alert alert-${type === 'success' ? 'success' : 'warning'} position-fixed`;
+    toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 150px; padding: 10px 16px; border-radius: 8px;';
+    toast.innerHTML = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfileData();
+    loadFeedbackHistory();
+});
+</script>
+
+<!-- AI重新认识弹窗 -->
+<div class="modal fade" id="aiReviewModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 16px;">
+            <div class="modal-header border-0">
+                <h5 class="modal-title"><i class="fas fa-sync-alt me-2" style="color: #FFB6C1;"></i>刷新画像</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">选择刷新方式：</p>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary text-start" onclick="executeAIReview(false)">
+                        <i class="fas fa-plus-circle me-2"></i>增量更新（推荐）
+                        <small class="d-block text-muted">只处理新内容</small>
+                    </button>
+                    <button class="btn btn-outline-warning text-start" onclick="executeAIReview(true)">
+                        <i class="fas fa-redo me-2"></i>完全刷新
+                        <small class="d-block text-muted">重新分析所有内容</small>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 底部进度条 -->
+<div id="aiProgressFooter" class="ai-progress-footer">
+    <div class="progress-info">
+        <div class="progress-text" id="footerProgressText">处理中...</div>
+        <div class="progress">
+            <div class="progress-bar" id="footerProgressBar" style="width: 0%"></div>
+        </div>
+    </div>
+    <button class="btn-close-progress" onclick="hideProgressFooter()">后台运行</button>
+</div>
+
+<!-- 卡片生成器模态框 -->
+<div class="modal fade" id="cardGeneratorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 20px; border: none;">
+            <div class="modal-header border-0" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); border-radius: 20px 20px 0 0;">
+                <h5 class="modal-title text-white">
+                    <i class="fas fa-magic me-2"></i>生成成长卡片
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4" id="cardGeneratorContent">
+                <!-- 卡片生成器内容将通过JS加载 -->
+                <div class="text-center py-5">
+                    <i class="fas fa-spinner fa-spin fa-2x" style="color: #FFB6C1;"></i>
+                    <p class="text-muted mt-3">AI正在准备卡片...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

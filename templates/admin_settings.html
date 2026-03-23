@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ site_title }} - 系统设置</title>
+    <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/admin-style.css">
+    <link rel="stylesheet" href="/static/vendor/bootstrap-icons.css">
+    <style>
+        /* 内联样式 */
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .sidebar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; min-height: 100vh; position: fixed; width: 250px; z-index: 1000; transition: transform 0.3s ease; z-index: 1000; transition: transform 0.3s ease; padding-top: 20px; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+        .sidebar-header h3 { margin: 0; font-weight: bold; }
+        .nav-link { color: rgba(255, 255, 255, 0.8); padding: 12px 20px; margin: 5px 10px; border-radius: 10px; transition: all 0.3s; }
+        .nav-link:hover, .nav-link.active { color: white; background: rgba(255, 255, 255, 0.1); }
+        .nav-link i { margin-right: 10px; width: 20px; text-align: center; }
+        .main-content { margin-left: 250px; transition: margin-left 0.3s ease; transition: margin-left 0.3s ease; padding: 20px; }
+        .header { background: white; padding: 20px; border-radius: 15px; margin-bottom: 30px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); }
+        .header h1 { color: #333; margin: 0; font-weight: bold; }
+        .card { border: none; border-radius: 15px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); margin-bottom: 20px; }
+        .card-header { background: white; border-bottom: 1px solid #eee; border-radius: 15px 15px 0 0 !important; padding: 20px; }
+        .card-body { padding: 25px; }
+        .form-group { margin-bottom: 20px; }
+        .form-label { font-weight: bold; color: #333; margin-bottom: 8px; }
+        .form-control, .form-select { padding: 12px 15px; border-radius: 10px; border: 2px solid #e0e0e0; transition: all 0.3s; }
+        .form-control:focus, .form-select:focus { border-color: #667eea; box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25); }
+        .btn-save { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 30px; border-radius: 10px; border: none; font-weight: bold; transition: all 0.3s; }
+        .btn-save:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3); }
+        .logout-btn { position: absolute; bottom: 20px; left: 20px; right: 20px; }
+        .quota-badge { display: inline-block; padding: 5px 10px; border-radius: 20px; font-size: 0.9rem; font-weight: bold; margin-right: 5px; }
+        .quota-free { background: #6c757d; color: white; }
+        .quota-paid { background: #ffc107; color: #000; }
+    </style>
+<style>
+        /* 移动端响应式 */
+        .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+        .sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999; }
+        @media (max-width: 768px) { .menu-toggle { display: block; } .sidebar { transform: translateX(-100%); } .sidebar.show { transform: translateX(0); } .main-content { margin-left: 0; padding-top: 70px; } }
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <!-- 侧边栏 -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h3><i class="bi bi-shield-lock"></i> {{ site_title }}</h3>
+            <small>管理后台</small>
+        </div>
+        
+        <nav class="nav flex-column mt-4">
+            <a class="nav-link" href="/admin/dashboard">
+                <i class="bi bi-speedometer2"></i> 仪表盘
+            </a>
+            <a class="nav-link" href="/admin/clients">
+                <i class="bi bi-device-ssd"></i> 设备管理
+            </a>
+            <a class="nav-link" href="/admin/credentials">
+                <i class="bi bi-key"></i> 凭证管理
+            </a>
+            <a class="nav-link" href="/admin/tunnel-pool">
+                <i class="bi bi-hdd-network"></i> Tunnel池
+            </a>
+            <a class="nav-link" href="/admin/news-pool">
+                <i class="bi bi-newspaper"></i> 新闻池
+            </a>
+            <a class="nav-link" href="/admin/feedback">
+                <i class="bi bi-chat-dots"></i> 用户反馈
+            </a>
+            <a class="nav-link active" href="/admin/settings">
+                <i class="bi bi-gear"></i> 系统设置
+            </a>
+            <a class="nav-link" href="/admin/logout">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </a>
+        </nav>
+    </div>
+    
+    <!-- 主内容区 -->
+    <div class="main-content">
+        <div class="header">
+            <h1><i class="bi bi-gear"></i> 系统设置</h1>
+            <p>配置系统参数和管理员设置</p>
+        </div>
+        
+        <!-- 管理员设置卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-person-badge"></i> 管理员设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="adminSettingsForm" onsubmit="saveAdminSettings(event)">
+                    <div class="form-group">
+                        <label class="form-label">管理员密码</label>
+                        <input type="password" class="form-control" id="admin_password" 
+                               placeholder="留空则不修改密码" 
+                               value="{{ admin_config.admin_password }}">
+                        <small class="text-muted">用于登录管理后台的密码</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">系统标题</label>
+                        <input type="text" class="form-control" id="site_title" 
+                               value="{{ admin_config.site_title }}" required>
+                        <small class="text-muted">显示在管理界面顶部的标题</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">联系邮箱</label>
+                        <input type="email" class="form-control" id="contact_email" 
+                               value="{{ admin_config.contact_email }}">
+                        <small class="text-muted">用于系统通知和联系</small>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存管理员设置
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 服务器域名设置卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-globe"></i> 服务器域名设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="domainSettingsForm" onsubmit="saveDomainSettings(event)">
+                    <div class="form-group">
+                        <label class="form-label">公网域名</label>
+                        <div class="input-group">
+                            <span class="input-group-text">https://</span>
+                            <input type="text" class="form-control" id="server_domain" 
+                                   value="{{ public_domain }}" 
+                                   placeholder="example.com" required>
+                        </div>
+                        <small class="text-muted">
+                            客户端连接的服务器域名（不带 https:// 前缀，不带末尾斜杠）<br>
+                            <strong>当前完整地址：</strong><code id="currentUrl">{{ public_url }}</code>
+                        </small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>说明：</strong>修改后，所有客户端下次启动时将自动同步新域名。
+                    </div>
+                    
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存域名设置
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- API 配额设置卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Token 配额设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="quotaSettingsForm" onsubmit="saveQuotaSettings(event)">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">
+                                    <span class="quota-badge quota-free">免费用户</span> Token 额度
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="free_token_quota" 
+                                           value="{{ admin_config.quota_settings.free_token_quota|default(50000) }}" min="1000" required>
+                                    <span class="input-group-text">tokens</span>
+                                </div>
+                                <small class="text-muted">免费用户的总 Token 额度（约可生成 50 篇日志）</small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">
+                                    <span class="quota-badge quota-paid">付费用户</span> Token 额度
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="paid_token_quota" 
+                                           value="{{ admin_config.quota_settings.paid_token_quota|default(500000) }}" min="1000" required>
+                                    <span class="input-group-text">tokens</span>
+                                </div>
+                                <small class="text-muted">付费用户的总 Token 额度（约可生成 500 篇日志）</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>说明：</strong>Token 额度是累计的，不会每日重置。用户可在设备管理中清空已用 Token。
+                    </div>
+                    
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存配额设置
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 二维码设置卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-qr-code"></i> 二维码设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="qrcodeForm" onsubmit="saveQRCode(event)">
+                    <div class="form-group">
+                        <label class="form-label">上传二维码图片</label>
+                        <input type="file" class="form-control" id="qrCodeFile" accept="image/*" onchange="previewQRCode(event)">
+                        <small class="text-muted">选择二维码图片（建议 200x200 像素，PNG/JPG格式）</small>
+                        <div class="mt-3" id="qrCodePreviewContainer" style="display:none;">
+                            <img id="qrCodePreview" src="" alt="预览" style="width:150px;height:150px;border-radius:8px;border:1px solid #ddd;">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">或填写图片URL</label>
+                        <input type="url" class="form-control" id="qrCodeUrl" value="{{ admin_config.qr_code_url }}" placeholder="https://example.com/qrcode.png">
+                        <small class="text-muted">如果不上传文件，可填写外部图片链接</small>
+                    </div>
+                    
+                    {% if admin_config.qr_code_data or admin_config.qr_code_url %}
+                    <div class="form-group">
+                        <label class="form-label">当前二维码</label>
+                        <div>
+                            {% if admin_config.qr_code_data %}
+                            <img src="{{ admin_config.qr_code_data }}" alt="当前二维码" style="width:150px;height:150px;border-radius:8px;border:1px solid #ddd;">
+                            {% else %}
+                            <img src="{{ admin_config.qr_code_url }}" alt="当前二维码" style="width:150px;height:150px;border-radius:8px;border:1px solid #ddd;" onerror="this.style.display='none'">
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存二维码
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- 系统信息卡片 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> 系统信息</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <strong>服务器版本:</strong>
+                            <div class="text-muted">2.0-with-admin</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>API 前缀:</strong>
+                            <div class="text-muted">/czrz</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>服务端口:</strong>
+                            <div class="text-muted">8000</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <strong>数据目录:</strong>
+                            <div class="text-muted">/home/bob/projects/mumu/data</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>注册设备数:</strong>
+                            <div class="text-muted" id="clients-count">加载中...</div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>服务状态:</strong>
+                            <div>
+                                <span class="badge bg-success">运行正常</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning mt-3">
+                    <h6><i class="bi bi-exclamation-triangle"></i> 重要提示</h6>
+                    <ul class="mb-0">
+                        <li>修改管理员密码后，请妥善保管新密码</li>
+                        <li>配额设置修改后，对现有用户立即生效</li>
+                        <li>建议定期备份数据目录中的重要文件</li>
+                        <li>系统重启后，所有设置将保持不变</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/vendor/bootstrap/bootstrap-5.3.0.bundle.min.js"></script>
+    <script>
+        // 获取客户端数量
+        fetch('/czrz/health')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('clients-count').textContent = data.clients_count;
+            })
+            .catch(error => {
+                document.getElementById('clients-count').textContent = '获取失败';
+            });
+        
+        // 保存管理员设置
+        function saveAdminSettings(event) {
+            event.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('admin_password', document.getElementById('admin_password').value);
+            formData.append('site_title', document.getElementById('site_title').value);
+            formData.append('contact_email', document.getElementById('contact_email').value);
+            
+            fetch('/admin/settings/update', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('管理员设置已保存！');
+                    // 如果修改了密码，重新登录
+                    if (document.getElementById('admin_password').value) {
+                        if (confirm('密码已修改，需要重新登录。确定要跳转到登录页面吗？')) {
+                            window.location.href = '/admin';
+                        }
+                    }
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 保存配额设置
+        function saveQuotaSettings(event) {
+            event.preventDefault();
+            
+            const quotaData = {
+                free_token_quota: parseInt(document.getElementById('free_token_quota').value),
+                paid_token_quota: parseInt(document.getElementById('paid_token_quota').value),
+            };
+            
+            fetch('/admin/settings/quota', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(quotaData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Token 配额设置已保存！');
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 二维码预览
+        function previewQRCode(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('qrCodePreview').src = e.target.result;
+                    document.getElementById('qrCodePreviewContainer').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        // 保存二维码
+        function saveQRCode(event) {
+            event.preventDefault();
+            
+            const previewSrc = document.getElementById('qrCodePreview').src;
+            const urlValue = document.getElementById('qrCodeUrl').value.trim();
+            
+            // 如果有新上传的图片（不是空的data URL）
+            let qrCodeData = '';
+            if (previewSrc && previewSrc.startsWith('data:image')) {
+                qrCodeData = previewSrc;
+            }
+            
+            const data = {
+                qr_code_data: qrCodeData,
+                qr_code_url: urlValue
+            };
+            
+            fetch('/admin/settings/qrcode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('二维码已保存！');
+                    location.reload();
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 保存域名设置
+        function saveDomainSettings(event) {
+            event.preventDefault();
+            
+            const domainInput = document.getElementById('server_domain').value.trim();
+            
+            // 前端规范化
+            let domain = domainInput
+                .replace(/^(https?:\/\/)/, '')
+                .replace(/\/+$/, '')
+                .toLowerCase();
+            
+            if (!domain) {
+                alert('域名不能为空');
+                return;
+            }
+            
+            if (!confirm(`确定要将域名修改为: ${domain} ？\n\n所有客户端下次启动时将自动同步新域名。`)) {
+                return;
+            }
+            
+            fetch('/admin/settings/domain', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({server_domain: domain})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('域名已更新: ' + data.server_domain);
+                    document.getElementById('server_domain').value = data.server_domain;
+                    document.getElementById('currentUrl').textContent = data.server_url;
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+        
+        // 自动刷新页面（每60秒）
+        setTimeout(() => {
+            location.reload();
+        }, 60000);
+        
+        // 移动端侧边栏切换
+        function toggleSidebar() {
+            document.querySelector('.sidebar').classList.toggle('show');
+            document.querySelector('.sidebar-overlay').classList.toggle('show');
+        }
+    </script>
+</body>
+</html>
