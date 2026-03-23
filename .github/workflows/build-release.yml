@@ -48,7 +48,7 @@ jobs:
       - name: Download cloudflared (macOS)
         if: runner.os == 'macOS'
         run: |
-          wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -O cloudflared
+          curl -sL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64 -o cloudflared
           chmod +x cloudflared
 
       - name: Build with PyInstaller (Windows)
