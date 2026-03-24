@@ -28,6 +28,7 @@ from models import (
     SpeechRecord,
     PhotoTag,
     Badge,
+    ProfileFeedback,
 )
 
 
@@ -96,6 +97,7 @@ def get_user_engine(client_id: str):
             SpeechRecord.__table__,
             PhotoTag.__table__,
             Badge.__table__,
+            ProfileFeedback.__table__,
         ],
     )
 

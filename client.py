@@ -5747,33 +5747,36 @@ def ai_ask():
 @app.route("/api/ai/feedback", methods=["POST"])
 @require_local_or_password
 def ai_feedback():
-    """提交AI回答反馈"""
+    """提交画像反馈到服务端"""
     try:
         ai_config = CLIENT_CONFIG.get("ai_service", {})
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
         child_id = ai_config.get("child_id", "")
+        if not child_id:
+            return jsonify({"success": False, "message": "未配置宝宝ID"})
 
-        # 通过服务端代理访问健康AI
         server_url = USER_CONFIG.get("server_url", "")
         if not server_url:
             return jsonify({"success": False, "message": "未配置服务端地址"})
 
         data = request.get_json() or {}
 
+        # 提取反馈文本
+        feedback_text = data.get("answer", "") or data.get("feedback_text", "") or data.get("user_correction", "")
+        if not feedback_text:
+            return jsonify({"success": False, "message": "反馈内容不能为空"})
+
         payload = {
-            "child_id": child_id,
-            "question": data.get("question", ""),
-            "answer": data.get("answer", ""),
-            "is_answer_correct": data.get("is_correct", True),
-            "user_correction": data.get("user_correction", ""),
-            "related_photo_path": data.get("photo_filename", ""),
+            "client_id": child_id,
+            "feedback_text": feedback_text,
+            "feedback_type": data.get("feedback_type", "user_input"),
         }
 
         response = public_client.signed_request(
             "POST",
-            f"{server_url}/api/ai/ai/interaction/save",
+            f"{server_url}/czrz/client/profile-feedback",
             json=payload,
             timeout=10,
         )
@@ -6733,38 +6736,102 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                 print(f"[DEBUG] 强制模式：{force}")
                 print(f"{'=' * 60}")
 
-                # 检查是否已有数据（非强制模式下跳过）
+                # 获取当天所有媒体（照片+视频）
+                all_media = pm.get_photos_by_date(date)
+                photos = [p for p in all_media if not p.get("is_video", False)]
+                videos = [p for p in all_media if p.get("is_video", False)]
+                
+                photo_paths = [p.get("path") for p in photos if p.get("path")]
+                video_paths = [p.get("path") for p in videos if p.get("path")]
+
+                # 增量更新逻辑检查
+                needs_process = force  # 强制模式直接处理
+                needs_analyze = False  # 是否需要分析新照片
+                needs_video_process = False  # 是否需要处理新视频
+                needs_regenerate = False  # 是否需要重新生成精选/日志
+                unprocessed_photos = []  # 未处理的照片列表
+                unprocessed_videos = []  # 未处理的视频列表
+
                 if not force:
-                    has_photo = check_has_featured_photo(date, child_id)
+                    # 1. 获取已处理的照片和视频
+                    processed_photos = get_processed_photos(date, child_id)
+                    processed_videos = get_processed_videos(date, child_id)
+                    # 从字典列表中提取 "date:filename" 格式的 key
+                    processed_photo_keys = set()
+                    for p in processed_photos:
+                        if isinstance(p, dict):
+                            path = p.get("path", "")
+                            processed_photo_keys.add(f"{date}:{Path(path).name}")
+                        elif isinstance(p, str):
+                            processed_photo_keys.add(p)
+                    processed_video_keys = set(processed_videos)
+                    
+                    # 2. 找出未处理的照片
+                    for photo_path in photo_paths:
+                        key = f"{date}:{Path(photo_path).name}"
+                        if key not in processed_photo_keys:
+                            unprocessed_photos.append(photo_path)
+                    
+                    # 3. 找出未处理的视频
+                    for video_path in video_paths:
+                        key = f"{date}:{Path(video_path).name}"
+                        if key not in processed_video_keys:
+                            unprocessed_videos.append(video_path)
+                    
+                    # 4. 检查其他变量
+                    has_new_feedback = check_new_feedback(date, child_id)
+                    has_new_health = check_new_health_metrics(date, child_id)
+                    has_featured = check_has_featured_photo(date, child_id)
                     has_log = check_has_log(date, child_id)
-                    if has_photo and has_log:
+                    
+                    print(f"[DEBUG] 增量检查：未处理照片={len(unprocessed_photos)}, 未处理视频={len(unprocessed_videos)}, 新反馈={has_new_feedback}, 新健康={has_new_health}")
+                    print(f"[DEBUG] 已有数据：精选={has_featured}, 日志={has_log}")
+                    
+                    # 5. 判断是否需要处理
+                    if unprocessed_photos:
+                        # 有未处理照片：分析新照片 + 重新生成
+                        needs_process = True
+                        needs_analyze = True
+                        needs_regenerate = True
+                        print(f"[DEBUG] 需要处理：有 {len(unprocessed_photos)} 张未处理照片")
+                    elif (not has_featured or not has_log) and processed_photos:
+                        # 精选或日志缺失，但照片已处理：基于已有描述重新生成
+                        needs_process = True
+                        needs_analyze = False
+                        needs_regenerate = True
+                        print(f"[DEBUG] 需要处理：精选或日志缺失，基于已有描述重新生成")
+                    elif has_new_feedback or has_new_health:
+                        # 有反馈或健康指标变化：重新生成（考虑新上下文）
+                        needs_process = True
+                        needs_analyze = False
+                        needs_regenerate = True
+                        print(f"[DEBUG] 需要处理：有新反馈或健康指标")
+                    elif unprocessed_videos:
+                        # 只有新视频：只处理视频，不重新生成精选/日志
+                        needs_process = True
+                        needs_analyze = False
+                        needs_video_process = True
+                        needs_regenerate = False
+                        print(f"[DEBUG] 需要处理：有 {len(unprocessed_videos)} 个未处理视频（仅处理视频）")
+                    else:
+                        # 什么都不变，跳过
+                        needs_process = False
                         skipped_count += 1
-                        print(f"[DEBUG] 跳过 {date}：已有精选照片和日志")
-                        print(f"  - has_photo={has_photo}, has_log={has_log}")
+                        print(f"[DEBUG] 跳过 {date}：无变化")
                         AI_REVIEW_TASKS[task_id]["details"].append(
                             {"date": date, "success": True, "message": "已有数据，跳过"}
                         )
                         AI_REVIEW_TASKS[task_id]["skipped"] = skipped_count
                         AI_REVIEW_TASKS[task_id]["processed"] = i + 1
                         continue
+                else:
+                    # 强制模式：处理所有
+                    unprocessed_photos = photo_paths
+                    unprocessed_videos = video_paths
+                    needs_analyze = True
+                    needs_video_process = True
+                    needs_regenerate = True
 
-                photos = pm.get_photos_by_date(date)
-                if not photos:
-                    print(f"[DEBUG] {date} 无照片数据")
-                    AI_REVIEW_TASKS[task_id]["details"].append(
-                        {"date": date, "success": False, "message": "无照片"}
-                    )
-                    AI_REVIEW_TASKS[task_id]["processed"] = i + 1
-                    continue
-
-                needs_sync = False
-
-                # 过滤掉视频文件，只保留照片
-                photo_paths = [
-                    p.get("path")
-                    for p in photos
-                    if p.get("path") and not p.get("is_video", False)
-                ]
                 if not photo_paths:
                     AI_REVIEW_TASKS[task_id]["details"].append(
                         {"date": date, "success": False, "message": "无有效照片路径"}
@@ -6772,93 +6839,163 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                     AI_REVIEW_TASKS[task_id]["processed"] = i + 1
                     continue
 
-                # 步骤1：AI分析所有照片（一次调用完成分析和选图）
+                # 步骤1：AI分析照片（根据 needs_analyze 决定分析哪些照片）
                 ai_result = None
-                try:
-                    from select_best_photo import ai_select
-                    import time
+                analysis_result = None
+                
+                if needs_analyze and unprocessed_photos:
+                    # 只分析未处理的照片
+                    try:
+                        from select_best_photo import ai_select
+                        import time
 
-                    time.sleep(3)
+                        time.sleep(3)
 
-                    ai_result = ai_select(
-                        photo_paths[:20], select_n=1, child_id=child_id
-                    )
-
-                    # 【调试】输出 AI 返回结果
-                    print(f"[DEBUG] AI 返回结果:")
-                    print(f"  - selected: {len(ai_result.get('selected', []))}张")
-                    print(f"  - photos 字段：{len(ai_result.get('photos', {}))}条")
-                    print(f"  - blurry: {len(ai_result.get('blurry', []))}张")
-                    print(f"  - no_baby: {len(ai_result.get('no_baby', []))}张")
-                    print(f"  - duplicates: {len(ai_result.get('duplicates', []))}组")
-                    if ai_result.get("photos"):
-                        print(
-                            f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                        ai_result = ai_select(
+                            unprocessed_photos[:20], select_n=1, child_id=child_id
                         )
 
-                    blurry_count = len(ai_result.get("blurry", []))
-                    no_baby_count = len(ai_result.get("no_baby", []))
-                    dup_groups = ai_result.get("duplicates", [])
-                    dup_count = sum(len(g) - 1 for g in dup_groups if len(g) > 1)
+                        # 【调试】输出 AI 返回结果
+                        print(f"[DEBUG] AI 返回结果:")
+                        print(f"  - selected: {len(ai_result.get('selected', []))}张")
+                        print(f"  - photos 字段：{len(ai_result.get('photos', {}))}条")
+                        print(f"  - blurry: {len(ai_result.get('blurry', []))}张")
+                        print(f"  - no_baby: {len(ai_result.get('no_baby', []))}张")
+                        print(f"  - duplicates: {len(ai_result.get('duplicates', []))}组")
+                        if ai_result.get("photos"):
+                            print(
+                                f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                            )
 
-                    print(
-                        f"[AI回顾] {date}: 模糊{blurry_count}张, 无宝宝{no_baby_count}张, 重复{dup_count}张"
-                    )
+                        blurry_count = len(ai_result.get("blurry", []))
+                        no_baby_count = len(ai_result.get("no_baby", []))
+                        dup_groups = ai_result.get("duplicates", [])
+                        dup_count = sum(len(g) - 1 for g in dup_groups if len(g) > 1)
 
-                except Exception as e:
-                    error_msg = str(e)
-                    if "Token配额" in error_msg or "ALL_MODELS_EXHAUSTED" in error_msg:
-                        AI_REVIEW_TASKS[task_id]["completed"] = True
-                        AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
-                        if "ALL_MODELS_EXHAUSTED:" in error_msg:
-                            friendly_msg = error_msg.split("ALL_MODELS_EXHAUSTED:")[1]
-                        else:
-                            friendly_msg = error_msg
-                        AI_REVIEW_TASKS[task_id]["message"] = friendly_msg
-                        report_error("ai_review_quota", friendly_msg, f"date={date}")
-                        return
-                    print(f"[AI回顾] AI分析失败 {date}: {e}")
-                    report_error("ai_review_failed", f"AI分析失败 {date}", error_msg)
-                    AI_REVIEW_TASKS[task_id]["details"].append(
-                        {"date": date, "success": False, "message": f"AI分析失败: {e}"}
-                    )
-                    AI_REVIEW_TASKS[task_id]["processed"] = i + 1
-                    continue
+                        print(
+                            f"[AI回顾] {date}: 模糊{blurry_count}张, 无宝宝{no_baby_count}张, 重复{dup_count}张"
+                        )
 
-                # 步骤2：过滤有效照片并保存描述
+                    except Exception as e:
+                        error_msg = str(e)
+                        if "Token配额" in error_msg or "ALL_MODELS_EXHAUSTED" in error_msg:
+                            AI_REVIEW_TASKS[task_id]["completed"] = True
+                            AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
+                            if "ALL_MODELS_EXHAUSTED:" in error_msg:
+                                friendly_msg = error_msg.split("ALL_MODELS_EXHAUSTED:")[1]
+                            else:
+                                friendly_msg = error_msg
+                            AI_REVIEW_TASKS[task_id]["message"] = friendly_msg
+                            report_error("ai_review_quota", friendly_msg, f"date={date}")
+                            return
+                        print(f"[AI回顾] AI分析失败 {date}: {e}")
+                        report_error("ai_review_failed", f"AI分析失败 {date}", error_msg)
+                        AI_REVIEW_TASKS[task_id]["details"].append(
+                            {"date": date, "success": False, "message": f"AI分析失败: {e}"}
+                        )
+                        AI_REVIEW_TASKS[task_id]["processed"] = i + 1
+                        continue
+
+                # 步骤2：分析新照片并保存描述（如果有新照片）
+                if needs_analyze and ai_result:
+                    try:
+                        from select_best_photo import analyze_all_photos
+
+                        # 分析新照片并保存到数据库
+                        analyze_all_photos(
+                            unprocessed_photos,  # 只分析新照片
+                            max_photos=20,
+                            client_id=child_id,
+                            date=date,
+                            ai_result=ai_result,
+                        )
+                        print(f"[DEBUG] 已保存 {len(unprocessed_photos)} 张新照片描述到数据库")
+                    except Exception as e:
+                        print(f"[AI回顾] 保存新照片描述失败 {date}: {e}")
+
+                # 步骤3：从数据库获取当天所有照片描述（用于生成日志）
+                analysis_result = None
                 try:
-                    from select_best_photo import analyze_all_photos
-
-                    analysis_result = analyze_all_photos(
-                        photo_paths,
-                        max_photos=20,
-                        client_id=child_id,
-                        date=date,
-                        ai_result=ai_result,
-                    )
-                    # 【调试】输出分析结果
-                    print(f"[DEBUG] analyze_all_photos 结果:")
-                    print(
-                        f"  - valid_photos: {len(analysis_result.get('photos', []))}张"
-                    )
-                    print(
-                        f"  - combined_summary: {analysis_result.get('combined_summary', '')[:100]}"
-                    )
-                    valid_count = len(analysis_result.get("photos", []))
-                    if valid_count > 0:
+                    print(f"[DEBUG] 从数据库获取当天所有照片描述")
+                    all_descriptions = get_processed_photos(date, child_id)
+                    
+                    if all_descriptions:
+                        # 构建 analysis_result 格式
+                        valid_photos = []
+                        all_scenes = set()
+                        all_activities = set()
+                        baby_count = 0
+                        scenery_count = 0
+                        
+                        for desc in all_descriptions:
+                            photo_info = {
+                                "path": desc.get("path", ""),
+                                "description": desc.get("description", ""),
+                                "has_baby": desc.get("has_baby", True),
+                                "scene": desc.get("scene", ""),
+                                "activity": desc.get("activity", ""),
+                            }
+                            valid_photos.append(photo_info)
+                            
+                            if photo_info["has_baby"]:
+                                baby_count += 1
+                            else:
+                                scenery_count += 1
+                            if photo_info["scene"]:
+                                all_scenes.add(photo_info["scene"])
+                            if photo_info["activity"]:
+                                all_activities.add(photo_info["activity"])
+                        
+                        # 构建综合摘要
+                        combined_parts = []
+                        if baby_count > 0:
+                            combined_parts.append(f"共{baby_count}张宝宝照片")
+                        if scenery_count > 0:
+                            combined_parts.append(f"{scenery_count}张场景照片")
+                        
+                        descriptions = [p["description"] for p in valid_photos if p["description"]]
+                        if descriptions:
+                            combined_parts.append("活动：" + "、".join(descriptions[:10]))
+                        
+                        combined_summary = (
+                            "。".join(combined_parts) if combined_parts else "照片分析完成"
+                        )
+                        
+                        analysis_result = {
+                            "photos": valid_photos,
+                            "scenes": list(all_scenes),
+                            "activities": list(all_activities),
+                            "baby_photos": baby_count,
+                            "scenery_photos": scenery_count,
+                            "combined_summary": combined_summary,
+                        }
+                        print(f"[DEBUG] 从数据库获取到 {len(valid_photos)} 条照片描述")
+                        
                         AI_REVIEW_TASKS[task_id]["details"].append(
                             {
                                 "date": date,
                                 "success": True,
-                                "message": f"有效照片{valid_count}张",
+                                "message": f"有效照片{len(valid_photos)}张",
                             }
                         )
                         needs_sync = True
+                    else:
+                        # 数据库中没有照片描述
+                        analysis_result = {
+                            "photos": [],
+                            "scenes": [],
+                            "activities": [],
+                            "baby_photos": 0,
+                            "scenery_photos": 0,
+                            "combined_summary": "",
+                        }
+                        print(f"[DEBUG] 数据库中没有照片描述")
                 except Exception as e:
-                    print(f"[AI回顾] 保存照片描述失败 {date}: {e}")
+                    print(f"[AI回顾] 获取照片描述失败 {date}: {e}")
+                    analysis_result = None
 
-                # 步骤3：保存精选照片
-                if force or not check_has_featured_photo(date, child_id):
+                # 步骤4：保存精选照片（根据 needs_regenerate 决定）
+                if needs_regenerate and (force or not check_has_featured_photo(date, child_id)):
                     selected = ai_result.get("selected", [])
                     reasons = ai_result.get("reasons", [])
 
@@ -6896,13 +7033,10 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                         {"date": date, "success": True, "message": "已有精选照片"}
                     )
 
-                # 步骤4：处理视频语音
-                try:
-                    all_media = photos
-                    videos = [m for m in all_media if m.get("is_video", False)]
-
-                    if videos:
-                        print(f"[AI回顾] {date}: 找到 {len(videos)} 个视频")
+                # 步骤5：处理视频语音（根据 needs_video_process 决定）
+                if needs_video_process and unprocessed_videos:
+                    try:
+                        print(f"[AI回顾] {date}: 找到 {len(unprocessed_videos)} 个未处理视频")
                         from video_audio_processor import (
                             process_video_speech,
                             analyze_language_ability,
@@ -6913,8 +7047,8 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                         age_months = baby_info.get("age_months", 0)
 
                         video_count = 0
-                        for video in videos[:5]:
-                            video_path = Path(video.get("path", ""))
+                        for video_path_str in unprocessed_videos[:5]:
+                            video_path = Path(video_path_str)
                             if not video_path.exists():
                                 continue
 
@@ -6968,11 +7102,11 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                                 }
                             )
 
-                except Exception as e:
-                    print(f"[AI回顾] 视频处理失败 {date}: {e}")
+                    except Exception as e:
+                        print(f"[AI回顾] 视频处理失败 {date}: {e}")
 
-                # 步骤5：生成日志（用有效照片的描述）
-                if force or not check_has_log(date, child_id):
+                # 步骤6：生成日志（根据 needs_regenerate 决定）
+                if needs_regenerate and (force or not check_has_log(date, child_id)):
                     valid_photos = analysis_result.get("photos", [])
                     photo_descs = [
                         p.get("description", "")
@@ -7035,7 +7169,17 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
             AI_REVIEW_TASKS[task_id]["processed"] = i + 1
 
         AI_REVIEW_TASKS[task_id]["completed"] = True
-        if skipped_count > 0:
+        
+        # 判断是否有实际变化
+        has_changes = success_count > 0 or any(
+            d.get("success") and "跳过" not in d.get("message", "")
+            for d in AI_REVIEW_TASKS[task_id].get("details", [])
+        )
+        AI_REVIEW_TASKS[task_id]["has_changes"] = has_changes
+        
+        if not has_changes:
+            AI_REVIEW_TASKS[task_id]["message"] = "完全无变化"
+        elif skipped_count > 0:
             AI_REVIEW_TASKS[task_id]["message"] = (
                 f"完成！处理 {success_count} 天，跳过 {skipped_count} 天已有数据"
             )
@@ -7043,6 +7187,21 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
             AI_REVIEW_TASKS[task_id]["message"] = (
                 f"完成！成功处理 {success_count}/{len(dates_to_process)} 天"
             )
+
+        # 只有在有变化时才触发同步到健康AI
+        if has_changes:
+            try:
+                server_url = USER_CONFIG.get("server_url", "")
+                if server_url:
+                    # 触发服务端同步
+                    httpx.post(
+                        f"{server_url}/czrz/ai/sync-trigger",
+                        headers={"User-Agent": "CZRZ-Client"},
+                        timeout=30,
+                    )
+                    print("[AI回顾] 已触发服务端同步到健康AI")
+            except Exception as e:
+                print(f"[AI回顾] 触发服务端同步失败: {e}")
 
     except Exception as e:
         AI_REVIEW_TASKS[task_id]["completed"] = True
@@ -7126,6 +7285,78 @@ def check_has_log(date: str, client_id: str) -> bool:
     except Exception as e:
         print(f"[AI回顾] 检查服务端日志失败: {e}")
     return False
+
+
+def get_processed_photos(date: str, client_id: str) -> list:
+    """获取某天已处理的照片列表（从服务端）"""
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/photo/descriptions",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            if result.get("success"):
+                return result.get("photos", [])
+    except Exception as e:
+        print(f"[AI回顾] 获取已处理照片失败: {e}")
+    return []
+
+
+def check_new_feedback(date: str, client_id: str) -> bool:
+    """检查某天是否有新的画像反馈"""
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/feedback/check",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            if result.get("success"):
+                return result.get("has_new", False)
+    except Exception as e:
+        print(f"[AI回顾] 检查新反馈失败: {e}")
+    return False
+
+
+def check_new_health_metrics(date: str, client_id: str) -> bool:
+    """检查某天是否有新的健康指标"""
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/health/check",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            if result.get("success"):
+                return result.get("has_new", False)
+    except Exception as e:
+        print(f"[AI回顾] 检查新健康指标失败: {e}")
+    return False
+
+
+def get_processed_videos(date: str, client_id: str) -> list:
+    """获取某天已处理的视频列表（从服务端）"""
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/video/processed",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            result = resp.json()
+            if result.get("success"):
+                return result.get("videos", [])
+    except Exception as e:
+        print(f"[AI回顾] 获取已处理视频失败: {e}")
+    return []
 
 
 def select_best_photo_ai(photo_paths: list, max_photos: int = 20) -> tuple:

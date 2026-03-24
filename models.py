@@ -308,3 +308,16 @@ class Badge(SQLModel, table=True):
     count: int = Field(default=1)  # 累计次数（用于数量类勋章）
 
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+class ProfileFeedback(SQLModel, table=True):
+    """画像反馈：家长对画像的修正建议"""
+
+    __tablename__ = "profile_feedbacks"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    feedback_text: str = Field(max_length=2000)
+    feedback_type: str = Field(default="user_input", max_length=50)  # user_input, correction
+    applied: bool = Field(default=False)
+    synced: bool = Field(default=False)  # 是否已同步到健康AI
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
