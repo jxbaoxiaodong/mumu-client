@@ -980,98 +980,100 @@ def analyze_all_photos(
             "combined_summary": "没有图片文件",
         }
 
-    if ai_result and ai_result.get("photos"):
-        photos_dict = ai_result.get("photos", {})
-        blurry_filenames = set(ai_result.get("blurry_filenames", []))
-        no_baby_filenames = set(ai_result.get("no_baby_filenames", []))
-        duplicate_groups = ai_result.get("duplicate_filenames", [])
-
-        dup_to_remove = set()
-        for group in duplicate_groups:
-            if len(group) > 1:
-                for filename in group[1:]:
-                    dup_to_remove.add(filename)
-
-        valid_photos = []
-        all_scenes = set()
-        all_activities = set()
-        baby_count = 0
-        scenery_count = 0
-
-        for path in photo_paths[:max_photos]:
-            filename = os.path.basename(path)
-
-            if filename in blurry_filenames:
-                continue
-            if filename in no_baby_filenames:
-                continue
-            if filename in dup_to_remove:
-                continue
-
-            photo_info = photos_dict.get(filename, {})
-            if not photo_info:
-                continue
-
-            description = photo_info.get("description", "")
-            has_baby = photo_info.get("has_baby", True)
-            scene = photo_info.get("scene", "")
-            activity = photo_info.get("activity", "")
-
-            valid_photos.append(
-                {
-                    "path": path,
-                    "description": description,
-                    "has_baby": has_baby,
-                    "scene": scene,
-                    "activity": activity,
-                }
-            )
-
-            if has_baby:
-                baby_count += 1
-            else:
-                scenery_count += 1
-            if scene:
-                all_scenes.add(scene)
-            if activity:
-                all_activities.add(activity)
-
-        combined_parts = []
-        if baby_count > 0:
-            combined_parts.append(f"共{baby_count}张宝宝照片")
-        if scenery_count > 0:
-            combined_parts.append(f"{scenery_count}张场景照片")
-
-        descriptions = [p["description"] for p in valid_photos if p["description"]]
-        if descriptions:
-            combined_parts.append("活动：" + "、".join(descriptions[:10]))
-
-        combined_summary = (
-            "。".join(combined_parts) if combined_parts else "照片分析完成"
-        )
-
-        if client_id and date and valid_photos:
-            try:
-                save_photo_descriptions_to_server(client_id, date, valid_photos)
-            except Exception as e:
-                print(f"[WARN] 保存照片描述失败: {e}")
-
+    if not ai_result or not ai_result.get("photos"):
+        print(f"[WARN] analyze_all_photos: ai_result 为空或没有 photos 字段，跳过保存")
         return {
-            "photos": valid_photos,
-            "scenes": list(all_scenes),
-            "activities": list(all_activities),
-            "baby_photos": baby_count,
-            "scenery_photos": scenery_count,
-            "combined_summary": combined_summary,
+            "photos": [],
+            "scenes": [],
+            "activities": [],
+            "baby_photos": 0,
+            "scenery_photos": 0,
+            "combined_summary": "无 AI 分析结果",
         }
 
+    photos_dict = ai_result.get("photos", {})
+    print(f"[DEBUG] analyze_all_photos: ai_result.photos 有 {len(photos_dict)} 条记录")
+    blurry_filenames = set(ai_result.get("blurry_filenames", []))
+    no_baby_filenames = set(ai_result.get("no_baby_filenames", []))
+    duplicate_groups = ai_result.get("duplicate_filenames", [])
+
+    dup_to_remove = set()
+    for group in duplicate_groups:
+        if len(group) > 1:
+            for filename in group[1:]:
+                dup_to_remove.add(filename)
+
+    valid_photos = []
+    all_scenes = set()
+    all_activities = set()
+    baby_count = 0
+    scenery_count = 0
+
+    for path in photo_paths[:max_photos]:
+        filename = os.path.basename(path)
+
+        if filename in blurry_filenames:
+            continue
+        if filename in no_baby_filenames:
+            continue
+        if filename in dup_to_remove:
+            continue
+
+        photo_info = photos_dict.get(filename, {})
+        if not photo_info:
+            continue
+
+        description = photo_info.get("description", "")
+        has_baby = photo_info.get("has_baby", True)
+        scene = photo_info.get("scene", "")
+        activity = photo_info.get("activity", "")
+
+        valid_photos.append(
+            {
+                "path": path,
+                "description": description,
+                "has_baby": has_baby,
+                "scene": scene,
+                "activity": activity,
+            }
+        )
+
+        if has_baby:
+            baby_count += 1
+        else:
+            scenery_count += 1
+        if scene:
+            all_scenes.add(scene)
+        if activity:
+            all_activities.add(activity)
+
+    combined_parts = []
+    if baby_count > 0:
+        combined_parts.append(f"共{baby_count}张宝宝照片")
+    if scenery_count > 0:
+        combined_parts.append(f"{scenery_count}张场景照片")
+
+    descriptions = [p["description"] for p in valid_photos if p["description"]]
+    if descriptions:
+        combined_parts.append("活动：" + "、".join(descriptions[:10]))
+
+    combined_summary = (
+        "。".join(combined_parts) if combined_parts else "照片分析完成"
+    )
+
+    if client_id and date and valid_photos:
+        try:
+            save_photo_descriptions_to_server(client_id, date, valid_photos)
+        except Exception as e:
+            print(f"[WARN] 保存照片描述失败: {e}")
+
     return {
-        "photos": [],
-        "scenes": [],
-        "activities": [],
-        "baby_photos": 0,
-        "scenery_photos": 0,
-        "combined_summary": "无 AI 分析结果",
+        "photos": valid_photos,
+        "scenes": list(all_scenes),
+        "activities": list(all_activities),
+        "baby_photos": baby_count,
+        "scenery_photos": scenery_count,
+        "combined_summary": combined_summary,
     }
 
 

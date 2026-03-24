@@ -7054,6 +7054,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
 
                             try:
                                 import time
+                                import hashlib
 
                                 time.sleep(3)
                                 speech_result = process_video_speech(
@@ -7069,6 +7070,17 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                                         baby_name=baby_name,
                                         age_months=age_months,
                                     )
+                                    
+                                    # 计算视频文件 hash
+                                    video_hash = ""
+                                    try:
+                                        hasher = hashlib.md5()
+                                        with open(video_path, "rb") as f:
+                                            for chunk in iter(lambda: f.read(8192), b""):
+                                                hasher.update(chunk)
+                                        video_hash = hasher.hexdigest()
+                                    except Exception as e:
+                                        print(f"[AI回顾] 计算视频hash失败: {e}")
 
                                     upload_resp = public_client.signed_request(
                                         "POST",
@@ -7077,6 +7089,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                                             "client_id": child_id,
                                             "date": date,
                                             "video_path": str(video_path),
+                                            "file_hash": video_hash,
                                             "transcript": speech_result["transcript"],
                                             "duration": speech_result.get(
                                                 "duration", 0
