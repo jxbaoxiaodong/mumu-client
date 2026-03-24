@@ -6704,6 +6704,9 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
 
         AI_REVIEW_TASKS[task_id]["total"] = len(dates_to_process)
         AI_REVIEW_TASKS[task_id]["message"] = f"发现 {len(dates_to_process)} 天需要处理"
+        
+        # 注意：状态文件需要手动维护，避免自动初始化覆盖已有状态
+        # 如需初始化，请手动运行：_init_sync_state_for_processed_dates(child_id, dates_to_process)
 
         if not dates_to_process:
             AI_REVIEW_TASKS[task_id]["completed"] = True
@@ -6779,13 +6782,28 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                             unprocessed_videos.append(video_path)
                     
                     # 4. 检查其他变量
+                    print(f"[DEBUG-MAIN] ========== 开始增量检查: {date} ==========")
+                    print(f"[DEBUG-MAIN] child_id={child_id}")
+                    print(f"[DEBUG-MAIN] 状态文件路径: {_get_input_sync_state_file()}")
+                    
                     has_new_feedback = check_new_feedback(date, child_id)
                     has_new_health = check_new_health_metrics(date, child_id)
                     has_featured = check_has_featured_photo(date, child_id)
                     has_log = check_has_log(date, child_id)
                     
-                    print(f"[DEBUG] 增量检查：未处理照片={len(unprocessed_photos)}, 未处理视频={len(unprocessed_videos)}, 新反馈={has_new_feedback}, 新健康={has_new_health}")
-                    print(f"[DEBUG] 已有数据：精选={has_featured}, 日志={has_log}")
+                    # 检查所有画像输入的变更
+                    has_tag_changes = check_tag_changes(date, child_id)
+                    has_desc_changes = check_photo_description_changes(date, child_id)
+                    has_speech_changes = check_speech_changes(date, child_id)
+                    has_log_changes = check_log_changes(date, child_id)
+                    has_any_input_changes = has_tag_changes or has_desc_changes or has_speech_changes or has_log_changes
+                    
+                    print(f"[DEBUG-MAIN] 增量检查结果：")
+                    print(f"[DEBUG-MAIN]   - 未处理照片={len(unprocessed_photos)}, 未处理视频={len(unprocessed_videos)}")
+                    print(f"[DEBUG-MAIN]   - 新反馈={has_new_feedback}, 新健康={has_new_health}")
+                    print(f"[DEBUG-MAIN]   - 输入变更：标签={has_tag_changes}, 描述={has_desc_changes}, 语音={has_speech_changes}, 日志={has_log_changes}")
+                    print(f"[DEBUG-MAIN]   - 已有数据：精选={has_featured}, 日志={has_log}")
+                    print(f"[DEBUG-MAIN]   - has_any_input_changes={has_any_input_changes}")
                     
                     # 5. 判断是否需要处理
                     if unprocessed_photos:
@@ -6793,31 +6811,43 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                         needs_process = True
                         needs_analyze = True
                         needs_regenerate = True
-                        print(f"[DEBUG] 需要处理：有 {len(unprocessed_photos)} 张未处理照片")
+                        print(f"[DEBUG-MAIN] ★★★ 需要处理 {date}：有 {len(unprocessed_photos)} 张未处理照片 ★★★")
                     elif (not has_featured or not has_log) and processed_photos:
                         # 精选或日志缺失，但照片已处理：基于已有描述重新生成
                         needs_process = True
                         needs_analyze = False
                         needs_regenerate = True
-                        print(f"[DEBUG] 需要处理：精选或日志缺失，基于已有描述重新生成")
+                        print(f"[DEBUG-MAIN] ★★★ 需要处理 {date}：精选或日志缺失 ★★★")
+                        print(f"[DEBUG-MAIN]   原因: 精选={has_featured}, 日志={has_log}, 已处理照片数={len(processed_photos)}")
                     elif has_new_feedback or has_new_health:
                         # 有反馈或健康指标变化：重新生成（考虑新上下文）
                         needs_process = True
                         needs_analyze = False
                         needs_regenerate = True
-                        print(f"[DEBUG] 需要处理：有新反馈或健康指标")
+                        print(f"[DEBUG-MAIN] ★★★ 需要处理 {date}：有新反馈或健康指标 ★★★")
+                        print(f"[DEBUG-MAIN]   原因: 新反馈={has_new_feedback}, 新健康={has_new_health}")
+                    elif has_any_input_changes:
+                        # 画像输入变化：重新生成
+                        needs_process = True
+                        needs_analyze = False
+                        needs_regenerate = True
+                        print(f"[DEBUG-MAIN] ★★★ 需要处理 {date}：画像输入有变化 ★★★")
+                        print(f"[DEBUG-MAIN]   原因: 标签={has_tag_changes}, 描述={has_desc_changes}, 语音={has_speech_changes}, 日志={has_log_changes}")
                     elif unprocessed_videos:
                         # 只有新视频：只处理视频，不重新生成精选/日志
                         needs_process = True
                         needs_analyze = False
                         needs_video_process = True
                         needs_regenerate = False
-                        print(f"[DEBUG] 需要处理：有 {len(unprocessed_videos)} 个未处理视频（仅处理视频）")
+                        print(f"[DEBUG-MAIN] ★★★ 需要处理 {date}：有未处理视频 ★★★")
+                        print(f"[DEBUG-MAIN]   原因: {len(unprocessed_videos)} 个未处理视频（仅处理视频）")
                     else:
                         # 什么都不变，跳过
                         needs_process = False
                         skipped_count += 1
-                        print(f"[DEBUG] 跳过 {date}：无变化")
+                        print(f"[DEBUG-MAIN] ★★★ 跳过 {date}：无变化 ★★★")
+                        print(f"[DEBUG-MAIN]   原因: 无未处理照片/视频, 无新反馈/健康数据, 无输入变更")
+                        print(f"[DEBUG-MAIN]   条件检查: 精选={has_featured}, 日志={has_log}")
                         AI_REVIEW_TASKS[task_id]["details"].append(
                             {"date": date, "success": True, "message": "已有数据，跳过"}
                         )
@@ -7057,9 +7087,11 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                                 import hashlib
 
                                 time.sleep(3)
+                                print(f"[DEBUG-VIDEO] 开始处理视频: {video_path.name}")
                                 speech_result = process_video_speech(
                                     video_path, max_duration=60
                                 )
+                                print(f"[DEBUG-VIDEO] speech_result: success={speech_result.get('success')}, has_transcript={bool(speech_result.get('transcript'))}, duration={speech_result.get('duration')}, error={speech_result.get('error', 'N/A')}")
 
                                 if speech_result.get("success") and speech_result.get(
                                     "transcript"
@@ -7099,9 +7131,46 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
                                         timeout=30,
                                         verify=False,
                                     )
+                                    print(f"[DEBUG-VIDEO] API上传结果: status={upload_resp.status_code}")
                                     if upload_resp.status_code == 200:
                                         video_count += 1
                                         needs_sync = True
+                                        print(f"[DEBUG-VIDEO] 视频处理成功: {video_path.name}")
+                                    else:
+                                        print(f"[DEBUG-VIDEO] 视频处理失败: status={upload_resp.status_code}, resp={upload_resp.text[:200]}")
+                                else:
+                                    # 即使语音识别失败，也要保存空记录，避免重复处理
+                                    print(f"[DEBUG-VIDEO] 语音识别失败或无内容，保存空记录标记为已处理")
+                                    video_hash = ""
+                                    try:
+                                        hasher = hashlib.md5()
+                                        with open(video_path, "rb") as f:
+                                            for chunk in iter(lambda: f.read(8192), b""):
+                                                hasher.update(chunk)
+                                        video_hash = hasher.hexdigest()
+                                    except:
+                                        pass
+                                    
+                                    error_msg = speech_result.get('error', '未知错误')
+                                    upload_resp = public_client.signed_request(
+                                        "POST",
+                                        f"{public_client.server_url}/czrz/speech/record",
+                                        json={
+                                            "client_id": child_id,
+                                            "date": date,
+                                            "video_path": str(video_path),
+                                            "file_hash": video_hash,
+                                            "transcript": "",  # 空内容
+                                            "duration": 0,
+                                            "analysis": {"error": error_msg, "note": "语音识别失败或无有效语音"},
+                                        },
+                                        timeout=30,
+                                        verify=False,
+                                    )
+                                    if upload_resp.status_code == 200:
+                                        video_count += 1
+                                        needs_sync = True
+                                        print(f"[DEBUG-VIDEO] 已保存空记录标记视频为已处理: {video_path.name}")
 
                             except Exception as e:
                                 print(f"[AI回顾] 视频处理失败 {video_path}: {e}")
@@ -7177,6 +7246,12 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config, force=False)
 
             if needs_sync:
                 success_count += 1
+                # 保存所有输入状态（用于下次增量更新对比）
+                try:
+                    save_input_sync_state(date, child_id)
+                except Exception as e:
+                    print(f"[输入同步] 保存状态失败: {e}")
+                    
             AI_REVIEW_TASKS[task_id]["success_count"] = success_count
             AI_REVIEW_TASKS[task_id]["skipped"] = skipped_count
             AI_REVIEW_TASKS[task_id]["processed"] = i + 1
@@ -7370,6 +7445,391 @@ def get_processed_videos(date: str, client_id: str) -> list:
     except Exception as e:
         print(f"[AI回顾] 获取已处理视频失败: {e}")
     return []
+
+
+# ==================== 画像输入变更检测（方案2完整版）====================
+
+def _get_input_sync_state_file() -> Path:
+    """获取输入同步状态文件路径（统一存储所有画像输入的状态）"""
+    if hasattr(sys, "_MEIPASS"):
+        data_dir = Path.home() / "Documents" / "CZRZ"
+    else:
+        data_dir = Path(__file__).parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir / "profile_input_sync_state.json"
+
+
+def _load_input_sync_state() -> dict:
+    """加载输入同步状态"""
+    state_file = _get_input_sync_state_file()
+    print(f"[DEBUG-STATE] 加载状态文件: {state_file}")
+    print(f"[DEBUG-STATE] 文件存在: {state_file.exists()}")
+    if state_file.exists():
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                content = f.read()
+                print(f"[DEBUG-STATE] 文件内容长度: {len(content)} 字符")
+                data = json.loads(content)
+                print(f"[DEBUG-STATE] 解析成功，顶层keys: {list(data.keys())}")
+                return data
+        except Exception as e:
+            print(f"[DEBUG-STATE] 加载失败: {e}")
+            pass
+    print(f"[DEBUG-STATE] 返回空状态")
+    return {}
+
+
+def _save_input_sync_state(state: dict):
+    """保存输入同步状态"""
+    state_file = _get_input_sync_state_file()
+    try:
+        with open(state_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[输入同步] 保存状态失败: {e}")
+
+
+def _get_input_hash(date: str, client_id: str, input_type: str) -> str:
+    """获取某天的某种输入的保存 hash"""
+    state = _load_input_sync_state()
+    print(f"[DEBUG-HASH-READ] 查询: client_id={client_id[:8]}..., date={date}, type={input_type}")
+    client_state = state.get(client_id, {})
+    date_state = client_state.get(date, {})
+    result = date_state.get(input_type, "")
+    print(f"[DEBUG-HASH-READ] 结果: '{result[:16] if result else '<空>'}'")
+    return result
+
+
+def _save_input_hash(date: str, client_id: str, input_type: str, hash_value: str):
+    """保存某天某种输入的 hash"""
+    state = _load_input_sync_state()
+    if client_id not in state:
+        state[client_id] = {}
+    if date not in state[client_id]:
+        state[client_id][date] = {}
+    state[client_id][date][input_type] = hash_value
+    _save_input_sync_state(state)
+
+
+# ========== 1. 标签变更检测 ==========
+
+def get_photo_tags_hash(date: str, client_id: str) -> str:
+    """
+    计算某天所有照片标签的 hash
+    通过文件名解析日期，获取当天的所有标签
+    """
+    try:
+        from photo_tags import get_all_photo_tags
+        
+        all_tags = get_all_photo_tags(client_id)
+        if not all_tags:
+            return ""
+        
+        # 筛选当天的标签（从文件名解析日期）
+        day_tags = []
+        for filename, tag_info in all_tags.items():
+            try:
+                # 文件名格式: 2024-03-07_143022.jpg
+                file_date = filename.split("_")[0]
+                if file_date == date:
+                    day_tags.append({
+                        "filename": filename,
+                        "tag": tag_info.get("tag", ""),
+                        "note": tag_info.get("note", ""),
+                        "updated_at": tag_info.get("updated_at", ""),
+                    })
+            except Exception:
+                continue
+        
+        if not day_tags:
+            return ""
+        
+        # 按文件名排序，确保一致性
+        day_tags.sort(key=lambda x: x["filename"])
+        
+        # 计算 hash：包含标签内容、备注和更新时间
+        hash_content = json.dumps(day_tags, sort_keys=True, ensure_ascii=True)
+        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
+        
+    except Exception as e:
+        print(f"[标签同步] 计算标签 hash 失败: {e}")
+        return ""
+
+
+def check_tag_changes(date: str, client_id: str) -> bool:
+    """检查某天的标签是否有变化"""
+    print(f"[DEBUG-TAG] ========== 开始检查标签变化: {date} ==========")
+    current_hash = get_photo_tags_hash(date, client_id)
+    saved_hash = _get_input_hash(date, client_id, "tags")
+    
+    print(f"[DEBUG-TAG] 当前hash: '{current_hash}'")
+    print(f"[DEBUG-TAG] 保存hash: '{saved_hash}'")
+    print(f"[DEBUG-TAG] hash相等: {current_hash == saved_hash}")
+    
+    if not current_hash and not saved_hash:
+        print(f"[DEBUG-TAG] 结果: 无标签数据，返回False")
+        return False
+    if current_hash and not saved_hash:
+        print(f"[DEBUG-TAG] 结果: 新增标签，返回True")
+        return True
+    
+    has_changes = current_hash != saved_hash
+    print(f"[DEBUG-TAG] 结果: 是否有变化={has_changes}")
+    return has_changes
+
+
+# ========== 2. 照片描述变更检测 ==========
+
+def get_photo_descriptions_hash(date: str, client_id: str) -> str:
+    """
+    计算某天所有照片描述的 hash
+    """
+    try:
+        all_descriptions = get_processed_photos(date, client_id)
+        if not all_descriptions:
+            return ""
+        
+        # 提取关键字段计算 hash
+        desc_list = []
+        for desc in all_descriptions:
+            desc_list.append({
+                "path": desc.get("path", ""),
+                "description": desc.get("description", ""),
+                "has_baby": desc.get("has_baby", True),
+                "scene": desc.get("scene", ""),
+                "activity": desc.get("activity", ""),
+            })
+        
+        # 按路径排序
+        desc_list.sort(key=lambda x: x["path"])
+        
+        hash_content = json.dumps(desc_list, sort_keys=True, ensure_ascii=True)
+        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
+        
+    except Exception as e:
+        print(f"[描述同步] 计算描述 hash 失败: {e}")
+        return ""
+
+
+def check_photo_description_changes(date: str, client_id: str) -> bool:
+    """检查某天的照片描述是否有变化"""
+    print(f"[DEBUG-DESC] ========== 开始检查描述变化: {date} ==========")
+    current_hash = get_photo_descriptions_hash(date, client_id)
+    saved_hash = _get_input_hash(date, client_id, "photo_descriptions")
+    
+    print(f"[DEBUG-DESC] 当前hash: '{current_hash}'")
+    print(f"[DEBUG-DESC] 保存hash: '{saved_hash}'")
+    print(f"[DEBUG-DESC] hash相等: {current_hash == saved_hash}")
+    
+    if not current_hash and not saved_hash:
+        print(f"[DEBUG-DESC] 结果: 无描述数据，返回False")
+        return False
+    if current_hash and not saved_hash:
+        print(f"[DEBUG-DESC] 结果: 新增描述，返回True")
+        return True
+    
+    has_changes = current_hash != saved_hash
+    print(f"[DEBUG-DESC] 结果: 是否有变化={has_changes}")
+    return has_changes
+
+
+# ========== 3. 语音记录变更检测 ==========
+
+def get_speech_records_hash(date: str, client_id: str) -> str:
+    """
+    计算某天所有语音记录的 hash
+    """
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/speech/records",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return ""
+        
+        result = resp.json()
+        if not result.get("success"):
+            return ""
+        
+        records = result.get("records", [])
+        if not records:
+            return ""
+        
+        # 提取关键字段
+        speech_list = []
+        for record in records:
+            speech_list.append({
+                "video_path": record.get("video_path", ""),
+                "transcript": record.get("transcript", ""),
+                "duration": record.get("duration", 0),
+                "language_analysis": record.get("language_analysis", {}),
+            })
+        
+        # 按视频路径排序
+        speech_list.sort(key=lambda x: x["video_path"])
+        
+        hash_content = json.dumps(speech_list, sort_keys=True, ensure_ascii=True)
+        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
+        
+    except Exception as e:
+        print(f"[语音同步] 计算语音 hash 失败: {e}")
+        return ""
+
+
+def check_speech_changes(date: str, client_id: str) -> bool:
+    """检查某天的语音记录是否有变化"""
+    print(f"[DEBUG-SPEECH] ========== 开始检查语音变化: {date} ==========")
+    current_hash = get_speech_records_hash(date, client_id)
+    saved_hash = _get_input_hash(date, client_id, "speech_records")
+    
+    print(f"[DEBUG-SPEECH] 当前hash: '{current_hash}'")
+    print(f"[DEBUG-SPEECH] 保存hash: '{saved_hash}'")
+    print(f"[DEBUG-SPEECH] hash相等: {current_hash == saved_hash}")
+    
+    if not current_hash and not saved_hash:
+        print(f"[DEBUG-SPEECH] 结果: 无语音数据，返回False")
+        return False
+    if current_hash and not saved_hash:
+        print(f"[DEBUG-SPEECH] 结果: 新增语音，返回True")
+        return True
+    
+    has_changes = current_hash != saved_hash
+    print(f"[DEBUG-SPEECH] 结果: 是否有变化={has_changes}")
+    return has_changes
+
+
+# ========== 状态初始化（避免重复处理）==========
+
+def _init_sync_state_for_processed_dates(client_id: str, dates_to_check: list):
+    """
+    为已处理的日期初始化状态文件
+    避免首次运行时误判已有数据为"新增"
+    只处理最近30天，避免初始化时间过长
+    """
+    # 只处理最近30天，避免初始化时间过长
+    recent_dates = dates_to_check[:30]
+    print(f"[状态初始化] 检查最近 {len(recent_dates)} 个日期...")
+    initialized_count = 0
+    initialized_dates = []
+    
+    for date in recent_dates:
+        # 检查是否已有数据
+        has_data = False
+        
+        # 检查照片描述
+        desc_hash = get_photo_descriptions_hash(date, client_id)
+        if desc_hash:
+            _save_input_hash(date, client_id, "photo_descriptions", desc_hash)
+            has_data = True
+        
+        # 检查标签
+        tag_hash = get_photo_tags_hash(date, client_id)
+        if tag_hash:
+            _save_input_hash(date, client_id, "tags", tag_hash)
+            has_data = True
+        
+        # 检查语音
+        speech_hash = get_speech_records_hash(date, client_id)
+        if speech_hash:
+            _save_input_hash(date, client_id, "speech_records", speech_hash)
+            has_data = True
+        
+        if has_data:
+            initialized_count += 1
+            initialized_dates.append(date)
+    
+    print(f"[状态初始化] 已为 {initialized_count} 个日期初始化状态")
+    return initialized_dates  # 返回初始化的日期列表
+
+
+# ========== 4. 日志内容变更检测 ==========
+
+def get_log_content_hash(date: str, client_id: str) -> str:
+    """
+    计算某天日志内容的 hash
+    """
+    try:
+        resp = public_client.signed_request(
+            "GET",
+            f"{public_client.server_url}/czrz/baby/log",
+            params={"client_id": client_id, "date": date},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            return ""
+        
+        result = resp.json()
+        if not result.get("success"):
+            return ""
+        
+        log = result.get("log", {})
+        if not log:
+            return ""
+        
+        # 只取日志内容
+        content = log.get("content", "")
+        if not content:
+            return ""
+        
+        return hashlib.md5(content.encode()).hexdigest()[:16]
+        
+    except Exception as e:
+        print(f"[日志同步] 计算日志 hash 失败: {e}")
+        return ""
+
+
+def check_log_changes(date: str, client_id: str) -> bool:
+    """检查某天的日志内容是否有变化"""
+    print(f"[DEBUG-LOG] ========== 开始检查日志变化: {date} ==========")
+    current_hash = get_log_content_hash(date, client_id)
+    saved_hash = _get_input_hash(date, client_id, "log_content")
+    
+    print(f"[DEBUG-LOG] 当前hash: '{current_hash}'")
+    print(f"[DEBUG-LOG] 保存hash: '{saved_hash}'")
+    print(f"[DEBUG-LOG] hash相等: {current_hash == saved_hash}")
+    
+    if not current_hash and not saved_hash:
+        print(f"[DEBUG-LOG] 结果: 无日志数据，返回False")
+        return False
+    if current_hash and not saved_hash:
+        print(f"[DEBUG-LOG] 结果: 新增日志，返回True")
+        return True
+    
+    has_changes = current_hash != saved_hash
+    print(f"[DEBUG-LOG] 结果: 是否有变化={has_changes}")
+    return has_changes
+
+
+# ========== 统一保存所有输入状态 ==========
+
+def save_input_sync_state(date: str, client_id: str):
+    """在画像生成完成后保存所有输入的 hash"""
+    try:
+        # 保存标签 hash
+        tag_hash = get_photo_tags_hash(date, client_id)
+        if tag_hash:
+            _save_input_hash(date, client_id, "tags", tag_hash)
+        
+        # 保存照片描述 hash
+        desc_hash = get_photo_descriptions_hash(date, client_id)
+        if desc_hash:
+            _save_input_hash(date, client_id, "photo_descriptions", desc_hash)
+        
+        # 保存语音记录 hash
+        speech_hash = get_speech_records_hash(date, client_id)
+        if speech_hash:
+            _save_input_hash(date, client_id, "speech_records", speech_hash)
+        
+        # 保存日志内容 hash
+        log_hash = get_log_content_hash(date, client_id)
+        if log_hash:
+            _save_input_hash(date, client_id, "log_content", log_hash)
+        
+        print(f"[DEBUG] 已保存所有输入状态: {date}")
+    except Exception as e:
+        print(f"[输入同步] 保存状态失败: {e}")
 
 
 def select_best_photo_ai(photo_paths: list, max_photos: int = 20) -> tuple:
