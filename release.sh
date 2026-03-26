@@ -173,6 +173,16 @@ if [ -n "$GITEE_TOKEN" ]; then
                 return 1
             fi
             
+            # 检查是否已存在同名附件，如存在则先删除
+            EXISTING_ASSET=$(curl -s "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/assets" \
+                -H "access_token: ${GITEE_TOKEN}" | python3 -c "import json,sys; d=json.load(sys.stdin); print([a['id'] for a in d if a['name']=='${file}'])" 2>/dev/null || echo "")
+            if [ -n "$EXISTING_ASSET" ] && [ "$EXISTING_ASSET" != "[]" ]; then
+                echo "🗑️ 删除旧的 $file..."
+                ASSET_ID=$(echo $EXISTING_ASSET | tr -d '[]')
+                curl -s -X DELETE "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/assets/${ASSET_ID}" \
+                    -H "access_token: ${GITEE_TOKEN}" || true
+            fi
+            
             echo "📤 上传 $file ($(($FILE_SIZE/1024/1024))MB)..."
             
             # Gitee 上传附件 API
