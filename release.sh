@@ -93,6 +93,20 @@ echo "✅ macOS 下载完成 ($(du -h mumu-macos | cut -f1))"
 
 echo ""
 echo "=== 4. 推送到 Gitee ==="
+
+# 确保 Gitee remote URL 正确
+GITEE_OWNER="baoxiaodong1"
+GITEE_REPO="mumu-client"
+GITEE_EXPECTED_URL="https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
+GITEE_CURRENT_URL=$(git remote get-url gitee 2>/dev/null || echo "")
+
+if [ "$GITEE_CURRENT_URL" != "$GITEE_EXPECTED_URL" ] && [ -n "$GITEE_TOKEN" ]; then
+    echo "🔧 修正 Gitee remote URL..."
+    git remote set-url gitee "$GITEE_EXPECTED_URL"
+    # 添加 token 到 URL
+    git remote set-url gitee "https://${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
+fi
+
 cd /home/bob/projects/mumu-client
 git push gitee main || echo "⚠️ Gitee main 推送失败"
 git push gitee $TAG || echo "⚠️ Gitee tag 推送失败"
