@@ -206,7 +206,7 @@ def get_child_features(child_id):
         print(f"[DEBUG] 获取宝宝画像: {server_url}/api/ai/features/{child_id}")
         response = req.get(
             f"{server_url}/api/ai/features/{child_id}",
-            timeout=600,
+            timeout=1200,
             headers={"User-Agent": "CZRZ-Client/2.0"},
             verify=False,
         )
@@ -519,7 +519,7 @@ def call_qwen(images, select_n, child_id=None):
             proxy_url,
             json=request_body,
             headers=headers,
-            timeout=600,
+            timeout=1200,
             verify=False,
         )
 
@@ -891,7 +891,7 @@ def analyze_photo_content(photo_path):
             proxy_url,
             json=request_body,
             headers=headers,
-            timeout=600,
+            timeout=1200,
             verify=False,
         )
 
@@ -1057,9 +1057,7 @@ def analyze_all_photos(
     if descriptions:
         combined_parts.append("活动：" + "、".join(descriptions[:10]))
 
-    combined_summary = (
-        "。".join(combined_parts) if combined_parts else "照片分析完成"
-    )
+    combined_summary = "。".join(combined_parts) if combined_parts else "照片分析完成"
 
     if client_id and date and valid_photos:
         try:
@@ -1087,13 +1085,28 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
         photos: 照片描述列表
     """
     import requests as req
+    import hashlib
 
     descriptions = []
     for p in photos:
         if p.get("description") and p["description"] != "分析失败":
+            # 计算照片文件哈希
+            file_hash = ""
+            file_path = p.get("path", "")
+            if file_path:
+                try:
+                    hasher = hashlib.md5()
+                    with open(file_path, "rb") as f:
+                        for chunk in iter(lambda: f.read(8192), b""):
+                            hasher.update(chunk)
+                    file_hash = hasher.hexdigest()
+                except Exception as e:
+                    print(f"[WARN] 计算照片哈希失败 {file_path}: {e}")
+
             descriptions.append(
                 {
-                    "path": p.get("path", ""),
+                    "path": file_path,
+                    "hash": file_hash,
                     "description": p.get("description", ""),
                     "has_baby": p.get("has_baby", True),
                     "scene": p.get("scene", ""),
@@ -1132,7 +1145,7 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
             f"{server_url}{path}",
             data=body,
             headers=headers,
-            timeout=600,
+            timeout=1200,
             verify=False,
         )
 

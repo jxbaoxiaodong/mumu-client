@@ -324,6 +324,41 @@ class CardCache:
                 self.milestone_cards.append(milestone_card)
                 print(f"  ✓ 今日里程碑: {milestone_card.get('title', '')}")
 
+            # 4. 生成扩展创意卡片（后台生成，数量不限）
+            print("[CardCache] 生成扩展创意卡片...")
+            try:
+                from extended_card_generator import ExtendedCardGenerator
+                extended_gen = ExtendedCardGenerator(str(generator.ai_db_path))
+                extended_cards = extended_gen.generate_all_extended_cards(baby_name)
+                
+                print(f"[CardCache] 生成了 {len(extended_cards)} 张扩展卡片")
+                
+                for i, card in enumerate(extended_cards):
+                    card['id'] = f"extended_{card['type']}_{int(time.time())}_{i}"
+                    card['category'] = 'extended'
+                    # 为有照片的卡片生成合图
+                    if 'photo_paths' in card and card['photo_paths']:
+                        try:
+                            paths_to_use = card['photo_paths'][:4]
+                            valid_paths = [p for p in paths_to_use if p and Path(p).exists()]
+                            if len(valid_paths) >= 2:
+                                collage_gen = PhotoCollageGenerator(output_dir=str(COLLAGE_DIR))
+                                collage_path = collage_gen.generate(
+                                    photos=valid_paths,
+                                    style='grid',
+                                    title=card.get('title', ''),
+                                )
+                                if collage_path:
+                                    card['photo'] = f"/collage/{Path(collage_path).name}"
+                                    card['has_collage'] = True
+                        except Exception as e:
+                            print(f"  ✗ 合图生成失败: {e}")
+                    
+                    all_cards.append(card)
+                    
+            except Exception as e:
+                print(f"[CardCache] 扩展卡片生成失败: {e}")
+
         except Exception as e:
             print(f"[CardCache] 生成卡片失败: {e}")
             import traceback

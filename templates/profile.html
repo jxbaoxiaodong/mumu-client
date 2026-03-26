@@ -65,15 +65,6 @@
     border-left: 4px solid #FFB6C1;
 }
 
-.highlight-title {
-    font-size: 16px;
-    color: #666;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
 .highlight-content {
     font-size: 18px;
     color: #4A4A4A;
@@ -451,8 +442,6 @@
     .traits-grid {
         grid-template-columns: 1fr;
     }
-    
-    }
 }
 </style>
 {% endblock %}
@@ -478,21 +467,17 @@
             </div>
         </div>
 
-        <!-- 本月亮点 -->
-        <div class="highlight-section">
-            <div class="highlight-title">
-                <i class="fas fa-sparkles" style="color: #FFD700;"></i>
-                <span>本月可爱瞬间</span>
-            </div>
-            <div class="highlight-content" id="highlightContent">
-                <span style="color: #999;">AI正在观察中...</span>
-            </div>
+    <!-- 本月亮点 -->
+    <div class="highlight-section">
+        <div class="highlight-content" id="highlightContent">
+            <span style="color: #999;" id="highlightPlaceholder">加载中...</span>
         </div>
+    </div>
 
         <!-- AI发现的特质 -->
         <div class="traits-section">
             <div class="traits-title">
-                <i class="fas fa-brain" style="color: #FFB6C1;"></i>
+                <i class="fas fa-heart" style="color: #FFB6C1;"></i>
                 <span>AI发现了宝宝的可爱特质</span>
             </div>
             <div class="traits-grid" id="traitsGrid">
@@ -527,16 +512,13 @@
         </div>
     </div>
 
-    <!-- 数据详情（可折叠） -->
+    <!-- 数据详情 -->
     <div class="data-section">
-        <div class="data-toggle" onclick="toggleDataSection(this)">
-            <div class="data-toggle-title">
-                <i class="fas fa-chart-bar"></i>
-                <span>查看详细数据</span>
-            </div>
-            <i class="fas fa-chevron-down data-toggle-icon"></i>
+        <div class="data-toggle-title" style="margin-bottom: 15px;">
+            <i class="fas fa-chart-bar"></i>
+            <span>详细数据</span>
         </div>
-        <div class="data-content" id="dataContent">
+        <div class="data-content show" id="dataContent">
             <div class="row">
                 <div class="col-md-6">
                     <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-chart-pie me-2"></i>性格维度</h6>
@@ -595,7 +577,6 @@
                 </button>
             </div>
         </div>
-        <div id="feedbackHistory" class="mt-3"></div>
     </div>
 </div>
 {% endblock %}
@@ -677,15 +658,33 @@ function loadProfileData() {
 
 function renderHighlight(profile) {
     const container = document.getElementById('highlightContent');
+    const placeholder = document.getElementById('highlightPlaceholder');
     const summary = profile.guidance?.summary || '';
-    
-    if (summary && !summary.includes('暂无足够数据')) {
-        container.innerHTML = `"${summary}"`;
-    } else if (profile.evolution?.recent_changes?.length > 0) {
-        const recent = profile.evolution.recent_changes[0];
-        container.innerHTML = `"${recent.change}"`;
+
+    // 判断是否有有效画像数据
+    const hasValidData = (summary && !summary.includes('暂无足够数据') && summary.length > 20) 
+        || (profile.evolution?.recent_changes?.length > 0)
+        || (profile.tags && profile.tags.length > 0);
+
+    if (hasValidData) {
+        // 有数据，隐藏placeholder，显示内容
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+        if (summary && !summary.includes('暂无足够数据')) {
+            container.innerHTML = `"${summary}"`;
+        } else if (profile.evolution?.recent_changes?.length > 0) {
+            const recent = profile.evolution.recent_changes[0];
+            container.innerHTML = `"${recent.change}"`;
+        } else {
+            container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
+        }
     } else {
-        container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
+        // 没有数据，显示提示
+        if (placeholder) {
+            placeholder.textContent = '暂时没有生成画像，请点击上方刷新按钮';
+            placeholder.style.display = 'inline';
+        }
     }
 }
 
@@ -917,9 +916,106 @@ function showNotification(message, type) {
     setTimeout(() => toast.remove(), 2500);
 }
 
+// 打开AI重新认识弹窗
+function startAIReview() {
+    const modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
+    modal.show();
+}
+
+// 执行AI重新认识（简化的全量刷新）
+function executeAIReview() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('aiReviewModal'));
+    modal.hide();
+
+    showNotification('正在启动AI全量刷新...', 'info');
+
+    fetch('/api/ai/auto-review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('AI重新认识任务已启动，请稍候...', 'success');
+            // 显示进度
+            document.getElementById('aiProgressFooter').style.display = 'block';
+            checkAIReviewProgress(data.task_id);
+        } else {
+            showNotification(data.message || '启动失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('启动失败: ' + err, 'error');
+    });
+}
+
+// 检查AI重新认识进度
+function checkAIReviewProgress(taskId) {
+    const interval = setInterval(() => {
+        fetch('/api/ai/auto-review/status/' + taskId)
+        .then(r => r.json())
+        .then(data => {
+            const status = data.status || data;
+            if (status.completed) {
+                clearInterval(interval);
+                document.getElementById('aiProgressFooter').style.display = 'none';
+                if (status.message === '完全无变化') {
+                    showNotification('完全无变化，无需更新', 'info');
+                } else {
+                    showNotification('AI重新认识完成！', 'success');
+                    loadProfileData(); // 重新加载画像
+                }
+            } else {
+                document.getElementById('footerProgressText').textContent = status.message || '处理中...';
+                if (status.total > 0) {
+                    const progress = Math.round(status.processed / status.total * 100);
+                    document.getElementById('footerProgressBar').style.width = progress + '%';
+                }
+            }
+        })
+        .catch(() => {});
+    }, 2000);
+}
+
+// 隐藏进度条
+function hideProgressFooter() {
+    document.getElementById('aiProgressFooter').style.display = 'none';
+}
+
+// 提交反馈
+function submitFeedback() {
+    const text = document.getElementById('feedbackText').value.trim();
+    if (!text) {
+        showNotification('请输入反馈内容', 'warning');
+        return;
+    }
+
+    fetch('/api/ai/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            question: "用户反馈",
+            answer: text,
+            is_correct: true
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('反馈已提交，AI会参考哦~', 'success');
+            document.getElementById('feedbackText').value = '';
+        } else {
+            showNotification(data.message || '提交失败', 'error');
+        }
+    })
+    .catch(err => {
+        showNotification('提交失败: ' + err, 'error');
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     loadProfileData();
-    loadFeedbackHistory();
 });
 </script>
 
@@ -932,15 +1028,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted mb-3">选择刷新方式：</p>
-                <div class="d-grid gap-2">
-                    <button class="btn btn-outline-primary text-start" onclick="executeAIReview(false)">
-                        <i class="fas fa-plus-circle me-2"></i>增量更新（推荐）
-                        <small class="d-block text-muted">只处理新内容</small>
-                    </button>
-                    <button class="btn btn-outline-warning text-start" onclick="executeAIReview(true)">
-                        <i class="fas fa-redo me-2"></i>完全刷新
-                        <small class="d-block text-muted">重新分析所有内容</small>
+                <p class="text-muted mb-3">将对所有索引中有日期的项进行全量处理：</p>
+                <ul class="mb-4">
+                    <li>检查照片、视频、语音、标签等所有数据</li>
+                    <li>数据库存在且哈希相等 → 跳过处理</li>
+                    <li>不存在或哈希不对 → 处理并保存/覆盖</li>
+                    <li>完成后自动同步到健康AI并生成画像</li>
+                </ul>
+                <div class="d-grid">
+                    <button class="btn btn-primary" onclick="executeAIReview()">
+                        <i class="fas fa-redo me-2"></i>开始刷新
                     </button>
                 </div>
             </div>

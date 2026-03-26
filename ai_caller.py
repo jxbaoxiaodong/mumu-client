@@ -18,7 +18,7 @@ class AICaller:
     async def _get_client(self):
         """获取HTTP客户端"""
         if self.client is None:
-            self.client = httpx.AsyncClient(timeout=600, verify=False)
+            self.client = httpx.AsyncClient(timeout=1200, verify=False)
         return self.client
 
     async def call_text_model(
@@ -140,7 +140,7 @@ class AICaller:
         try:
             client = await self._get_client()
             response = await client.post(
-                api_url, timeout=600, json=payload, headers=headers
+                api_url, timeout=1200, json=payload, headers=headers
             )
             if response.status_code != 200:
                 raise Exception(
@@ -300,7 +300,7 @@ class AICaller:
         try:
             client = await self._get_client()
             response = await client.post(
-                api_url, timeout=600, json=payload, headers=headers
+                api_url, timeout=1200, json=payload, headers=headers
             )
             if response.status_code != 200:
                 raise Exception(

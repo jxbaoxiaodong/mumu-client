@@ -88,7 +88,14 @@ class SmartCardGenerator:
         if ai_db_path:
             self.ai_db_path = Path(ai_db_path)
         else:
-            self.ai_db_path = Path.home() / "projects" / "baby_health_ai" / "data" / "children" / "8aa59184-88a7-499f-a153-1c67fd7989cd.db"
+            self.ai_db_path = (
+                Path.home()
+                / "projects"
+                / "baby_health_ai"
+                / "data"
+                / "children"
+                / "8aa59184-88a7-499f-a153-1c67fd7989cd.db"
+            )
 
     def _get_db_connection(self):
         """获取数据库连接"""
@@ -114,13 +121,15 @@ class SmartCardGenerator:
 
             tags = []
             for row in rows:
-                tags.append({
-                    "id": row[0],
-                    "tag": row[1],
-                    "category": row[2],
-                    "confidence": row[3],
-                    "evidence": row[4],
-                })
+                tags.append(
+                    {
+                        "id": row[0],
+                        "tag": row[1],
+                        "category": row[2],
+                        "confidence": row[3],
+                        "evidence": row[4],
+                    }
+                )
             return tags
         except Exception as e:
             print(f"[SmartCard] 获取标签失败: {e}")
@@ -173,14 +182,16 @@ class SmartCardGenerator:
                         break
 
                 if matched:
-                    photos.append({
-                        "id": row[0],
-                        "path": row[1],
-                        "date": context.get("date", ""),
-                        "description": desc,
-                        "scene": context.get("scene", ""),
-                        "activity": context.get("activity", ""),
-                    })
+                    photos.append(
+                        {
+                            "id": row[0],
+                            "path": row[1],
+                            "date": context.get("date", ""),
+                            "description": desc,
+                            "scene": context.get("scene", ""),
+                            "activity": context.get("activity", ""),
+                        }
+                    )
 
                     if len(photos) >= limit:
                         break
@@ -224,14 +235,16 @@ class SmartCardGenerator:
             photos = []
             for row in rows:
                 context = json.loads(row[2]) if row[2] else {}
-                photos.append({
-                    "id": row[0],
-                    "path": row[1],
-                    "date": context.get("date", ""),
-                    "description": context.get("photo_description", ""),
-                    "scene": context.get("scene", ""),
-                    "activity": context.get("activity", ""),
-                })
+                photos.append(
+                    {
+                        "id": row[0],
+                        "path": row[1],
+                        "date": context.get("date", ""),
+                        "description": context.get("photo_description", ""),
+                        "scene": context.get("scene", ""),
+                        "activity": context.get("activity", ""),
+                    }
+                )
 
             return photos
         except Exception as e:
@@ -277,10 +290,12 @@ class SmartCardGenerator:
             "subtitle": f"{baby_name}的{tag}时刻",
             "content": f"在{len(photos)}个瞬间中发现了{baby_name}{tag}的特质",
             "footer": f"每一个瞬间都闪闪发光",
-            "date": datetime.now().strftime('%Y.%m.%d'),
+            "date": datetime.now().strftime("%Y.%m.%d"),
         }
 
-    def find_photos_by_scene_keyword(self, scene_name: str, limit: int = 20) -> List[Dict]:
+    def find_photos_by_scene_keyword(
+        self, scene_name: str, limit: int = 20
+    ) -> List[Dict]:
         """
         根据场景关键词查找照片
 
@@ -326,14 +341,16 @@ class SmartCardGenerator:
                         break
 
                 if matched:
-                    photos.append({
-                        "id": row[0],
-                        "path": row[1],
-                        "date": context.get("date", ""),
-                        "description": desc,
-                        "scene": context.get("scene", ""),
-                        "activity": context.get("activity", ""),
-                    })
+                    photos.append(
+                        {
+                            "id": row[0],
+                            "path": row[1],
+                            "date": context.get("date", ""),
+                            "description": desc,
+                            "scene": context.get("scene", ""),
+                            "activity": context.get("activity", ""),
+                        }
+                    )
 
                     if len(photos) >= limit:
                         break
@@ -381,23 +398,27 @@ class SmartCardGenerator:
                 desc = context.get("photo_description", "")
                 date = context.get("date", "")
                 if desc and len(desc) > 5:
-                    photos_with_desc.append({
-                        "id": row[0],
-                        "path": row[1],
-                        "description": desc,
-                        "date": date,
-                    })
+                    photos_with_desc.append(
+                        {
+                            "id": row[0],
+                            "path": row[1],
+                            "description": desc,
+                            "date": date,
+                        }
+                    )
 
             if len(photos_with_desc) < 10:
                 return []
 
-            print(f"[SmartCard] 分析 {len(photos_with_desc)} 张照片描述，提取场景关键词...")
+            print(
+                f"[SmartCard] 分析 {len(photos_with_desc)} 张照片描述，提取场景关键词..."
+            )
 
             # 让LLM提取场景关键词
             prompt = f"""分析这些婴儿照片描述，提取出常见的场景关键词。
 
 照片描述示例（前100张）：
-{chr(10).join([p['description'][:50] for p in photos_with_desc[:100]])}
+{chr(10).join([p["description"][:50] for p in photos_with_desc[:100]])}
 
 请提取30-50个场景关键词，返回JSON格式：
 {{"keywords": ["婴儿车", "公园", "洗澡", "睡觉", "吃饭", "被抱", "熟睡", "侧卧", "仰卧", "趴着", "坐着", "站着", "爬行", "户外", "商场", ...]}}
@@ -430,8 +451,10 @@ class SmartCardGenerator:
                     "Content-Type": "application/json",
                 }
 
-                response = requests.post(url, json=payload, headers=headers, timeout=60)
-                    
+                response = requests.post(
+                    url, json=payload, headers=headers, timeout=300
+                )
+
                 if response.status_code != 200:
                     print(f"[SmartCard] LLM调用失败: {response.status_code}")
                     return []
@@ -444,11 +467,12 @@ class SmartCardGenerator:
 
                 # 解析JSON
                 import re
+
                 data = None
                 try:
                     data = json.loads(response_text)
                 except:
-                    json_match = re.search(r'\{[\s\S]*\}', response_text)
+                    json_match = re.search(r"\{[\s\S]*\}", response_text)
                     if json_match:
                         try:
                             data = json.loads(json_match.group())
@@ -464,16 +488,64 @@ class SmartCardGenerator:
 
                 # 过滤掉太泛泛的关键词
                 skip_keywords = [
-                    "室内", "特写", "睁眼", "闭眼", "宝宝", "婴儿", "儿童", "小孩", "照片", "图片", 
-                    "镜头", "直视", "注视", "望向", "表情", "神态", "面部", "脸颊", "五官", "头部", 
-                    "身体", "手", "脚", "衣服", "穿着", "背景", "光线", "拍摄", "画面", "场景", "环境",
-                    "木质家具", "地砖", "瓷砖", "走廊", "地板", "墙面", "天花板", "家具", "装饰",
-                    "仰卧", "侧卧", "俯卧", "躺着", "趴着",  # 姿势太泛泛
-                    "瓷砖墙", "工地", "窗边", "人行道", "床铺",  # 场景太泛泛
+                    "室内",
+                    "特写",
+                    "睁眼",
+                    "闭眼",
+                    "宝宝",
+                    "婴儿",
+                    "儿童",
+                    "小孩",
+                    "照片",
+                    "图片",
+                    "镜头",
+                    "直视",
+                    "注视",
+                    "望向",
+                    "表情",
+                    "神态",
+                    "面部",
+                    "脸颊",
+                    "五官",
+                    "头部",
+                    "身体",
+                    "手",
+                    "脚",
+                    "衣服",
+                    "穿着",
+                    "背景",
+                    "光线",
+                    "拍摄",
+                    "画面",
+                    "场景",
+                    "环境",
+                    "木质家具",
+                    "地砖",
+                    "瓷砖",
+                    "走廊",
+                    "地板",
+                    "墙面",
+                    "天花板",
+                    "家具",
+                    "装饰",
+                    "仰卧",
+                    "侧卧",
+                    "俯卧",
+                    "躺着",
+                    "趴着",  # 姿势太泛泛
+                    "瓷砖墙",
+                    "工地",
+                    "窗边",
+                    "人行道",
+                    "床铺",  # 场景太泛泛
                 ]
-                
-                filtered_keywords = [k for k in keywords if k not in skip_keywords and len(k) >= 2]
-                print(f"[SmartCard] 过滤后 {len(filtered_keywords)} 个关键词: {filtered_keywords[:15]}...")
+
+                filtered_keywords = [
+                    k for k in keywords if k not in skip_keywords and len(k) >= 2
+                ]
+                print(
+                    f"[SmartCard] 过滤后 {len(filtered_keywords)} 个关键词: {filtered_keywords[:15]}..."
+                )
 
                 # 用关键词匹配照片
                 all_scenes = []
@@ -488,6 +560,7 @@ class SmartCardGenerator:
                         dates = [p["date"] for p in matched_photos if p["date"]]
                         if len(set(dates)) >= 2:
                             from datetime import datetime as dt
+
                             date_objs = []
                             for d in dates:
                                 try:
@@ -497,12 +570,16 @@ class SmartCardGenerator:
                             if date_objs:
                                 days_diff = (max(date_objs) - min(date_objs)).days
                                 if days_diff >= 30:  # 至少1个月
-                                    all_scenes.append({
-                                        "name": keyword,
-                                        "photos": matched_photos,
-                                        "days_diff": days_diff,
-                                    })
-                                    print(f"  ✓ {keyword}: {len(matched_photos)}张, {days_diff//30}个月")
+                                    all_scenes.append(
+                                        {
+                                            "name": keyword,
+                                            "photos": matched_photos,
+                                            "days_diff": days_diff,
+                                        }
+                                    )
+                                    print(
+                                        f"  ✓ {keyword}: {len(matched_photos)}张, {days_diff // 30}个月"
+                                    )
 
                 print(f"[SmartCard] 共发现 {len(all_scenes)} 个有效场景")
                 return all_scenes
@@ -517,7 +594,9 @@ class SmartCardGenerator:
         finally:
             conn.close()
 
-    def find_photos_by_extended_scene(self, scene_name: str, limit: int = 20) -> List[Dict]:
+    def find_photos_by_extended_scene(
+        self, scene_name: str, limit: int = 20
+    ) -> List[Dict]:
         """
         根据扩展场景关键词查找照片
 
@@ -609,7 +688,7 @@ class SmartCardGenerator:
 
             theme = scene_themes.get(
                 best_comparison["scene_name"],
-                {"emoji": "📸", "title": best_comparison["scene_name"]}
+                {"emoji": "📸", "title": best_comparison["scene_name"]},
             )
 
             return {
@@ -623,7 +702,7 @@ class SmartCardGenerator:
                 "subtitle": f"{baby_name}的{theme['title']}",
                 "content": f"从{best_comparison['before_date']}到{best_comparison['after_date']}",
                 "footer": "时光飞逝，成长可见",
-                "date": datetime.now().strftime('%Y.%m.%d'),
+                "date": datetime.now().strftime("%Y.%m.%d"),
                 "months_diff": best_comparison["months_diff"],
             }
 
@@ -663,7 +742,9 @@ class SmartCardGenerator:
             age_days = (today - birth).days
 
             # 获取照片数量
-            cursor.execute("SELECT COUNT(*) FROM events WHERE source_type='PHOTO' AND file_path IS NOT NULL")
+            cursor.execute(
+                "SELECT COUNT(*) FROM events WHERE source_type='PHOTO' AND file_path IS NOT NULL"
+            )
             photo_count = cursor.fetchone()[0]
 
             # 获取标签数量
@@ -684,16 +765,18 @@ class SmartCardGenerator:
 
             for days, name, emoji in time_milestones:
                 if age_days >= days:
-                    milestones.append({
-                        "type": "time",
-                        "name": name,
-                        "emoji": emoji,
-                        "value": days,
-                        "priority": days,  # 优先级用天数
-                        "title": f"{emoji} {baby_name}{name}啦！",
-                        "subtitle": f"成长{days}天的纪念",
-                        "content": f"从出生到现在，{baby_name}已经成长了{days}天",
-                    })
+                    milestones.append(
+                        {
+                            "type": "time",
+                            "name": name,
+                            "emoji": emoji,
+                            "value": days,
+                            "priority": days,  # 优先级用天数
+                            "title": f"{emoji} {baby_name}{name}啦！",
+                            "subtitle": f"成长{days}天的纪念",
+                            "content": f"从出生到现在，{baby_name}已经成长了{days}天",
+                        }
+                    )
 
             # 照片数量里程碑
             photo_milestones = [
@@ -705,16 +788,18 @@ class SmartCardGenerator:
 
             for count, name, emoji in photo_milestones:
                 if photo_count >= count:
-                    milestones.append({
-                        "type": "photo_count",
-                        "name": name,
-                        "emoji": emoji,
-                        "value": count,
-                        "priority": count / 10,  # 优先级
-                        "title": f"{emoji} {name}！",
-                        "subtitle": f"记录成长的每一刻",
-                        "content": f"恭喜！{baby_name}的成长记录已突破{count}张照片",
-                    })
+                    milestones.append(
+                        {
+                            "type": "photo_count",
+                            "name": name,
+                            "emoji": emoji,
+                            "value": count,
+                            "priority": count / 10,  # 优先级
+                            "title": f"{emoji} {name}！",
+                            "subtitle": f"记录成长的每一刻",
+                            "content": f"恭喜！{baby_name}的成长记录已突破{count}张照片",
+                        }
+                    )
 
             # 特质发现里程碑
             tag_milestones = [
@@ -725,16 +810,18 @@ class SmartCardGenerator:
 
             for count, name, emoji in tag_milestones:
                 if tag_count >= count:
-                    milestones.append({
-                        "type": "tag_count",
-                        "name": name,
-                        "emoji": emoji,
-                        "value": count,
-                        "priority": count,  # 优先级
-                        "title": f"{emoji} {name}！",
-                        "subtitle": f"AI读懂了{baby_name}",
-                        "content": f"AI在{photo_count}张照片中发现了{count}个可爱特质",
-                    })
+                    milestones.append(
+                        {
+                            "type": "tag_count",
+                            "name": name,
+                            "emoji": emoji,
+                            "value": count,
+                            "priority": count,  # 优先级
+                            "title": f"{emoji} {name}！",
+                            "subtitle": f"AI读懂了{baby_name}",
+                            "content": f"AI在{photo_count}张照片中发现了{count}个可爱特质",
+                        }
+                    )
 
             if not milestones:
                 return None
@@ -751,7 +838,7 @@ class SmartCardGenerator:
                 "subtitle": selected["subtitle"],
                 "content": selected["content"],
                 "footer": "每一个里程碑都值得纪念",
-                "date": datetime.now().strftime('%Y.%m.%d'),
+                "date": datetime.now().strftime("%Y.%m.%d"),
                 "emoji": selected["emoji"],
                 "value": selected["value"],
             }
@@ -794,7 +881,9 @@ class SmartCardGenerator:
             age_days = (today - birth).days
 
             # 获取照片数量
-            cursor.execute("SELECT COUNT(*) FROM events WHERE source_type='PHOTO' AND file_path IS NOT NULL")
+            cursor.execute(
+                "SELECT COUNT(*) FROM events WHERE source_type='PHOTO' AND file_path IS NOT NULL"
+            )
             photo_count = cursor.fetchone()[0]
 
             # 获取标签数量
@@ -815,38 +904,42 @@ class SmartCardGenerator:
             for days, name, emoji in time_milestones:
                 # 只在当天显示
                 if age_days == days:
-                    cards.append({
-                        "type": "special_milestone_card",
-                        "milestone_type": "time",
-                        "milestone_name": name,
-                        "title": f"{emoji} {baby_name}{name}啦！",
-                        "subtitle": f"成长{days}天的纪念",
-                        "content": f"从出生到现在，{baby_name}已经成长了{days}天",
-                        "footer": "每一个里程碑都值得纪念",
-                        "date": today_str,
-                        "emoji": emoji,
-                        "value": days,
-                        "show_date": today_str,  # 只在当天显示
-                    })
+                    cards.append(
+                        {
+                            "type": "special_milestone_card",
+                            "milestone_type": "time",
+                            "milestone_name": name,
+                            "title": f"{emoji} {baby_name}{name}啦！",
+                            "subtitle": f"成长{days}天的纪念",
+                            "content": f"从出生到现在，{baby_name}已经成长了{days}天",
+                            "footer": "每一个里程碑都值得纪念",
+                            "date": today_str,
+                            "emoji": emoji,
+                            "value": days,
+                            "show_date": today_str,  # 只在当天显示
+                        }
+                    )
 
             # ========== 节日里程碑（只在当天显示）==========
             # 计算节日
             festivals = self._get_festivals(today, birth)
             for festival in festivals:
                 if festival["date"] == today_str:
-                    cards.append({
-                        "type": "special_milestone_card",
-                        "milestone_type": "festival",
-                        "milestone_name": festival["name"],
-                        "title": f"{festival['emoji']} {festival['title']}",
-                        "subtitle": f"{baby_name}的第{festival['count']}个{festival['name']}",
-                        "content": festival.get("content", ""),
-                        "footer": "每一个节日都值得纪念",
-                        "date": today_str,
-                        "emoji": festival["emoji"],
-                        "value": festival["count"],
-                        "show_date": today_str,
-                    })
+                    cards.append(
+                        {
+                            "type": "special_milestone_card",
+                            "milestone_type": "festival",
+                            "milestone_name": festival["name"],
+                            "title": f"{festival['emoji']} {festival['title']}",
+                            "subtitle": f"{baby_name}的第{festival['count']}个{festival['name']}",
+                            "content": festival.get("content", ""),
+                            "footer": "每一个节日都值得纪念",
+                            "date": today_str,
+                            "emoji": festival["emoji"],
+                            "value": festival["count"],
+                            "show_date": today_str,
+                        }
+                    )
 
             # ========== 照片数量里程碑（暂不自动显示）==========
             # 注：照片数量里程碑不适合自动弹出，因为用户可能一次性导入大量照片
@@ -905,14 +998,16 @@ class SmartCardGenerator:
                     count -= 1
                 count = max(1, count + 1)
 
-                festivals.append({
-                    "name": name,
-                    "date": festival_date,
-                    "emoji": emoji,
-                    "title": f"{name}快乐！",
-                    "count": count,
-                    "content": f"这是{birth.year}年出生的宝宝度过的第{count}个{name}",
-                })
+                festivals.append(
+                    {
+                        "name": name,
+                        "date": festival_date,
+                        "emoji": emoji,
+                        "title": f"{name}快乐！",
+                        "count": count,
+                        "content": f"这是{birth.year}年出生的宝宝度过的第{count}个{name}",
+                    }
+                )
 
         # 春节（农历新年，需要计算）
         # 简化处理：使用固定日期近似（实际应该用农历计算）
@@ -934,27 +1029,33 @@ class SmartCardGenerator:
                 if sf_date and datetime.strptime(sf_date, "%Y-%m-%d") < today:
                     count += 1
 
-            festivals.append({
-                "name": "春节",
-                "date": today_str,
-                "emoji": "🧧",
-                "title": "春节快乐！",
-                "count": count,
-                "content": f"恭喜发财，红包拿来！这是宝宝度过的第{count}个春节",
-            })
+            festivals.append(
+                {
+                    "name": "春节",
+                    "date": today_str,
+                    "emoji": "🧧",
+                    "title": "春节快乐！",
+                    "count": count,
+                    "content": f"恭喜发财，红包拿来！这是宝宝度过的第{count}个春节",
+                }
+            )
 
         # 宝宝生日
         birth_this_year = birth.replace(year=year)
         if birth_this_year.strftime("%Y-%m-%d") == today_str:
             age = year - birth.year
-            festivals.append({
-                "name": "生日",
-                "date": today_str,
-                "emoji": "🎂",
-                "title": f"{baby_name}生日快乐！" if hasattr(self, 'baby_name') else "生日快乐！",
-                "count": age,
-                "content": f"今天是宝宝的{age}岁生日！",
-            })
+            festivals.append(
+                {
+                    "name": "生日",
+                    "date": today_str,
+                    "emoji": "🎂",
+                    "title": f"{baby_name}生日快乐！"
+                    if hasattr(self, "baby_name")
+                    else "生日快乐！",
+                    "count": age,
+                    "content": f"今天是宝宝的{age}岁生日！",
+                }
+            )
 
         return festivals
 

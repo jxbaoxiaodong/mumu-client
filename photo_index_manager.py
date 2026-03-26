@@ -214,7 +214,7 @@ class PhotoIndexManager:
             if not folder.exists():
                 continue
             for root, dirs, files in os.walk(folder):
-                # 跳过 original 和 index 目录（避免重复索引）
+                # 跳过系统目录（避免重复索引）
                 dirs[:] = [
                     d
                     for d in dirs
@@ -278,6 +278,9 @@ class PhotoIndexManager:
         # 清理不存在的文件索引
         self._cleanup_index()
 
+        # 按路径去重（同一文件可能被重复索引，保留最新的）
+        self._deduplicate_by_path()
+
         # 如果只设置起始日期（不设置结束日期），先删除旧索引再扫描
         # 这样新加入的文件会自动被扫描到索引中
         if start_date and not end_date:
@@ -321,6 +324,36 @@ class PhotoIndexManager:
 
         if removed > 0:
             print(f"🗑️ 清理了 {removed} 个失效索引")
+
+    def _deduplicate_by_path(self):
+        """
+        按路径去重：同一文件路径可能对应多个哈希（文件被修改过）
+        保留 modified 时间最新的条目
+        """
+        from collections import defaultdict
+
+        removed = 0
+        for key in ["photos", "videos"]:
+            # 按路径分组
+            path_to_hashes = defaultdict(list)
+            for file_hash, entry in self.index[key].items():
+                path = entry.get("path")
+                if path:
+                    path_to_hashes[path].append((file_hash, entry))
+
+            # 处理重复路径
+            for path, entries in path_to_hashes.items():
+                if len(entries) > 1:
+                    # 按修改时间排序，保留最新的
+                    entries.sort(key=lambda x: x[1].get("modified", 0), reverse=True)
+                    # 删除旧的
+                    for file_hash, entry in entries[1:]:
+                        del self.index[key][file_hash]
+                        removed += 1
+                        print(f"🔄 去重: {Path(path).name} (保留最新)")
+
+        if removed > 0:
+            print(f"🔄 路径去重完成: 清理了 {removed} 个重复条目")
 
     def _filter_index_by_date_range(self, start_date=None, end_date=None):
         """
@@ -415,12 +448,11 @@ class PhotoIndexManager:
         Returns:
             索引条目信息
         """
-        # 生成唯一文件名
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         ext = Path(original_filename).suffix.lower()
         is_video = ext in self.video_extensions
 
-        new_filename = f"{file_date}_{timestamp}{ext}"
+        # 使用原始文件名，不重命名
+        new_filename = original_filename
 
         # 保存到第一个媒体文件夹的 new_upload 子目录
         if self.source_folders and len(self.source_folders) > 0:
@@ -458,10 +490,22 @@ class PhotoIndexManager:
         # 计算哈希
         file_hash = self._calculate_hash(target_path)
 
+        # 检查并删除同路径的旧条目（避免重复索引）
+        target_path_str = str(target_path)
+        for key in ["photos", "videos"]:
+            to_remove = [
+                h
+                for h, e in self.index[key].items()
+                if e.get("path") == target_path_str
+            ]
+            for h in to_remove:
+                del self.index[key][h]
+                print(f"🔄 替换旧索引: {new_filename}")
+
         # 添加到索引
         entry = {
             "hash": file_hash,
-            "path": str(target_path),
+            "path": target_path_str,
             "filename": new_filename,
             "date": file_date,
             "size": target_path.stat().st_size,

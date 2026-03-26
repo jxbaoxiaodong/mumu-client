@@ -255,7 +255,7 @@ class PhotoDescription(SQLModel, table=True):
     activity: Optional[str] = Field(default=None, max_length=100)
 
     created_at: datetime = Field(default_factory=datetime.now)
-    
+
     # 添加唯一约束：同一天同一照片只保存一次
     __table_args__ = (UniqueConstraint("date", "file_path", name="uq_photo_date_path"),)
 
@@ -274,9 +274,11 @@ class SpeechRecord(SQLModel, table=True):
     language_analysis: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.now)
-    
+
     # 添加唯一约束：同一天同一个视频只保存一次
-    __table_args__ = (UniqueConstraint("date", "video_path", name="uq_speech_date_path"),)
+    __table_args__ = (
+        UniqueConstraint("date", "video_path", name="uq_speech_date_path"),
+    )
 
 
 class PhotoTag(SQLModel, table=True):
@@ -301,7 +303,9 @@ class Badge(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     client_id: str = Field(max_length=100, index=True)
-    badge_type: str = Field(max_length=50)  # bronze_care, silver_care, gold_care, diamond_care, dog_lover, etc.
+    badge_type: str = Field(
+        max_length=50
+    )  # bronze_care, silver_care, gold_care, diamond_care, dog_lover, etc.
     badge_name: str = Field(max_length=100)  # 青铜关爱奖, 摸狗狗成就, 等
     badge_icon: str = Field(max_length=100)  # emoji 或图标名称
     description: str = Field(max_length=200)  # 勋章描述
@@ -309,7 +313,9 @@ class Badge(SQLModel, table=True):
     # 获得信息
     earned_date: str = Field(max_length=20)  # 获得日期 YYYY-MM-DD
     trigger_date: str = Field(max_length=20)  # 触发日期（可能与获得日期不同）
-    trigger_photo: Optional[str] = Field(default=None, max_length=500)  # 触发的照片文件名
+    trigger_photo: Optional[str] = Field(
+        default=None, max_length=500
+    )  # 触发的照片文件名
 
     # 元数据
     level: int = Field(default=1)  # 勋章等级（用于连续上传勋章）
@@ -325,7 +331,53 @@ class ProfileFeedback(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     feedback_text: str = Field(max_length=2000)
-    feedback_type: str = Field(default="user_input", max_length=50)  # user_input, correction
+    feedback_type: str = Field(
+        default="user_input", max_length=50
+    )  # user_input, correction
     applied: bool = Field(default=False)
-    synced: bool = Field(default=False)  # 是否已同步到健康AI
+    synced: bool = Field(default=False)  # 同步状态
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+
+
+class DailyCard(SQLModel, table=True):
+    """每日成长卡片 - 服务端生成，心跳同步到客户端"""
+
+    __tablename__ = "daily_cards"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    card_id: str = Field(max_length=100, unique=True, index=True)  # 唯一卡片ID
+    card_type: str = Field(
+        max_length=50, index=True
+    )  # smile_collection, little_traveler, etc.
+    card_subtype: Optional[str] = Field(
+        default=None, max_length=50
+    )  # total, month, scene, etc.
+
+    # 卡片内容
+    title: str = Field(max_length=200)
+    subtitle: Optional[str] = Field(default=None, max_length=200)
+    content: Optional[str] = Field(default=None, max_length=500)
+    footer: Optional[str] = Field(default=None, max_length=200)
+    emoji: Optional[str] = Field(default=None, max_length=20)
+
+    # 卡片数据（JSON格式存储额外字段）
+    card_data: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+    # 照片路径列表
+    photo_paths: Optional[list] = Field(default=None, sa_column=Column(JSON))
+
+    # 统计信息
+    stats: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
+    # 生成信息
+    generated_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+    # 分享状态
+    shared: bool = Field(default=False)
+    shared_at: Optional[datetime] = Field(default=None)
+
+    # 同步状态（用于心跳同步到客户端）
+    synced: bool = Field(default=False)
+    synced_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now, index=True)

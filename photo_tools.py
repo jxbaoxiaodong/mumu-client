@@ -229,7 +229,7 @@ def call_qwen_vision(images, select_n, api_key=None):
             proxy_url,
             json=request_body,
             headers=headers,
-            timeout=600,
+            timeout=1200,
             verify=False,
         )
 

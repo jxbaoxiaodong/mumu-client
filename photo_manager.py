@@ -233,6 +233,30 @@ class PhotoManager:
             }
         return None
 
+    def get_photo_by_path(self, file_path: str) -> dict:
+        """
+        通过文件路径获取照片信息
+
+        Args:
+            file_path: 文件路径
+
+        Returns:
+            照片信息字典，如果不存在返回 None
+        """
+        # 通过遍历索引查找匹配路径的条目
+        for key in ["photos", "videos"]:
+            for entry_hash, entry in self.index_manager.index[key].items():
+                if entry.get("path") == file_path:
+                    return {
+                        "hash": entry["hash"],
+                        "filename": entry["filename"],
+                        "path": entry["path"],
+                        "date": entry["date"],
+                        "is_video": entry.get("is_video", False),
+                        "size": entry.get("size", 0),
+                    }
+        return None
+
     def remove_photo(self, filename: str) -> bool:
         """
         从索引中移除照片（不删除实际文件）

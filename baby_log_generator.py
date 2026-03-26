@@ -223,7 +223,7 @@ def generate_baby_log_enhanced(
                 "temperature": 0.8,
                 "max_tokens": 500,
             },
-            timeout=600,
+            timeout=1200,
         )
 
         if resp.status_code == 200:
@@ -246,7 +246,7 @@ def get_weather_sync(city="北京"):
 
     try:
         city_encoded = urllib.parse.quote(city, safe="")
-        resp = req.get(f"wttr.in/{city_encoded}?format=j1", timeout=600)
+        resp = req.get(f"wttr.in/{city_encoded}?format=j1", timeout=1200)
 
         if resp.status_code == 200:
             data = resp.json()

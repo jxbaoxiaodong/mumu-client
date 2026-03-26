@@ -4750,20 +4750,49 @@ function showDailyGrowthCard(forceShow = false) {
     showRandomCard();
 }
 
-// 辅助函数：将完整路径转换为 /photo/filename 格式
-function getPhotoUrl(path) {
-    if (!path) return '';
-    // 如果已经是 /photo/ 或 /collage/ 格式，直接返回
-    if (path.startsWith('/photo/') || path.startsWith('/collage/')) return path;
-    // 提取文件名
-    const filename = path.split('/').pop();
-    return `/photo/${filename}`;
-}
-
 function renderDailyGrowthCard(card) {
     const cardEl = document.getElementById('dailyGrowthCard');
     const styleConfig = card.style_config || {};
     const cardType = card.type || 'default_card';
+    
+    // 照片路径转换函数 - 将服务端绝对路径转换为客户端可访问的URL
+    function convertPhotoPath(photo) {
+        if (!photo) return null;
+        
+        // 如果photo是字符串
+        if (typeof photo === 'string') {
+            // 已经是相对路径（如/collage/xxx.jpg），直接返回
+            if (photo.startsWith('/collage/') || photo.startsWith('/photo/')) {
+                return photo;
+            }
+            // 如果是绝对路径，提取文件名，假设服务端有/photo/<filename>路由
+            if (photo.startsWith('/')) {
+                const filename = photo.split('/').pop();
+                // URL编码文件名，确保中文字符正确处理
+                const encodedFilename = encodeURIComponent(filename);
+                return `/photo/${encodedFilename}`;
+            }
+            // 其他情况原样返回
+            return photo;
+        }
+        
+        // 如果photo是对象且有path字段
+        if (typeof photo === 'object' && photo.path) {
+            const path = photo.path;
+            // 处理绝对路径
+            if (path.startsWith('/')) {
+                const filename = path.split('/').pop();
+                // URL编码文件名，确保中文字符正确处理
+                const encodedFilename = encodeURIComponent(filename);
+                // 返回一个字符串URL，保持其他字段
+                return `/photo/${encodedFilename}`;
+            }
+            // 其他情况返回path
+            return path;
+        }
+        
+        return photo;
+    }
 
     // 更新分享按钮状态
     const shareBtn = document.getElementById('shareCardBtn');
@@ -4785,7 +4814,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card photo-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.style.display='none'">
+                    <img src="${convertPhotoPath(card.photo)}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
                 <div class="card-photo-date">${card.photo_date || ''}</div>
                 <div class="card-content">
@@ -4862,7 +4891,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card collage-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
+                    <img src="${convertPhotoPath(card.photo)}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '成长合辑'}</div>
@@ -4877,21 +4906,15 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'comparison_card') {
         // 成长对比卡片（往昔 vs 近日）
-        const photoPaths = card.photo_paths || [];
-        const beforePhoto = getPhotoUrl(photoPaths[0]);
-        const afterPhoto = photoPaths.length > 1 ? getPhotoUrl(photoPaths[1]) : null;
-        const stats = card.stats || {};
         cardHtml = `
             <div class="growth-card comparison-card">
-                <div class="expression-compare">
-                    ${beforePhoto ? `<div class="compare-item"><div class="compare-label">${stats.before_date || card.before_date || '早期'}</div><img src="${beforePhoto}" crossorigin="anonymous"></div>` : ''}
-                    <div class="compare-arrow">→</div>
-                    ${afterPhoto ? `<div class="compare-item"><div class="compare-label">${stats.after_date || card.after_date || '现在'}</div><img src="${afterPhoto}" crossorigin="anonymous"></div>` : ''}
+                <div class="card-photo-wrapper">
+                    <img src="${convertPhotoPath(card.photo)}" alt="成长对比" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
                 </div>
+                <div class="card-photo-date">${card.before_date || ''} → ${card.after_date || ''}</div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '成长对比'}</div>
                     <div class="card-text">${card.subtitle || ''}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
                 </div>
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || '时光飞逝，成长可见'}</span>
@@ -4901,12 +4924,6 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'special_milestone_card') {
         // 特殊里程碑卡片
-        const photoPaths = card.photo_paths || [];
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card special-milestone-card">
                 <div class="milestone-icon">${card.emoji || '🏆'}</div>
@@ -4914,7 +4931,6 @@ function renderDailyGrowthCard(card) {
                     <div class="card-title">${card.title || '里程碑'}</div>
                     <div class="card-text">${card.subtitle || ''}</div>
                     <div class="milestone-content">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || '每一个里程碑都值得纪念'}</span>
@@ -4924,23 +4940,17 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'smile_collection_card') {
         // 笑容收集册卡片
-        const photoPaths = card.photo_paths || [];
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card smile-collection-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '😊'}</span>
+                    <span class="card-emoji-large">😊</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '笑容收集册'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
+                ${card.photo ? `<div class="card-photo-wrapper"><img src="${convertPhotoPath(card.photo)}" class="card-collage" crossorigin="anonymous"></div>` : ''}
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
                     <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
@@ -4949,32 +4959,24 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'little_traveler_card') {
         // 小小旅行家卡片
-        const stats = card.stats || {};
-        const scenes = stats.scenes || card.scenes || [];
-        const photoPaths = card.photo_paths || [];
+        const scenes = card.scenes || [];
         const scenesHtml = scenes.length > 0 ? scenes.map(s => `
             <div class="travel-scene-item">
-                <span class="scene-emoji">${s.emoji || '📍'}</span>
+                <span class="scene-emoji">${s.emoji}</span>
                 <span class="scene-name">${s.name}</span>
                 <span class="scene-count">${s.count}次</span>
             </div>
         `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card little-traveler-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🗺️'}</span>
+                    <span class="card-emoji-large">🗺️</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '小小旅行家'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'scene' ? `<div class="travel-scenes">${scenesHtml}</div>` : ''}
+                    <div class="travel-scenes">${scenesHtml}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
@@ -4984,29 +4986,22 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'sleep_evolution_card') {
         // 睡眠进化史卡片
-        const stats = card.stats || {};
-        const poses = stats.poses || card.poses || [];
-        const photoPaths = card.photo_paths || [];
+        const poses = card.poses || [];
         const posesHtml = poses.length > 0 ? poses.map(p => `
             <div class="sleep-pose-tag">${p.name} ${p.count}次</div>
         `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card sleep-evolution-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '😴'}</span>
+                    <span class="card-emoji-large">😴</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '睡眠进化史'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'period' ? `<div class="sleep-poses">${posesHtml}</div>` : ''}
+                    <div class="sleep-poses">${posesHtml}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
+                ${card.photo ? `<div class="card-photo-wrapper"><img src="${convertPhotoPath(card.photo)}" class="card-collage" crossorigin="anonymous"></div>` : ''}
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
                     <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
@@ -5018,7 +5013,6 @@ function renderDailyGrowthCard(card) {
         const stats = card.stats || {};
         const huggerStats = stats.hugger_stats || {};
         const hugCount = stats.hug_count || 1;
-        const photoPaths = card.photo_paths || [];
         const huggerStatsHtml = Object.keys(huggerStats).length > 0 ? Object.entries(huggerStats).map(([name, count]) => `
             <div class="hugger-stat-item">
                 <span class="hugger-name">${name}</span>
@@ -5026,23 +5020,18 @@ function renderDailyGrowthCard(card) {
                 <span class="hugger-count">${count}次</span>
             </div>
         `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card love-hug-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '💕'}</span>
+                    <span class="card-emoji-large">💕</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '爱的抱抱'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'person' ? `<div class="hugger-stats">${huggerStatsHtml}</div>` : ''}
+                    <div class="hugger-stats">${huggerStatsHtml}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
+                ${card.photo ? `<div class="card-photo-wrapper"><img src="${convertPhotoPath(card.photo)}" class="card-collage" crossorigin="anonymous"></div>` : ''}
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
                     <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
@@ -5079,12 +5068,11 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'same_day_different_year_card') {
         // 同一天不同年卡片
-        const stats = card.stats || {};
-        const yearSamples = stats.year_samples || [];
+        const yearSamples = card.year_samples || [];
         const yearsHtml = yearSamples.length > 0 ? yearSamples.map(s => `
             <div class="year-sample-item">
                 <div class="year-label">${s.year}年</div>
-                ${s.photo ? `<div class="year-photo"><img src="${getPhotoUrl(s.photo.path)}" crossorigin="anonymous"></div>` : ''}
+                ${s.photo ? `<div class="year-photo"><img src="${convertPhotoPath(s.photo)}" crossorigin="anonymous"></div>` : ''}
             </div>
         `).join('') : '';
         cardHtml = `
@@ -5106,13 +5094,12 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'four_seasons_wardrobe_card') {
         // 四季衣橱卡片
-        const stats = card.stats || {};
-        const seasons = stats.seasons || [];
+        const seasons = card.seasons || [];
         const seasonsHtml = seasons.length > 0 ? seasons.map(s => `
             <div class="season-item" style="--season-color: ${s.color}">
                 <div class="season-emoji">${s.emoji}</div>
                 <div class="season-name">${s.season}</div>
-                ${s.photo ? `<div class="season-photo"><img src="${getPhotoUrl(s.photo.path)}" crossorigin="anonymous"></div>` : ''}
+                ${s.photo ? `<div class="season-photo"><img src="${convertPhotoPath(s.photo)}" crossorigin="anonymous"></div>` : ''}
             </div>
         `).join('') : '';
         cardHtml = `
@@ -5134,9 +5121,7 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'sleep_pose_collection_card') {
         // 睡姿大全卡片
-        const stats = card.stats || {};
-        const poses = stats.poses || card.poses || [];
-        const photoPaths = card.photo_paths || [];
+        const poses = card.poses || [];
         const posesHtml = poses.length > 0 ? poses.map(p => `
             <div class="pose-tag">
                 <span class="pose-emoji">${p.emoji || '😴'}</span>
@@ -5144,23 +5129,18 @@ function renderDailyGrowthCard(card) {
                 <span class="pose-count">${p.count}次</span>
             </div>
         `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card sleep-poses-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🤸'}</span>
+                    <span class="card-emoji-large">🤸</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '睡姿大全'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'pose' ? `<div class="poses-cloud">${posesHtml}</div>` : ''}
+                    <div class="poses-cloud">${posesHtml}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
+                ${card.photo ? `<div class="card-photo-wrapper"><img src="${convertPhotoPath(card.photo)}" class="card-collage" crossorigin="anonymous"></div>` : ''}
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
                     <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
@@ -5169,11 +5149,11 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'expression_mimic_card') {
         // 表情模仿秀卡片
-        const stats = card.stats || {};
-        const photoPaths = card.photo_paths || [];
-        const earlyPhoto = getPhotoUrl(photoPaths[0]);
-        const recentPhoto = photoPaths.length > 1 ? getPhotoUrl(photoPaths[photoPaths.length - 1]) : null;
-        const monthsDiff = stats.months_diff || card.months_diff || 0;
+        const earlyPhoto = card.early_photo;
+        const recentPhoto = card.recent_photo;
+        const monthsDiff = card.months_diff || 0;
+        const earlyPhotoUrl = convertPhotoPath(earlyPhoto);
+        const recentPhotoUrl = convertPhotoPath(recentPhoto);
         cardHtml = `
             <div class="growth-card expression-mimic-card">
                 <div class="card-header-bar">
@@ -5183,9 +5163,9 @@ function renderDailyGrowthCard(card) {
                     <div class="card-title">${card.title || '表情模仿秀'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
                     <div class="expression-compare">
-                        ${earlyPhoto ? `<div class="compare-item"><div class="compare-label">${monthsDiff || '?'}个月前</div><img src="${earlyPhoto}" crossorigin="anonymous"></div>` : ''}
+                        ${earlyPhotoUrl ? `<div class="compare-item"><div class="compare-label">${monthsDiff || '?'}个月前</div><img src="${earlyPhotoUrl}" crossorigin="anonymous"></div>` : ''}
                         <div class="compare-arrow">→</div>
-                        ${recentPhoto ? `<div class="compare-item"><div class="compare-label">现在</div><img src="${recentPhoto}" crossorigin="anonymous"></div>` : ''}
+                        ${recentPhotoUrl ? `<div class="compare-item"><div class="compare-label">现在</div><img src="${recentPhotoUrl}" crossorigin="anonymous"></div>` : ''}
                     </div>
                     <div class="card-highlight">${card.content || ''}</div>
                 </div>
@@ -5197,30 +5177,26 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'data_portrait_card') {
         // 数据画像卡片
-        const stats = card.stats || {};
-        const totalPhotos = stats.total_photos || card.total_photos || 0;
-        const favoriteActivity = stats.favorite_activity || card.favorite_activity || '探索';
-        const favoriteScene = stats.favorite_scene || card.favorite_scene || '家里';
         const statsHtml = `
             <div class="data-stat-item">
                 <span class="stat-label">📸 总照片数</span>
-                <span class="stat-value">${totalPhotos}</span>
+                <span class="stat-value">${card.total_photos || 0}</span>
             </div>
             <div class="data-stat-item">
                 <span class="stat-label">😊 最爱做的事</span>
-                <span class="stat-value">${favoriteActivity}</span>
+                <span class="stat-value">${card.favorite_activity || '探索'}</span>
             </div>
             <div class="data-stat-item">
                 <span class="stat-label">🏠 最爱的地方</span>
-                <span class="stat-value">${favoriteScene}</span>
+                <span class="stat-value">${card.favorite_scene || '家里'}</span>
             </div>
             <div class="data-stat-item">
                 <span class="stat-label">🎭 最常表情</span>
-                <span class="stat-value">${stats.favorite_emotion || '开心'}</span>
+                <span class="stat-value">${card.favorite_emotion || '开心'}</span>
             </div>
             <div class="data-stat-item">
                 <span class="stat-label">👨‍👩‍👧 最多陪伴</span>
-                <span class="stat-value">${stats.favorite_companion || '家人'}</span>
+                <span class="stat-value">${card.favorite_companion || '家人'}</span>
             </div>
         `;
         cardHtml = `
@@ -5244,7 +5220,6 @@ function renderDailyGrowthCard(card) {
         // 从家里走向世界卡片
         const stats = card.stats || {};
         const milestones = stats.milestones || [];
-        const photoPaths = card.photo_paths || [];
         const milestonesHtml = milestones.length > 0 ? milestones.map(m => `
             <div class="explore-milestone">
                 <div class="milestone-stage">${m.stage}</div>
@@ -5252,22 +5227,16 @@ function renderDailyGrowthCard(card) {
                 <div class="milestone-count">${m.scene_count}个地方</div>
             </div>
         `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
-            </div>
-        ` : '';
         cardHtml = `
             <div class="growth-card home-to-world-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🌍'}</span>
+                    <span class="card-emoji-large">🌍</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '从家里走向世界'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'month' ? `<div class="explore-milestones">${milestonesHtml}</div>` : ''}
+                    <div class="explore-milestones">${milestonesHtml}</div>
                     <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
                 </div>
                 <div class="card-footer">
                     <span class="card-footer-text">${card.footer || ''}</span>
@@ -5277,8 +5246,7 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'emotion_weather_card') {
         // 情绪天气卡片
-        const stats = card.stats || {};
-        const emotions = stats.emotions || card.emotions || [];
+        const emotions = card.emotions || [];
         const emotionsHtml = emotions.length > 0 ? emotions.map(e => `
             <div class="emotion-weather-item" style="--emotion-color: ${e.color}">
                 <span class="emotion-icon">${e.icon}</span>
@@ -5290,7 +5258,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card emotion-weather-card">
                 <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🌈'}</span>
+                    <span class="card-emoji-large">🌈</span>
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '情绪天气'}</div>
@@ -5404,6 +5372,12 @@ function generateCanvas(cardEl) {
 function editCardText() {
     const mainText = document.getElementById('cardMainText');
     const footerText = document.getElementById('cardFooterText');
+    const editBtn = document.getElementById('editBtn');
+
+    if (!mainText || !footerText || !editBtn) {
+        console.warn('[Edit] 无法找到编辑所需的元素');
+        return;
+    }
 
     // 切换编辑模式
     if (mainText.contentEditable === 'true') {
@@ -5411,7 +5385,7 @@ function editCardText() {
         footerText.contentEditable = 'false';
         mainText.style.border = 'none';
         footerText.style.border = 'none';
-        document.getElementById('editBtn').innerHTML = '<i class="fas fa-edit me-1"></i>编辑';
+        editBtn.innerHTML = '<i class="fas fa-edit me-1"></i>编辑';
     } else {
         mainText.contentEditable = 'true';
         footerText.contentEditable = 'true';
@@ -5422,7 +5396,7 @@ function editCardText() {
         mainText.style.padding = '8px';
         footerText.style.padding = '8px';
         mainText.focus();
-        document.getElementById('editBtn').innerHTML = '<i class="fas fa-check me-1"></i>完成';
+        editBtn.innerHTML = '<i class="fas fa-check me-1"></i>完成';
     }
 }
 
@@ -5660,7 +5634,7 @@ function hideMiniCard() {
                     <button class="btn btn-outline-secondary btn-sm" onclick="refreshDailyCard()" style="border-radius: 20px;" id="refreshCardBtn">
                         <i class="fas fa-sync-alt me-1"></i>换一个
                     </button>
-                    <button id="editBtn" class="btn btn-outline-secondary btn-sm" onclick="editCardText()" style="border-radius: 20px; display: none;">
+                    <button id="editBtn" class="btn btn-outline-secondary btn-sm" onclick="editCardText()" style="border-radius: 20px;">
                         <i class="fas fa-edit me-1"></i>编辑
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" onclick="closeDailyCard()" style="border-radius: 20px;">
@@ -6373,21 +6347,6 @@ function hideMiniCard() {
 .pose-count {
     font-size: 12px;
     color: #718096;
-}
-
-.card-photos-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin: 16px 0;
-}
-
-.card-grid-photo {
-    width: 100%;
-    aspect-ratio: 1;
-    object-fit: cover;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 /* 表情模仿秀卡片 */

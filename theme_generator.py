@@ -327,7 +327,7 @@ def generate_theme_by_ai(baby_name: str, user_prompt: str, api_key: str = None) 
             f"{server_url}/czrz/ai/proxy/text",
             json=request_body,
             headers=headers,
-            timeout=(30, 600),
+            timeout=(30, 1200),
             verify=False,
         )
 
@@ -837,14 +837,20 @@ def update_theme(client_id: str, user_prompt: str, api_key: str = None) -> dict:
     baby_name = theme.get("baby_name", "宝宝") if theme else "宝宝"
 
     # 使用AI生成新主题（配置从文件读取）
-    new_theme = generate_custom_theme_by_ai(baby_name, user_prompt, theme, api_key, client_id=client_id)
+    new_theme = generate_custom_theme_by_ai(
+        baby_name, user_prompt, theme, api_key, client_id=client_id
+    )
 
     save_theme(client_id, new_theme)
     return new_theme
 
 
 def generate_custom_theme_by_ai(
-    baby_name: str, user_prompt: str, current_theme: dict = None, api_key: str = None, client_id: str = None
+    baby_name: str,
+    user_prompt: str,
+    current_theme: dict = None,
+    api_key: str = None,
+    client_id: str = None,
 ) -> dict:
     """
     使用AI根据用户描述生成自定义主题 - 完全由AI自由发挥创意
@@ -961,7 +967,7 @@ def generate_custom_theme_by_ai(
             f"{server_url}/czrz/ai/proxy/text",
             json=request_body,
             headers=headers,
-            timeout=(30, 600),
+            timeout=(30, 1200),
             verify=False,
         )
 

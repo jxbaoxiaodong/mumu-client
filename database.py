@@ -29,6 +29,7 @@ from models import (
     PhotoTag,
     Badge,
     ProfileFeedback,
+    DailyCard,
 )
 
 
@@ -98,6 +99,7 @@ def get_user_engine(client_id: str):
             PhotoTag.__table__,
             Badge.__table__,
             ProfileFeedback.__table__,
+            DailyCard.__table__,
         ],
     )
 

@@ -283,7 +283,7 @@ class CompressionManager:
 
             print(f"🎬 正在压缩视频: {input_path.name}...")
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
 
             if result.returncode == 0 and output_path.exists():
                 original_size = input_path.stat().st_size

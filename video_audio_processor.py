@@ -92,7 +92,7 @@ def transcribe_via_proxy(
             f"{server_url}/czrz/ai/proxy/speech",
             json=request_body,
             headers=headers,
-            timeout=120,
+            timeout=300,
             verify=False,
         )
 
@@ -179,7 +179,7 @@ def analyze_language_via_proxy(
             f"{server_url}/czrz/ai/proxy/text",
             json=request_body,
             headers=headers,
-            timeout=60,
+            timeout=180,
             verify=False,
         )
 
