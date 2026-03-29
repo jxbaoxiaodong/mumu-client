@@ -4473,8 +4473,8 @@ function loadNormalCards() {
                 // 缓存为空，检查重试次数
                 if (cardCache.retryCount < cardCache.maxRetries) {
                     cardCache.retryCount++;
-                    console.log(`[Card] 缓存为空，触发更新 (重试 ${cardCache.retryCount}/${cardCache.maxRetries})...`);
-                    updateCardCache();
+                    console.log(`[Card] 缓存为空，稍后重试 (重试 ${cardCache.retryCount}/${cardCache.maxRetries})...`);
+                    setTimeout(loadCardsFromCache, 3000);
                 } else {
                     // 超过最大重试次数，停止加载
                     console.log('[Card] 重试次数用完，无卡片可显示');
@@ -4580,36 +4580,6 @@ function showMiniCardLoading(text) {
     `;
     miniCard.classList.add('show');
     miniCard.onclick = null;  // 加载中不可点击
-}
-
-// 更新后端缓存
-function updateCardCache() {
-    console.log('[Card] 更新后端缓存...');
-
-    fetchWithPassword('/api/card/cache/update', { method: 'POST' })
-        .then(data => {
-            if (data && data.success) {
-                console.log(`[Card] 缓存更新完成，共 ${data.total} 张`);
-                if (data.total > 0) {
-                    // 有卡片，重新加载
-                    cardCache.loaded = false;
-                    loadCardsFromCache();
-                } else {
-                    // 没有卡片，停止加载
-                    console.log('[Card] 无卡片可显示');
-                    cardCache.loading = false;
-                    cardCache.loaded = true;
-                    hideMiniCard();
-                }
-            }
-        })
-        .catch(err => {
-            if (err !== 'require_password') {
-                console.error('[Card] 更新失败:', err);
-            }
-            // 更新失败也停止加载
-            cardCache.loading = false;
-        });
 }
 
 // 数组随机打乱
@@ -4761,8 +4731,8 @@ function renderDailyGrowthCard(card) {
         
         // 如果photo是字符串
         if (typeof photo === 'string') {
-            // 已经是相对路径（如/collage/xxx.jpg），直接返回
-            if (photo.startsWith('/collage/') || photo.startsWith('/photo/')) {
+            // 已经是相对路径（如/photo/xxx.jpg），直接返回
+            if (photo.startsWith('/photo/')) {
                 return photo;
             }
             // 如果是绝对路径，提取文件名，假设服务端有/photo/<filename>路由

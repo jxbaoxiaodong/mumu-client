@@ -137,6 +137,167 @@ class SmartCardGenerator:
         finally:
             conn.close()
 
+    def _heuristic_merge_tags(
+        self, tags: List[Dict], max_tags: int = 12
+    ) -> List[Dict]:
+        """无LLM时的标签合并（基于关键词相似度）"""
+        if not tags:
+            return []
+
+        tags_sorted = sorted(tags, key=lambda t: t.get("confidence", 0), reverse=True)
+        groups = []
+
+        def get_sig(tag_name: str) -> set:
+            return set(self.TAG_KEYWORDS.get(tag_name, [tag_name]))
+
+        def jaccard(a: set, b: set) -> float:
+            if not a or not b:
+                return 0.0
+            return len(a & b) / len(a | b)
+
+        for t in tags_sorted:
+            tag_name = t.get("tag", "")
+            if not tag_name:
+                continue
+            sig = get_sig(tag_name)
+            placed = False
+            for g in groups:
+                if jaccard(sig, g["sig"]) >= 0.8:
+                    g["aliases"].append(tag_name)
+                    placed = True
+                    break
+            if not placed:
+                groups.append(
+                    {"sig": sig, "rep": t, "aliases": [tag_name]}
+                )
+
+        merged = [g["rep"] for g in groups]
+        return merged[:max_tags] if max_tags else merged
+
+    def merge_tags_with_llm(
+        self, tags: List[Dict], max_tags: int = 12
+    ) -> List[Dict]:
+        """使用LLM合并语义重复的标签，返回去重后的标签列表"""
+        if not tags:
+            return []
+
+        try:
+            from model_manager import model_manager
+
+            config = model_manager.get_text_config()
+            url = config.get("api_url")
+            token = config.get("api_token")
+            model_name = config.get("model_name")
+
+            if not url or not token or not model_name:
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            tags_sorted = sorted(
+                tags, key=lambda t: t.get("confidence", 0), reverse=True
+            )
+            candidates = tags_sorted[:60]
+
+            tag_lines = []
+            for t in candidates:
+                evidence = (t.get("evidence") or "")[:40]
+                tag_lines.append(
+                    f"- {t.get('tag','')}: {t.get('confidence',0):.2f} | {evidence}"
+                )
+
+            prompt = f"""你是标签去重助手。请合并语义相同或高度相近的标签，只保留最自然、最常用的表达作为主标签。
+
+标签列表（含置信度和证据片段）：
+{chr(10).join(tag_lines)}
+
+请返回 JSON：
+{{"canonical":[{{"tag":"安静","aliases":["平静","安静观察型"]}}, {{...}}]}}
+
+规则：
+1. tag 与 aliases 必须来自上述标签列表。
+2. 每组语义只能保留 1 个主标签。
+3. 输出总数量不超过 {max_tags} 个。
+4. 如果不确定是否重复，可直接保留为单独主标签。"""
+
+            import requests
+
+            payload = {
+                "model": model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 800,
+                "temperature": 0.2,
+            }
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            }
+
+            response = requests.post(url, json=payload, headers=headers, timeout=600)
+            if response.status_code != 200:
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            result = response.json()
+            if "choices" in result and len(result["choices"]) > 0:
+                response_text = result["choices"][0]["message"]["content"]
+            else:
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            import re
+
+            data = None
+            try:
+                data = json.loads(response_text)
+            except Exception:
+                json_match = re.search(r"\{[\s\S]*\}", response_text)
+                if json_match:
+                    try:
+                        data = json.loads(json_match.group())
+                    except Exception:
+                        data = None
+
+            if not data or "canonical" not in data:
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            canonical = data.get("canonical", [])
+            if not isinstance(canonical, list):
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            # 建立标签字典方便查找
+            tag_map = {t.get("tag"): t for t in tags if t.get("tag")}
+
+            merged = []
+            used = set()
+
+            for item in canonical:
+                if not isinstance(item, dict):
+                    continue
+                main_tag = item.get("tag")
+                if not main_tag or main_tag not in tag_map:
+                    continue
+                aliases = item.get("aliases", []) or []
+                candidate_tags = [main_tag] + [
+                    a for a in aliases if a in tag_map
+                ]
+                # 选置信度最高的作为代表
+                best = None
+                for name in candidate_tags:
+                    t = tag_map.get(name)
+                    if not t:
+                        continue
+                    if not best or t.get("confidence", 0) > best.get("confidence", 0):
+                        best = t
+                if best and best.get("tag") not in used:
+                    merged.append(best)
+                    used.add(best.get("tag"))
+
+            if not merged:
+                return self._heuristic_merge_tags(tags, max_tags)
+
+            return merged[:max_tags] if max_tags else merged
+
+        except Exception as e:
+            print(f"[SmartCard] 合并标签失败: {e}")
+            return self._heuristic_merge_tags(tags, max_tags)
+
     def find_photos_by_tag(self, tag: str, limit: int = 5) -> List[Dict]:
         """
         根据标签查找匹配的照片
@@ -452,7 +613,7 @@ class SmartCardGenerator:
                 }
 
                 response = requests.post(
-                    url, json=payload, headers=headers, timeout=300
+                    url, json=payload, headers=headers, timeout=600
                 )
 
                 if response.status_code != 200:

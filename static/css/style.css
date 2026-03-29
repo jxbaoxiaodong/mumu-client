@@ -51,7 +51,7 @@
 }
 
 body {
-  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   background: var(--bg-warm);
   background-attachment: fixed;
   min-height: 100vh;
@@ -71,7 +71,7 @@ body {
 }
 
 .navbar-brand {
-  font-family: 'Ma Shan Zheng', cursive;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "KaiTi", cursive;
   font-size: 1.6rem;
   display: flex;
   align-items: center;
@@ -229,7 +229,7 @@ body {
 }
 
 .welcome-banner h1 {
-  font-family: 'Ma Shan Zheng', cursive;
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "KaiTi", cursive;
   font-size: 2.8rem;
   margin-bottom: 15px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);

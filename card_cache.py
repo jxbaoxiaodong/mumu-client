@@ -14,15 +14,19 @@ import random
 import threading
 from pathlib import Path
 from datetime import datetime
+from collections import defaultdict
 from typing import Dict, List, Optional
+
+from card_protocol import normalize_cards, normalize_card
 
 # 统一数据目录
 DATA_DIR = Path.home() / "Documents" / "CZRZ"
-COLLAGE_DIR = DATA_DIR / "collage"
 
 
 class CardCache:
     """卡片缓存管理器"""
+
+    MAX_COMPARISON_CARDS = 10
 
     def __init__(self, cache_dir: str = None):
         if cache_dir:
@@ -49,12 +53,16 @@ class CardCache:
         """加载缓存"""
         if self.cache_file.exists():
             try:
-                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                with open(self.cache_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    self.cards = data.get('cards', [])
-                    self.milestone_cards = data.get('milestone_cards', [])
-                    self.last_update = data.get('last_update', 0)
-                print(f"[CardCache] 加载缓存: {len(self.cards)}张普通卡片, {len(self.milestone_cards)}张里程碑卡片")
+                    self.cards = normalize_cards(data.get("cards", []))
+                    self.milestone_cards = normalize_cards(
+                        data.get("milestone_cards", [])
+                    )
+                    self.last_update = data.get("last_update", 0)
+                print(
+                    f"[CardCache] 加载缓存: {len(self.cards)}张普通卡片, {len(self.milestone_cards)}张里程碑卡片"
+                )
             except Exception as e:
                 print(f"[CardCache] 加载缓存失败: {e}")
                 self.cards = []
@@ -63,14 +71,16 @@ class CardCache:
         """保存缓存"""
         try:
             data = {
-                'cards': self.cards,
-                'milestone_cards': self.milestone_cards,
-                'last_update': self.last_update,
-                'generated_at': datetime.now().isoformat(),
+                "cards": self.cards,
+                "milestone_cards": self.milestone_cards,
+                "last_update": self.last_update,
+                "generated_at": datetime.now().isoformat(),
             }
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"[CardCache] 保存缓存: {len(self.cards)}张普通卡片, {len(self.milestone_cards)}张里程碑卡片")
+            print(
+                f"[CardCache] 保存缓存: {len(self.cards)}张普通卡片, {len(self.milestone_cards)}张里程碑卡片"
+            )
         except Exception as e:
             print(f"[CardCache] 保存缓存失败: {e}")
 
@@ -78,7 +88,7 @@ class CardCache:
         """加载已分享记录"""
         if self.shared_file.exists():
             try:
-                with open(self.shared_file, 'r', encoding='utf-8') as f:
+                with open(self.shared_file, "r", encoding="utf-8") as f:
                     self.shared_cards = json.load(f)
                 print(f"[CardCache] 加载分享记录: {len(self.shared_cards)}条")
             except Exception as e:
@@ -88,7 +98,7 @@ class CardCache:
     def _save_shared(self):
         """保存已分享记录"""
         try:
-            with open(self.shared_file, 'w', encoding='utf-8') as f:
+            with open(self.shared_file, "w", encoding="utf-8") as f:
                 json.dump(self.shared_cards, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[CardCache] 保存分享记录失败: {e}")
@@ -102,7 +112,36 @@ class CardCache:
         """检查卡片是否已分享"""
         return self.shared_cards.get(card_id, False)
 
-    def generate_all_cards(self, baby_name: str = "宝宝", base_url: str = "http://localhost:3000") -> List[Dict]:
+    def _card_signature(self, card: Dict) -> str:
+        """生成卡片内容指纹，用于去重"""
+        card_type = card.get("type") or card.get("card_type") or ""
+        photo_paths = card.get("photo_paths") or []
+        if not isinstance(photo_paths, list):
+            photo_paths = []
+        normalized_paths = "|".join(str(p) for p in photo_paths if p)
+        before_date = card.get("before_date") or card.get("date_before") or ""
+        after_date = card.get("after_date") or card.get("date_after") or ""
+        title = card.get("title") or ""
+        subtitle = card.get("subtitle") or ""
+        signature = f"{card_type}::{normalized_paths}::{title}::{subtitle}"
+        if not normalized_paths:
+            signature = f"{signature}::{before_date}::{after_date}"
+        return signature
+
+    def has_equivalent_card(self, card: Dict) -> bool:
+        """检查缓存里是否已经有相同内容的卡片"""
+        signature = self._card_signature(card)
+        for existing in self.cards:
+            if self._card_signature(existing) == signature:
+                return True
+        for existing in self.milestone_cards:
+            if self._card_signature(existing) == signature:
+                return True
+        return False
+
+    def generate_all_cards(
+        self, baby_name: str = "宝宝", base_url: str = "http://localhost:3000"
+    ) -> List[Dict]:
         """
         生成所有智能卡片
 
@@ -118,21 +157,17 @@ class CardCache:
 
         try:
             from smart_card_generator import SmartCardGenerator
-            from card_generator import (
-                generate_smart_tag_card,
-                generate_growth_comparison_card,
-            )
-            from photo_collage import PhotoCollageGenerator
-            from PIL import Image
 
             generator = SmartCardGenerator()
 
             # 1. 生成标签主题卡片
             print("[CardCache] 生成标签主题卡片...")
             tags = generator.get_tags()
+            if tags:
+                tags = generator.merge_tags_with_llm(tags, max_tags=12)
             generated_tags = set()
 
-            for tag_info in tags:  # 生成所有标签卡片
+            for tag_info in tags:  # 生成去重后的标签卡片（不强制全量）
                 tag = tag_info["tag"]
                 if tag in generated_tags:
                     continue
@@ -140,64 +175,72 @@ class CardCache:
                 try:
                     photos = generator.find_photos_by_tag(tag, limit=4)
                     if len(photos) >= 2:
-                        # 生成合图
-                        photo_paths = [p["path"] for p in photos if Path(p["path"]).exists()]
-                        photo_dates = [p.get("date", "") for p in photos if Path(p["path"]).exists()]
+                        # 只保留素材元数据，最终卡片由客户端按类型渲染
+                        photo_paths = [
+                            p["path"] for p in photos if Path(p["path"]).exists()
+                        ]
                         if len(photo_paths) >= 2:
-                            COLLAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-                            collage_gen = PhotoCollageGenerator(output_dir=str(COLLAGE_DIR))
-                            import random
-                            collage_style = random.choice(['grid', 'polaroid', 'magazine'])
-
-                            collage_path = collage_gen.generate(
-                                photos=photo_paths,
-                                style=collage_style,
-                                title=f"{baby_name}的{tag}时刻",
-                                dates=photo_dates,
+                            tag_themes = {
+                                "爱笑": {"emoji": "😊", "title": "爱笑的天使"},
+                                "活泼好动": {"emoji": "🏃", "title": "活力满满"},
+                                "专注力好": {"emoji": "🎯", "title": "专注小达人"},
+                                "好奇心强": {"emoji": "🔍", "title": "好奇探索家"},
+                                "安静": {"emoji": "😴", "title": "安静小天使"},
+                                "运动能力强": {
+                                    "emoji": "💪",
+                                    "title": "运动小健将",
+                                },
+                                "表情丰富": {"emoji": "😊", "title": "表情包达人"},
+                                "探索欲强": {"emoji": "🌟", "title": "小小探索家"},
+                                "乖巧": {"emoji": "🥰", "title": "乖巧宝贝"},
+                                "睡眠安稳": {"emoji": "😴", "title": "安睡小天使"},
+                            }
+                            theme = tag_themes.get(
+                                tag, {"emoji": "✨", "title": f"{tag}的宝宝"}
                             )
 
-                            if collage_path:
-                                tag_themes = {
-                                    "爱笑": {"emoji": "😊", "title": "爱笑的天使"},
-                                    "活泼好动": {"emoji": "🏃", "title": "活力满满"},
-                                    "专注力好": {"emoji": "🎯", "title": "专注小达人"},
-                                    "好奇心强": {"emoji": "🔍", "title": "好奇探索家"},
-                                    "安静": {"emoji": "😴", "title": "安静小天使"},
-                                    "运动能力强": {"emoji": "💪", "title": "运动小健将"},
-                                    "表情丰富": {"emoji": "😊", "title": "表情包达人"},
-                                    "探索欲强": {"emoji": "🌟", "title": "小小探索家"},
-                                    "乖巧": {"emoji": "🥰", "title": "乖巧宝贝"},
-                                    "睡眠安稳": {"emoji": "😴", "title": "安睡小天使"},
+                            photo_dates = [
+                                p.get("date", "") for p in photos if p.get("date")
+                            ]
+                            formatted_date = ""
+                            if photo_dates:
+                                latest_date = sorted(photo_dates)[-1]
+                                try:
+                                    if "-" in latest_date:
+                                        date_obj = datetime.strptime(
+                                            latest_date, "%Y-%m-%d"
+                                        )
+                                        formatted_date = f"{str(date_obj.year)[-2:]}.{date_obj.month:02d}.{date_obj.day:02d}"
+                                except:
+                                    pass
+
+                            all_cards.append(
+                                {
+                                    "id": f"tag_{tag}_{int(time.time())}",
+                                    "type": "tag_collage_card",
+                                    "layout": "tag_collage",
+                                    "category": "tag",
+                                    "tag": tag,
+                                    "photos": [
+                                        {
+                                            "path": p["path"],
+                                            "date": p.get("date", ""),
+                                        }
+                                        for p in photos
+                                        if p.get("path")
+                                    ],
+                                    "photo_paths": [
+                                        p["path"] for p in photos if p.get("path")
+                                    ],
+                                    "title": f"{theme['emoji']} {theme['title']}",
+                                    "subtitle": f"{baby_name}的{tag}时刻",
+                                    "content": f"在{len(photos)}个瞬间中发现了这个可爱特质",
+                                    "footer": "每一个瞬间都闪闪发光",
+                                    "formatted_date": formatted_date,
                                 }
-                                theme = tag_themes.get(tag, {"emoji": "✨", "title": f"{tag}的宝宝"})
-
-                                # 获取照片拍摄日期
-                                photo_dates = [p.get("date", "") for p in photos if p.get("date")]
-                                formatted_date = ""
-                                if photo_dates:
-                                    latest_date = sorted(photo_dates)[-1]
-                                    try:
-                                        if '-' in latest_date:
-                                            date_obj = datetime.strptime(latest_date, '%Y-%m-%d')
-                                            formatted_date = f"{str(date_obj.year)[-2:]}.{date_obj.month:02d}.{date_obj.day:02d}"
-                                    except:
-                                        pass
-
-                                all_cards.append({
-                                    'id': f"tag_{tag}_{int(time.time())}",
-                                    'type': 'tag_collage_card',
-                                    'category': 'tag',
-                                    'tag': tag,
-                                    'photo': f"/collage/{Path(collage_path).name}",
-                                    'title': f"{theme['emoji']} {theme['title']}",
-                                    'subtitle': f"{baby_name}的{tag}时刻",
-                                    'content': f"在{len(photos)}个瞬间中发现了这个可爱特质",
-                                    'footer': '每一个瞬间都闪闪发光',
-                                    'formatted_date': formatted_date,
-                                })
-                                generated_tags.add(tag)
-                                print(f"  ✓ {tag}: {len(photos)}张照片")
+                            )
+                            generated_tags.add(tag)
+                            print(f"  ✓ {tag}: {len(photos)}张照片")
                 except Exception as e:
                     print(f"  ✗ {tag}: {e}")
 
@@ -209,13 +252,12 @@ class CardCache:
             try:
                 llm_scenes = generator.discover_similar_scenes_with_llm()
                 print(f"[CardCache] LLM发现 {len(llm_scenes)} 个场景")
-                
+
                 for scene in llm_scenes:
                     scene_name = scene.get("name", "")
                     photos = scene.get("photos", [])
 
                     if len(photos) >= 2 and scene_name not in generated_scenes:
-                        # 按日期排序
                         dated_photos = []
                         for p in photos:
                             date_str = p.get("date", "")
@@ -228,146 +270,180 @@ class CardCache:
 
                         if len(dated_photos) >= 2:
                             dated_photos.sort(key=lambda x: x[1])
-                            oldest = dated_photos[0]
-                            newest = dated_photos[-1]
+                            month_groups = defaultdict(list)
+                            for photo, date_obj, date_str in dated_photos:
+                                month_groups[date_str[:7]].append(
+                                    (photo, date_obj, date_str)
+                                )
 
-                            days_diff = (newest[1] - oldest[1]).days
-                            months_diff = days_diff // 30
+                            months = sorted(month_groups.keys())
+                            target_spans = [1, 3, 6, 12]
+                            added_scene_cards = 0
+                            seen_pairs = set()
 
-                            if months_diff >= 1:
-                                before_path = oldest[0].get("path", "")
-                                after_path = newest[0].get("path", "")
-                                
-                                # 格式化日期为YY.MM.DD
-                                before_date_raw = oldest[2]
-                                after_date_raw = newest[2]
-                                before_formatted = before_date_raw
-                                after_formatted = after_date_raw
-                                
-                                try:
-                                    if '-' in before_date_raw:
-                                        date_obj = datetime.strptime(before_date_raw, '%Y-%m-%d')
-                                        before_formatted = f"{str(date_obj.year)[-2:]}.{date_obj.month:02d}.{date_obj.day:02d}"
-                                except:
-                                    pass
-                                
-                                try:
-                                    if '-' in after_date_raw:
-                                        date_obj = datetime.strptime(after_date_raw, '%Y-%m-%d')
-                                        after_formatted = f"{str(date_obj.year)[-2:]}.{date_obj.month:02d}.{date_obj.day:02d}"
-                                except:
-                                    pass
+                            def add_comparison(before_item, after_item):
+                                nonlocal added_scene_cards
+                                before_photo, before_dt, before_date_raw = before_item
+                                after_photo, after_dt, after_date_raw = after_item
+                                before_path = before_photo.get("path", "")
+                                after_path = after_photo.get("path", "")
+                                if not before_path or not after_path:
+                                    return
 
-                                if before_path and after_path and Path(before_path).exists() and Path(after_path).exists():
-                                    COLLAGE_DIR.mkdir(parents=True, exist_ok=True)
+                                months_diff = (after_dt.year - before_dt.year) * 12 + (
+                                    after_dt.month - before_dt.month
+                                )
+                                if months_diff < 1:
+                                    return
 
-                                    try:
-                                        img_before = Image.open(before_path)
-                                        img_after = Image.open(after_path)
+                                before_formatted = f"{str(before_dt.year)[-2:]}.{before_dt.month:02d}.{before_dt.day:02d}"
+                                after_formatted = f"{str(after_dt.year)[-2:]}.{after_dt.month:02d}.{after_dt.day:02d}"
+                                card = {
+                                    "id": f"compare_{scene_name}_{before_date_raw}_{after_date_raw}_{int(time.time() * 1000)}_{added_scene_cards}",
+                                    "type": "comparison_card",
+                                    "layout": "comparison",
+                                    "category": "comparison",
+                                    "scene": scene_name,
+                                    "before_photo": before_path,
+                                    "after_photo": after_path,
+                                    "before_date": before_formatted,
+                                    "after_date": after_formatted,
+                                    "months_diff": months_diff,
+                                    "title": f"⏳ {months_diff}个月的成长",
+                                    "subtitle": f"{baby_name}的{scene_name}",
+                                    "content": f"从{before_formatted}到{after_formatted}",
+                                    "footer": "时光飞逝，成长可见",
+                                    "date": datetime.now().strftime("%Y.%m.%d"),
+                                    "photo_paths": [before_path, after_path],
+                                    "photos": [
+                                        {"path": before_path, "date": before_date_raw},
+                                        {"path": after_path, "date": after_date_raw},
+                                    ],
+                                }
+                                if not self.has_equivalent_card(card):
+                                    all_cards.append(card)
+                                    added_scene_cards += 1
 
-                                        target_w, target_h = 400, 500
+                            for i, early_month in enumerate(months):
+                                early_item = month_groups[early_month][0]
+                                for span in target_spans:
+                                    j = i + span
+                                    if j >= len(months):
+                                        continue
+                                    recent_month = months[j]
+                                    pair_key = (early_month, recent_month)
+                                    if pair_key in seen_pairs:
+                                        continue
+                                    add_comparison(
+                                        early_item, month_groups[recent_month][-1]
+                                    )
+                                    seen_pairs.add(pair_key)
 
-                                        def resize_img(img, tw, th):
-                                            ratio = img.width / img.height
-                                            if ratio > tw / th:
-                                                nw, nh = tw, int(tw / ratio)
-                                            else:
-                                                nw, nh = int(th * ratio), th
-                                            img = img.resize((nw, nh), Image.Resampling.LANCZOS)
-                                            canvas = Image.new('RGB', (tw, th), (255, 255, 255))
-                                            canvas.paste(img, ((tw - nw) // 2, (th - nh) // 2))
-                                            return canvas
+                            if months:
+                                add_comparison(
+                                    month_groups[months[0]][0],
+                                    month_groups[months[-1]][-1],
+                                )
 
-                                        img_before = resize_img(img_before, target_w, target_h)
-                                        img_after = resize_img(img_after, target_w, target_h)
-
-                                        padding = 20
-                                        total_w = target_w * 2 + padding * 3
-                                        total_h = target_h + padding * 2 + 60
-
-                                        collage = Image.new('RGB', (total_w, total_h), (245, 245, 245))
-                                        collage.paste(img_before, (padding, padding + 40))
-                                        collage.paste(img_after, (target_w + padding * 2, padding + 40))
-
-                                        output_path = COLLAGE_DIR / f"comparison_{scene_name}_{int(time.time() * 1000)}.jpg"
-                                        collage.save(output_path, quality=90)
-
-                                        all_cards.append({
-                                            'id': f"compare_{scene_name}_{int(time.time() * 1000)}",
-                                            'type': 'comparison_card',
-                                            'category': 'comparison',
-                                            'scene': scene_name,
-                                            'photo': f"/collage/{output_path.name}",
-                                            'before_date': before_formatted,
-                                            'after_date': after_formatted,
-                                            'months_diff': months_diff,
-                                            'title': f"⏳ {months_diff}个月的成长",
-                                            'subtitle': f"{baby_name}的{scene_name}",
-                                            'content': f"从{before_formatted}到{after_formatted}",
-                                            'footer': '时光飞逝，成长可见',
-                                            'date': datetime.now().strftime('%Y.%m.%d'),
-                                        })
-                                        generated_scenes.add(scene_name)
-                                        print(f"  ✓ [LLM] {scene_name}: {months_diff}个月跨度")
-                                    except Exception as e:
-                                        print(f"  ✗ [LLM] {scene_name}: {e}")
+                            if added_scene_cards > 0:
+                                generated_scenes.add(scene_name)
+                                print(
+                                    f"  ✓ [LLM] {scene_name}: 生成 {added_scene_cards} 张成长对比"
+                                )
             except Exception as e:
                 print(f"[CardCache] LLM场景发现失败: {e}")
+
+            comparison_cards = [
+                c for c in all_cards if c.get("type") == "comparison_card"
+            ]
+            if len(comparison_cards) > self.MAX_COMPARISON_CARDS:
+                comparison_cards = sorted(
+                    comparison_cards,
+                    key=lambda c: (
+                        -(c.get("months_diff") or 0),
+                        c.get("before_date") or "",
+                        c.get("after_date") or "",
+                        c.get("id") or c.get("card_id") or "",
+                    ),
+                )[: self.MAX_COMPARISON_CARDS]
+                comparison_set = {
+                    self._card_signature(card) for card in comparison_cards
+                }
+                all_cards = [
+                    c
+                    for c in all_cards
+                    if c.get("type") != "comparison_card"
+                    or self._card_signature(c) in comparison_set
+                ]
 
             # 3. 生成里程碑卡片（只在当天显示）
             print("[CardCache] 检查今日里程碑...")
             milestone_cards = generator.generate_all_milestone_cards(baby_name)
             for i, milestone_card in enumerate(milestone_cards):
-                milestone_card['id'] = f"milestone_{milestone_card.get('milestone_name', '')}_{int(time.time())}_{i}"
-                milestone_card['category'] = 'milestone'
+                milestone_card["id"] = (
+                    f"milestone_{milestone_card.get('milestone_name', '')}_{int(time.time())}_{i}"
+                )
+                milestone_card["category"] = "milestone"
+                milestone_card["layout"] = milestone_card.get("layout") or "milestone_story"
                 # 里程碑卡片单独存储，不加入all_cards
-                self.milestone_cards.append(milestone_card)
+                self.milestone_cards.append(normalize_card(milestone_card))
                 print(f"  ✓ 今日里程碑: {milestone_card.get('title', '')}")
 
             # 4. 生成扩展创意卡片（后台生成，数量不限）
             print("[CardCache] 生成扩展创意卡片...")
             try:
                 from extended_card_generator import ExtendedCardGenerator
+
                 extended_gen = ExtendedCardGenerator(str(generator.ai_db_path))
                 extended_cards = extended_gen.generate_all_extended_cards(baby_name)
-                
+
                 print(f"[CardCache] 生成了 {len(extended_cards)} 张扩展卡片")
-                
+
+                # 先删除历史的同一天不同年卡片
+                all_cards = [
+                    c
+                    for c in all_cards
+                    if c.get("type") != "same_day_different_year_card"
+                ]
+
                 for i, card in enumerate(extended_cards):
-                    card['id'] = f"extended_{card['type']}_{int(time.time())}_{i}"
-                    card['category'] = 'extended'
-                    # 为有照片的卡片生成合图
-                    if 'photo_paths' in card and card['photo_paths']:
-                        try:
-                            paths_to_use = card['photo_paths'][:4]
-                            valid_paths = [p for p in paths_to_use if p and Path(p).exists()]
-                            if len(valid_paths) >= 2:
-                                collage_gen = PhotoCollageGenerator(output_dir=str(COLLAGE_DIR))
-                                collage_path = collage_gen.generate(
-                                    photos=valid_paths,
-                                    style='grid',
-                                    title=card.get('title', ''),
-                                )
-                                if collage_path:
-                                    card['photo'] = f"/collage/{Path(collage_path).name}"
-                                    card['has_collage'] = True
-                        except Exception as e:
-                            print(f"  ✗ 合图生成失败: {e}")
-                    
+                    card["id"] = f"extended_{card['type']}_{int(time.time())}_{i}"
+                    card["category"] = "extended"
+
                     all_cards.append(card)
-                    
+
             except Exception as e:
                 print(f"[CardCache] 扩展卡片生成失败: {e}")
 
         except Exception as e:
             print(f"[CardCache] 生成卡片失败: {e}")
             import traceback
+
             traceback.print_exc()
 
-        print(f"[CardCache] 生成完成: {len(all_cards)}张普通卡片, {len(self.milestone_cards)}张今日里程碑")
+        deduped_cards = []
+        seen_signatures = set()
+        for card in all_cards:
+            signature = self._card_signature(card)
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+            deduped_cards.append(card)
+
+        all_cards = deduped_cards
+        all_cards = normalize_cards(all_cards)
+
+        print(
+            f"[CardCache] 生成完成: {len(all_cards)}张普通卡片, {len(self.milestone_cards)}张今日里程碑"
+        )
         return all_cards
 
-    def update_cache(self, baby_name: str = "宝宝", base_url: str = "http://localhost:3000", force: bool = False):
+    def update_cache(
+        self,
+        baby_name: str = "宝宝",
+        base_url: str = "http://localhost:3000",
+        force: bool = False,
+    ):
         """
         更新缓存
 
@@ -384,16 +460,20 @@ class CardCache:
 
         print(f"[CardCache] 开始更新缓存...")
 
+        # 先清空旧缓存，避免生成失败时继续展示过期卡片
+        self.cards = []
+        self.milestone_cards = []
+        self._save_cache()
+
         # 清空里程碑卡片（每天重新计算）
         self.milestone_cards = []
 
         # 生成新卡片
         new_cards = self.generate_all_cards(baby_name, base_url)
 
-        if new_cards:
-            self.cards = new_cards
-            self.last_update = now
-            self._save_cache()
+        self.cards = new_cards or []
+        self.last_update = now
+        self._save_cache()
 
     def get_today_milestone_cards(self) -> List[Dict]:
         """
@@ -403,7 +483,7 @@ class CardCache:
             今日里程碑卡片列表
         """
         today = datetime.now().strftime("%Y-%m-%d")
-        return [c for c in self.milestone_cards if c.get('show_date') == today]
+        return [c for c in self.milestone_cards if c.get("show_date") == today]
 
     def get_all_cards(self) -> List[Dict]:
         """
@@ -414,7 +494,9 @@ class CardCache:
         """
         return self.cards
 
-    def get_random_cards(self, count: int = 5, exclude_ids: List[str] = None) -> List[Dict]:
+    def get_random_cards(
+        self, count: int = 5, exclude_ids: List[str] = None
+    ) -> List[Dict]:
         """
         获取随机卡片
 
@@ -428,7 +510,7 @@ class CardCache:
         if exclude_ids is None:
             exclude_ids = []
 
-        available = [c for c in self.cards if c.get('id') not in exclude_ids]
+        available = [c for c in self.cards if c.get("id") not in exclude_ids]
 
         if len(available) <= count:
             return available
@@ -438,27 +520,32 @@ class CardCache:
     def get_card_by_id(self, card_id: str) -> Optional[Dict]:
         """根据ID获取卡片"""
         for card in self.cards:
-            if card.get('id') == card_id:
+            if card.get("id") == card_id:
                 return card
         # 也检查里程碑卡片
         for card in self.milestone_cards:
-            if card.get('id') == card_id:
+            if card.get("id") == card_id:
                 return card
         return None
 
     def get_cache_status(self) -> Dict:
         """获取缓存状态"""
         return {
-            'total_cards': len(self.cards),
-            'milestone_cards': len(self.milestone_cards),
-            'shared_count': len(self.shared_cards),
-            'last_update': datetime.fromtimestamp(self.last_update).isoformat() if self.last_update else None,
-            'cache_age_hours': (time.time() - self.last_update) / 3600 if self.last_update else 0,
+            "total_cards": len(self.cards),
+            "milestone_cards": len(self.milestone_cards),
+            "shared_count": len(self.shared_cards),
+            "last_update": datetime.fromtimestamp(self.last_update).isoformat()
+            if self.last_update
+            else None,
+            "cache_age_hours": (time.time() - self.last_update) / 3600
+            if self.last_update
+            else 0,
         }
 
 
 # 全局实例
 _card_cache = None
+
 
 def get_card_cache() -> CardCache:
     """获取卡片缓存实例"""
@@ -468,7 +555,11 @@ def get_card_cache() -> CardCache:
     return _card_cache
 
 
-def start_background_update(baby_name: str = "宝宝", base_url: str = "http://localhost:3000", interval: int = 3600):
+def start_background_update(
+    baby_name: str = "宝宝",
+    base_url: str = "http://localhost:3000",
+    interval: int = 3600,
+):
     """
     启动后台更新线程
 
@@ -477,6 +568,7 @@ def start_background_update(baby_name: str = "宝宝", base_url: str = "http://l
         base_url: 基础URL
         interval: 更新间隔（秒）
     """
+
     def update_loop():
         cache = get_card_cache()
         while True:

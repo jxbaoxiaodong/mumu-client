@@ -584,13 +584,13 @@
 {% block extra_js %}
 <script src="/static/vendor/chartjs/chart.min.js"></script>
 <script>
-const currentChildId = '{{ client_id }}';
-let growthChart = null;
-let radarChart = null;
-let interestChart = null;
-let profileData = null;
+var currentChildId = '{{ client_id }}';
+var growthChart = null;
+var radarChart = null;
+var interestChart = null;
+var profileData = null;
 
-const gradients = [
+var gradients = [
     'linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%)',
     'linear-gradient(135deg, #87CEEB 0%, #98FB98 100%)',
     'linear-gradient(135deg, #DDA0DD 0%, #F0E68C 100%)',
@@ -599,7 +599,7 @@ const gradients = [
     'linear-gradient(135deg, #F8B500 0%, #FF6B6B 100%)',
 ];
 
-const traitIcons = {
+var traitIcons = {
     '爱笑': '💛',
     '好奇': '🔍',
     '活泼': '⚡',
@@ -616,8 +616,8 @@ const traitIcons = {
 };
 
 function getTraitIcon(traitName) {
-    for (let key in traitIcons) {
-        if (traitName.includes(key)) {
+    for (var key in traitIcons) {
+        if (traitName.indexOf(key) !== -1) {
             return traitIcons[key];
         }
     }
@@ -626,56 +626,58 @@ function getTraitIcon(traitName) {
 
 function loadProfileData() {
     Promise.all([
-        fetch('/api/ai/profile').then(r => r.json()),
-        fetch('/api/ai/features').then(r => r.json())
+        fetch('/api/ai/profile').then(function(r) { return r.json(); }),
+        fetch('/api/ai/features').then(function(r) { return r.json(); })
     ])
-    .then(([pData, fData]) => {
+    .then(function(results) {
+        var pData = results[0];
+        var fData = results[1];
         if (pData.success) {
             profileData = pData.profile;
             
-            document.getElementById('currentAge').textContent = profileData.age || '暂无数据';
-            document.getElementById('tagCount').textContent = profileData.total_tags || 0;
-            document.getElementById('eventCount').textContent = profileData.total_events || 0;
+            document.getElementById('currentAge').textContent = (profileData && profileData.age) ? profileData.age : '暂无数据';
+            document.getElementById('tagCount').textContent = (profileData && profileData.total_tags) ? profileData.total_tags : 0;
+            document.getElementById('eventCount').textContent = (profileData && profileData.total_events) ? profileData.total_events : 0;
 
             renderHighlight(profileData);
             renderTraits(profileData);
-            renderTagsCloud(profileData.tags || []);
-            renderTimeline(profileData.evolution?.recent_changes || []);
-            renderGrowthChart(profileData.knowledge_growth);
+            renderTagsCloud((profileData && profileData.tags) ? profileData.tags : []);
+            renderTimeline((profileData && profileData.evolution && profileData.evolution.recent_changes) ? profileData.evolution.recent_changes : []);
+            renderGrowthChart(profileData && profileData.knowledge_growth ? profileData.knowledge_growth : null);
         }
 
         if (fData.success) {
-            const features = fData.features;
-            renderRadarChart(features?.personality || {});
-            renderInterests(features?.interest || {});
+            var features = fData.features;
+            renderRadarChart((features && features.personality) ? features.personality : {});
+            renderInterests((features && features.interest) ? features.interest : {});
         }
     })
-    .catch(err => {
+    .catch(function(err) {
         console.error('加载画像数据失败:', err);
         showNotification('加载失败，请稍后重试', 'error');
     });
 }
 
 function renderHighlight(profile) {
-    const container = document.getElementById('highlightContent');
-    const placeholder = document.getElementById('highlightPlaceholder');
-    const summary = profile.guidance?.summary || '';
+    var container = document.getElementById('highlightContent');
+    var placeholder = document.getElementById('highlightPlaceholder');
+    var summary = (profile && profile.guidance && profile.guidance.summary) ? profile.guidance.summary : '';
 
     // 判断是否有有效画像数据
-    const hasValidData = (summary && !summary.includes('暂无足够数据') && summary.length > 20) 
-        || (profile.evolution?.recent_changes?.length > 0)
-        || (profile.tags && profile.tags.length > 0);
+    var hasValidData = (summary && summary.indexOf('暂无足够数据') === -1 && summary.length > 20) 
+        || (profile && profile.evolution && profile.evolution.recent_changes && profile.evolution.recent_changes.length > 0)
+        || (profile && profile.tags && profile.tags.length > 0);
 
     if (hasValidData) {
         // 有数据，隐藏placeholder，显示内容
         if (placeholder) {
             placeholder.style.display = 'none';
         }
-        if (summary && !summary.includes('暂无足够数据')) {
-            container.innerHTML = `"${summary}"`;
-        } else if (profile.evolution?.recent_changes?.length > 0) {
-            const recent = profile.evolution.recent_changes[0];
-            container.innerHTML = `"${recent.change}"`;
+        if (summary && summary.indexOf('暂无足够数据') === -1) {
+            container.innerHTML = '"' + summary + '"';
+        } else if (profile && profile.evolution && profile.evolution.recent_changes && profile.evolution.recent_changes.length > 0) {
+            var recent = profile.evolution.recent_changes[0];
+            container.innerHTML = '"' + recent.change + '"';
         } else {
             container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
         }
@@ -689,82 +691,80 @@ function renderHighlight(profile) {
 }
 
 function renderTraits(profile) {
-    const container = document.getElementById('traitsGrid');
-    const tags = profile.tags || [];
+    var container = document.getElementById('traitsGrid');
+    var tags = profile.tags || [];
     
     if (tags.length === 0) {
-        container.innerHTML = `
-            <div class="trait-card">
-                <div class="trait-icon" style="background: #FFF0F5;">🌱</div>
-                <div class="trait-info">
-                    <div class="trait-name">等待发现</div>
-                    <div class="trait-desc">继续记录，AI会发现更多特质</div>
-                </div>
-            </div>
-        `;
+        container.innerHTML = 
+            '<div class="trait-card">' +
+                '<div class="trait-icon" style="background: #FFF0F5;">🌱</div>' +
+                '<div class="trait-info">' +
+                    '<div class="trait-name">等待发现</div>' +
+                    '<div class="trait-desc">继续记录，AI会发现更多特质</div>' +
+                '</div>' +
+            '</div>';
         return;
     }
 
     // 取前4个标签作为特质展示
-    const topTraits = tags.slice(0, 4);
-    container.innerHTML = topTraits.map((item, index) => {
-        const tag = typeof item === 'object' ? item.tag : item;
-        const confidence = typeof item === 'object' ? item.confidence : 0.8;
-        const icon = getTraitIcon(tag);
-        const bgColors = ['#FFF0F5', '#F0FFF0', '#FFF8DC', '#F0F8FF'];
+    var topTraits = tags.slice(0, 4);
+    container.innerHTML = topTraits.map(function(item, index) {
+        var tag = typeof item === 'object' ? item.tag : item;
+        var confidence = typeof item === 'object' ? item.confidence : 0.8;
+        var icon = getTraitIcon(tag);
+        var bgColors = ['#FFF0F5', '#F0FFF0', '#FFF8DC', '#F0F8FF'];
         
-        let desc = '宝宝的小特点';
-        if (tag.includes('笑')) desc = '笑容治愈力满满';
-        else if (tag.includes('好奇')) desc = '对世界充满好奇';
-        else if (tag.includes('活泼')) desc = '活力四射';
-        else if (tag.includes('安静')) desc = '安静的小天使';
-        else if (tag.includes('专注')) desc = '做事很认真';
-        else if (tag.includes('音乐')) desc = '听到音乐就开心';
-        else if (tag.includes('运动')) desc = '运动小健将';
+        var desc = '宝宝的小特点';
+        if (tag.indexOf('笑') !== -1) desc = '笑容治愈力满满';
+        else if (tag.indexOf('好奇') !== -1) desc = '对世界充满好奇';
+        else if (tag.indexOf('活泼') !== -1) desc = '活力四射';
+        else if (tag.indexOf('安静') !== -1) desc = '安静的小天使';
+        else if (tag.indexOf('专注') !== -1) desc = '做事很认真';
+        else if (tag.indexOf('音乐') !== -1) desc = '听到音乐就开心';
+        else if (tag.indexOf('运动') !== -1) desc = '运动小健将';
         
-        return `
-            <div class="trait-card">
-                <div class="trait-icon" style="background: ${bgColors[index % 4]};">${icon}</div>
-                <div class="trait-info">
-                    <div class="trait-name">${tag}</div>
-                    <div class="trait-desc">${desc}</div>
-                </div>
-            </div>
-        `;
+        return 
+            '<div class="trait-card">' +
+                '<div class="trait-icon" style="background: ' + bgColors[index % 4] + ';">' + icon + '</div>' +
+                '<div class="trait-info">' +
+                    '<div class="trait-name">' + tag + '</div>' +
+                    '<div class="trait-desc">' + desc + '</div>' +
+                '</div>' +
+            '</div>';
     }).join('');
 }
 
-let allTags = [];
+var allTags = [];
 function renderTagsCloud(tags) {
     allTags = tags;
     displayTagsByType('all');
 }
 
 function switchTagType(type) {
-    document.querySelectorAll('.tag-tab').forEach(tab => tab.classList.remove('active'));
-    document.querySelector(`.tag-tab[data-type="${type}"]`).classList.add('active');
+    document.querySelectorAll('.tag-tab').forEach(function(tab) { tab.classList.remove('active'); });
+    document.querySelector('.tag-tab[data-type="' + type + '"]').classList.add('active');
     displayTagsByType(type);
 }
 
 function displayTagsByType(type) {
-    const container = document.getElementById('tagsCloud');
-    const showAllBtn = document.getElementById('showAllTagsBtn');
-    let filteredTags = allTags;
+    var container = document.getElementById('tagsCloud');
+    var showAllBtn = document.getElementById('showAllTagsBtn');
+    var filteredTags = allTags;
 
     if (type !== 'all') {
-        filteredTags = allTags.filter(t => {
-            const category = typeof t === 'object' ? t.category : 'other';
+        filteredTags = allTags.filter(function(t) {
+            var category = typeof t === 'object' ? t.category : 'other';
             return category === type;
         });
     }
 
     if (filteredTags && filteredTags.length > 0) {
         // 只显示前8个标签
-        const displayTags = filteredTags.slice(0, 8);
-        container.innerHTML = displayTags.map((item, index) => {
-            const gradient = gradients[index % gradients.length];
-            const tag = typeof item === 'object' ? item.tag : item;
-            return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+        var displayTags = filteredTags.slice(0, 8);
+        container.innerHTML = displayTags.map(function(item, index) {
+            var gradient = gradients[index % gradients.length];
+            var tag = typeof item === 'object' ? item.tag : item;
+            return '<span class="tag-item" style="background: ' + gradient + ';">' + tag + '</span>';
         }).join('');
 
         // 如果有更多标签，显示"显示全部"按钮
@@ -781,14 +781,14 @@ function displayTagsByType(type) {
 }
 
 function showAllTags() {
-    const container = document.getElementById('tagsCloud');
-    const showAllBtn = document.getElementById('showAllTagsBtn');
-    const allTagsData = JSON.parse(showAllBtn.dataset.allTags);
+    var container = document.getElementById('tagsCloud');
+    var showAllBtn = document.getElementById('showAllTagsBtn');
+    var allTagsData = JSON.parse(showAllBtn.dataset.allTags);
 
-    container.innerHTML = allTagsData.map((item, index) => {
-        const gradient = gradients[index % gradients.length];
-        const tag = typeof item === 'object' ? item.tag : item;
-        return `<span class="tag-item" style="background: ${gradient};">${tag}</span>`;
+    container.innerHTML = allTagsData.map(function(item, index) {
+        var gradient = gradients[index % gradients.length];
+        var tag = typeof item === 'object' ? item.tag : item;
+        return '<span class="tag-item" style="background: ' + gradient + ';">' + tag + '</span>';
     }).join('');
 
     showAllBtn.style.display = 'none';
@@ -800,12 +800,12 @@ function toggleDataSection(el) {
 }
 
 function renderRadarChart(scores) {
-    const ctx = document.getElementById('radarChart').getContext('2d');
+    var ctx = document.getElementById('radarChart').getContext('2d');
     if (radarChart) radarChart.destroy();
 
-    const labels = ['活跃度', '好奇心', '社交性', '专注力', '情绪稳定', '适应力'];
-    const keys = ['activity', 'curiosity', 'social', 'focus', 'emotion_stability', 'adaptability'];
-    const data = keys.map(k => scores[k] || 5);
+    var labels = ['活跃度', '好奇心', '社交性', '专注力', '情绪稳定', '适应力'];
+    var keys = ['activity', 'curiosity', 'social', 'focus', 'emotion_stability', 'adaptability'];
+    var data = keys.map(function(k) { return scores[k] || 5; });
 
     radarChart = new Chart(ctx, {
         type: 'radar',
@@ -829,12 +829,12 @@ function renderRadarChart(scores) {
 }
 
 function renderInterests(interest) {
-    const ctx = document.getElementById('interestChart').getContext('2d');
+    var ctx = document.getElementById('interestChart').getContext('2d');
     if (interestChart) interestChart.destroy();
 
-    const labels = ['音乐', '运动', '阅读', '艺术', '自然', '科技'];
-    const keys = ['music', 'sports', 'reading', 'art', 'nature', 'technology'];
-    const data = keys.map(k => interest[k] || 5);
+    var labels = ['音乐', '运动', '阅读', '艺术', '自然', '科技'];
+    var keys = ['music', 'sports', 'reading', 'art', 'nature', 'technology'];
+    var data = keys.map(function(k) { return interest[k] || 5; });
 
     interestChart = new Chart(ctx, {
         type: 'radar',
@@ -858,32 +858,32 @@ function renderInterests(interest) {
 }
 
 function renderTimeline(changes) {
-    const container = document.getElementById('timelineSection');
+    var container = document.getElementById('timelineSection');
     if (changes && changes.length > 0) {
-        const sorted = [...changes].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 6);
-        container.innerHTML = sorted.map(c => `
-            <div class="timeline-item">
-                <div class="timeline-date">${c.date || ''}</div>
-                <div class="timeline-content">${c.change}</div>
-            </div>
-        `).join('');
+        var sorted = changes.slice().sort(function(a, b) { return new Date(b.date) - new Date(a.date); }).slice(0, 6);
+        container.innerHTML = sorted.map(function(c) {
+            return '<div class="timeline-item">' +
+                '<div class="timeline-date">' + (c.date || '') + '</div>' +
+                '<div class="timeline-content">' + c.change + '</div>' +
+            '</div>';
+        }).join('');
     } else {
         container.innerHTML = '<p class="text-muted">暂无成长轨迹</p>';
     }
 }
 
 function renderGrowthChart(data) {
-    const ctx = document.getElementById('growthChart').getContext('2d');
+    var ctx = document.getElementById('growthChart').getContext('2d');
     if (growthChart) growthChart.destroy();
 
     growthChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: data?.dates || [],
+            labels: (data && data.dates) ? data.dates : [],
             datasets: [
                 {
                     label: '标签数',
-                    data: data?.tags || [],
+                    data: (data && data.tags) ? data.tags : [],
                     borderColor: '#FFB6C1',
                     backgroundColor: 'rgba(255, 182, 193, 0.1)',
                     tension: 0.4,
@@ -891,7 +891,7 @@ function renderGrowthChart(data) {
                 },
                 {
                     label: '素材数',
-                    data: data?.events || [],
+                    data: (data && data.events) ? data.events : [],
                     borderColor: '#FFD700',
                     backgroundColor: 'rgba(255, 215, 0, 0.1)',
                     tension: 0.4,
@@ -908,23 +908,23 @@ function renderGrowthChart(data) {
 }
 
 function showNotification(message, type) {
-    const toast = document.createElement('div');
-    toast.className = `alert alert-${type === 'success' ? 'success' : 'warning'} position-fixed`;
+    var toast = document.createElement('div');
+    toast.className = 'alert alert-' + (type === 'success' ? 'success' : 'warning') + ' position-fixed';
     toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 150px; padding: 10px 16px; border-radius: 8px;';
     toast.innerHTML = message;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2500);
+    setTimeout(function() { toast.remove(); }, 2500);
 }
 
 // 打开AI重新认识弹窗
 function startAIReview() {
-    const modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
+    var modal = new bootstrap.Modal(document.getElementById('aiReviewModal'));
     modal.show();
 }
 
 // 执行AI重新认识（简化的全量刷新）
 function executeAIReview() {
-    const modal = bootstrap.Modal.getInstance(document.getElementById('aiReviewModal'));
+    var modal = bootstrap.Modal.getInstance(document.getElementById('aiReviewModal'));
     modal.hide();
 
     showNotification('正在启动AI全量刷新...', 'info');
@@ -934,8 +934,8 @@ function executeAIReview() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({})
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.success) {
             showNotification('AI重新认识任务已启动，请稍候...', 'success');
             // 显示进度
@@ -945,18 +945,18 @@ function executeAIReview() {
             showNotification(data.message || '启动失败', 'error');
         }
     })
-    .catch(err => {
+    .catch(function(err) {
         showNotification('启动失败: ' + err, 'error');
     });
 }
 
 // 检查AI重新认识进度
 function checkAIReviewProgress(taskId) {
-    const interval = setInterval(() => {
+    var interval = setInterval(function() {
         fetch('/api/ai/auto-review/status/' + taskId)
-        .then(r => r.json())
-        .then(data => {
-            const status = data.status || data;
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var status = data.status || data;
             if (status.completed) {
                 clearInterval(interval);
                 document.getElementById('aiProgressFooter').style.display = 'none';
@@ -969,12 +969,12 @@ function checkAIReviewProgress(taskId) {
             } else {
                 document.getElementById('footerProgressText').textContent = status.message || '处理中...';
                 if (status.total > 0) {
-                    const progress = Math.round(status.processed / status.total * 100);
+                    var progress = Math.round(status.processed / status.total * 100);
                     document.getElementById('footerProgressBar').style.width = progress + '%';
                 }
             }
         })
-        .catch(() => {});
+        .catch(function() {});
     }, 2000);
 }
 
@@ -985,7 +985,7 @@ function hideProgressFooter() {
 
 // 提交反馈
 function submitFeedback() {
-    const text = document.getElementById('feedbackText').value.trim();
+    var text = document.getElementById('feedbackText').value.trim();
     if (!text) {
         showNotification('请输入反馈内容', 'warning');
         return;
@@ -1000,8 +1000,8 @@ function submitFeedback() {
             is_correct: true
         })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.success) {
             showNotification('反馈已提交，AI会参考哦~', 'success');
             document.getElementById('feedbackText').value = '';
@@ -1009,7 +1009,7 @@ function submitFeedback() {
             showNotification(data.message || '提交失败', 'error');
         }
     })
-    .catch(err => {
+    .catch(function(err) {
         showNotification('提交失败: ' + err, 'error');
     });
 }

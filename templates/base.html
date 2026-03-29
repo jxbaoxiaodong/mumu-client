@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="theme-color" content="#FF9A8B">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -15,8 +15,27 @@
     <!-- Font Awesome (本地) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
     
-    <!-- Google Fonts (本地离线) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='fonts/google-fonts.css') }}">
+    <!-- 基础样式 - 保持简单稳定 -->
+    <style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    }
+    
+    /* 移动端基础优化 */
+    html {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* 防止 iOS 点击高亮 */
+    * {
+        -webkit-tap-highlight-color: transparent;
+    }
+    
+    /* 防止 iOS 输入框缩放 */
+    input, textarea, select {
+        font-size: 16px;
+    }
+    </style>
     
     <!-- 自定义 CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
@@ -51,13 +70,8 @@
     <!-- 动态主题 CSS -->
     <style id="dynamic-theme">{{ theme_css | safe }}</style>
     
-    <!-- Masonry for瀑布流 (本地) -->
-    <script src="{{ url_for('static', filename='vendor/masonry/masonry-4.2.2.pkgd.min.js') }}"></script>
-    
     <!-- 日历 CSS (本地) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.css') }}">
-    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.zh.js') }}"></script>
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -109,6 +123,11 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('profile_page') }}">
                             <span class="me-2">🤖</span>成长画像
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('cards_page') }}">
+                            <span class="me-2">✨</span>卡片
                         </a>
                     </li>
                     <li class="nav-item">
@@ -291,17 +310,17 @@
     <script>
     function submitFeedback(event) {
         event.preventDefault();
-        const name = document.getElementById('feedbackName').value || '匿名用户';
-        const content = document.getElementById('feedbackContent').value;
+        var name = document.getElementById('feedbackName').value || '匿名用户';
+        var content = document.getElementById('feedbackContent').value;
         
         // 提交反馈到服务器
         fetch('/api/feedback', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name, content})
+            body: JSON.stringify({name: name, content: content})
         })
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.success) {
                 showNotification('感谢您的反馈！我们会认真考虑您的建议', 'success');
                 document.getElementById('feedbackForm').reset();
@@ -310,17 +329,37 @@
                 showNotification('提交失败: ' + data.message, 'error');
             }
         })
-        .catch(err => {
+        .catch(function(err) {
             showNotification('提交失败，请稍后重试', 'error');
         });
     }
     </script>
 
+    <!-- 移动端优化脚本 -->
+    <script>
+    // 基础移动端优化 - 保持简单稳定
+    (function() {
+        // 修复 iOS Safari 底部工具栏导致的布局问题
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+            window.addEventListener('resize', function() {
+                document.body.style.height = window.innerHeight + 'px';
+            });
+        }
+    })();
+    </script>
+    
     <!-- 中国省市区数据 -->
     <script src="{{ url_for('static', filename='js/china_cities.js') }}"></script>
     
     <!-- Bootstrap JS (本地) -->
     <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.bundle.min.js') }}"></script>
+    
+    <!-- Masonry for瀑布流 (本地) -->
+    <script src="{{ url_for('static', filename='vendor/masonry/masonry-4.2.2.pkgd.min.js') }}"></script>
+    
+    <!-- 日历组件 (本地) -->
+    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.zh.js') }}"></script>
     
     <!-- 自定义 JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
@@ -341,25 +380,29 @@
                 showNotification('{{ notification.message }}', '{{ notification.type }}');
             {% endif %}
             
-            // 初始化瀑布流
-            initMasonry();
+            // 初始化瀑布流（仅首页）
+            if (typeof initMasonry === 'function' && document.querySelector('.photo-grid')) {
+                initMasonry();
+            }
             
             // 初始化日历（如果函数存在）
             if (typeof initCalendar === 'function') {
                 initCalendar();
             }
             
-            // 加载二维码图片
-            loadQRCode();
+            // 加载二维码图片（仅首页）
+            if (typeof loadQRCode === 'function' && document.querySelector('.footer')) {
+                loadQRCode();
+            }
         });
         
         // 加载二维码
         function loadQRCode() {
             fetch('/api/qrcode')
-                .then(r => r.json())
-                .then(data => {
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
                     if (data.success) {
-                        const img = document.getElementById('footer-qrcode');
+                        var img = document.getElementById('footer-qrcode');
                         if (data.qr_code_data) {
                             img.src = data.qr_code_data;
                             img.style.display = 'inline-block';
@@ -369,7 +412,7 @@
                         }
                     }
                 })
-                .catch(e => console.log('加载二维码失败:', e));
+                .catch(function(e) { console.log('加载二维码失败:', e); });
         }
     </script>
 </body>

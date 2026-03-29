@@ -348,7 +348,7 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
     const password = document.getElementById('adminPassword').value;
     const confirmPassword = document.getElementById('confirmPassword').value;
     const avatarFile = document.getElementById('avatarInput').files[0];
-    const networkType = document.querySelector('input[name="networkType"]:checked')?.value || 'local';
+    const networkType = (document.querySelector('input[name="networkType"]:checked') && document.querySelector('input[name="networkType"]:checked').value) || 'local';
 
     const fullCity = city || province || '';
     
@@ -587,7 +587,7 @@ function showIndexBuildPrompt(estimatedFiles, estimatedMinutes) {
             notification.innerHTML = `
                 <i class="fas fa-check-circle me-2"></i>
                 <strong>索引建立完成！</strong>
-                <p class="mb-0 mt-1 small">共索引 ${data.result?.total || 0} 个文件</p>
+                <p class="mb-0 mt-1 small">共索引 ${data.result && data.result.total || 0} 个文件</p>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
             

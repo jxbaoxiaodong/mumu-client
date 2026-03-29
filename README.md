@@ -2,9 +2,113 @@
 
 ## 概述
 
-Mumu 是一个宝宝成长记录系统，包含三大服务：照片管理，日志生成，画像及卡片生成。
+Mumu 是一个宝宝成长记录系统，包含三大服务：
 
+| 服务 | 文件 | 端口 | 说明 |
+|------|------|------|------|
+| 客户端 | `client_public_final.py` | 3000 | 用户界面，运行在用户本地机器 |
+| 服务端 | `server_public.py` | 8000 | 后端API，运行在服务器 |
+| 健康AI | `baby_health_ai/app/main.py` | 8080 | AI画像服务，运行在服务器 |
 
+---
+
+## 架构
+
+### 数据流向
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   客户端    │────▶│   服务端    │────▶│   健康AI    │
+│  (用户本地) │◀────│  (服务器)   │◀────│  (服务器)   │
+└─────────────┘     └─────────────┘     └─────────────┘
+      │                   │                   │
+      │                   │  每15分钟定时同步   │
+      │                   │──────────────────▶│
+      │                   │                   │
+      │   /api/ai/* 代理  │                   │
+      │──────────────────▶│──────────────────▶│
+      │                   │                   │
+      │ /czrz/ai/proxy/*  │                   │
+      │──────────────────▶│───▶ 阿里云API ───▶│
+      │                   │   (Token在服务端) │
+      ▼                   ▼                   ▼
+  本地存储            服务端存储            画像数据
+  (用户文档目录)      (SQLite数据库)        (SQLite数据库)
+```
+
+### 安全架构
+
+**API Token 安全**：
+- API Token 只存储在服务端 `data/api_config.json`
+- 客户端不持有任何敏感凭证
+- 所有 AI 调用通过服务端代理 API
+
+**HMAC 签名验证**：
+- 每个客户端拥有独立的 `secret_key`
+- 所有 API 请求必须携带签名（注册、心跳除外）
+- 签名内容：`timestamp + method + path + body`
+- 时间戳有效期：5 分钟
+
+**安装密钥**：
+- 基于 UTC 日期生成，每天变化
+- 防止扫描器随意注册
+- 格式：`xxxx-xxxx-xxxx`
+
+**签名请求头**：
+| 请求头 | 说明 |
+|--------|------|
+| `X-Client-ID` | 客户端 ID |
+| `X-Timestamp` | 时间戳（秒） |
+| `X-Signature` | HMAC-SHA256 签名 |
+
+**代理 API 端点**：
+| 端点 | 说明 |
+|------|------|
+| `POST /czrz/ai/proxy/vision` | 视觉模型代理（照片分析） |
+| `POST /czrz/ai/proxy/text` | 文本模型代理（日志生成） |
+| `POST /czrz/ai/proxy/speech` | 语音识别代理 |
+
+**代理功能**：
+1. 检查客户端是否禁用
+2. 检查 Token 配额
+3. 调用阿里云 API（Token 在服务端）
+4. 记录 Token 使用量
+5. 返回结果
+
+### 三大原则
+
+1. **API Token 不离开服务端** - 所有 AI 调用通过服务端代理 (`/czrz/ai/proxy/*`)
+2. **客户端不直接连接健康AI** - 所有通信通过服务端代理 (`/api/ai/*`)
+3. **服务端自动同步数据到健康AI** - 每15分钟定时同步，无需用户干预
+
+---
+
+## 存储架构
+
+### 服务端存储
+
+```
+mumu/data/
+├── index.db                    # 全局索引数据库
+│   ├── clients                 # 用户列表
+│   ├── tunnels                 # Tunnel池
+│   ├── news                    # 新闻池
+│   └── server_config           # 服务端配置
+│
+├── users/                      # 用户数据目录
+│   ├── {client_id_1}.db        # 用户1的所有数据
+│   │   ├── logs                # 日志
+│   │   ├── messages            # 留言
+│   │   ├── ai_sessions         # AI会话记录
+│   │   ├── token_usage         # Token使用记录
+│   │   ├── featured_photos     # 精选照片
+│   │   └── photo_descriptions  # 照片描述
+│   └── {client_id_2}.db
+│
+├── api_config.json             # AI API配置
+├── server_config.json          # 服务端配置
+├── themes/                     # 主题文件
+└── client_tunnels/             # 客户端Tunnel凭证
 ```
 
 ### 客户端存储
@@ -35,10 +139,29 @@ Mumu 是一个宝宝成长记录系统，包含三大服务：照片管理，日
 | subdomain | TEXT | 子域名 |
 | public_url | TEXT | 公网地址 |
 | status | TEXT | 状态 (online/offline/disabled) |
+| is_paid | BOOLEAN | 是否付费用户 |
 | token_total | INTEGER | Token总使用量 |
 | registered_at | DATETIME | 注册时间 |
 | last_active | DATETIME | 最后活跃时间 |
 
+**tunnels 表 - Tunnel池**
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| tunnel_id | TEXT | Cloudflare Tunnel ID |
+| tunnel_secret | TEXT | Tunnel密钥 |
+| subdomain | TEXT | 子域名 |
+| status | TEXT | 状态 (available/allocated) |
+| client_id | TEXT | 分配的客户端ID |
+
+**news 表 - 新闻池**
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER | 主键 |
+| title | TEXT | 新闻标题 |
+| source | TEXT | 来源 |
+| date | TEXT | 日期 |
+| created_at | DATETIME | 创建时间 |
 
 #### 用户数据库 (users/{client_id}.db)
 
@@ -186,6 +309,50 @@ Mumu 是一个宝宝成长记录系统，包含三大服务：照片管理，日
 客户端心跳 → 检查是否有Tunnel → 无则自动创建 → 分配子域名 → 返回凭证
 ```
 
+### 管理后台
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/admin` | 管理后台首页 |
+| GET | `/admin/clients` | 设备列表 |
+| GET | `/admin/clients/{client_id}/ai-status` | AI状态 |
+| POST | `/admin/clients/{client_id}/reassign-tunnel` | 重新分配Tunnel |
+| POST | `/admin/clients/{client_id}/reset-quota` | 重置Token配额 |
+| GET | `/admin/credentials` | CF凭证设置 |
+| POST | `/admin/credentials/refresh` | 刷新凭证 |
+
+**移动端适配**：
+- 侧边栏在移动端自动隐藏
+- 点击汉堡菜单按钮滑出侧边栏
+- 支持触摸操作
+
+### 健康AI同步
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/czrz/ai/sync-status` | 获取同步状态 |
+| POST | `/czrz/ai/sync-trigger` | 手动触发同步 |
+| ANY | `/api/ai/*` | 代理健康AI请求 |
+
+**同步机制**：
+- 服务端每15分钟自动扫描未同步数据
+- 查询健康AI已有事件，智能去重
+- 单一线程处理，避免并发问题
+
+### 语音记录
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/czrz/speech/record` | 保存语音记录 |
+| GET | `/czrz/speech/records` | 获取语音记录列表 |
+
+**语音处理流程**：
+```
+视频 → 提取音频 → 去除静音 → 限制60秒 → 语音转文字 → LLM分析语言能力
+```
+
+---
+
 ## 数据交互流程
 
 ### 客户端注册
@@ -250,6 +417,56 @@ Mumu 是一个宝宝成长记录系统，包含三大服务：照片管理，日
 
 ---
 
+## 配置文件
+
+### 服务端配置 (data/server_config.json)
+
+```json
+{
+  "domain": {
+    "public_domain": "example.com",
+    "public_url": "https://example.com"
+  },
+  "cloudflare": {
+    "zone_id": "",
+    "account_id": "",
+    "api_token": ""
+  },
+  "admin": {
+    "default_password": "admin123",
+    "site_title": "成长记录系统"
+  },
+  "features": {
+    "enable_tunnel_pool": true,
+    "enable_client_updates": true,
+    "enable_ai_log": true
+  }
+}
+```
+
+### API配置 (data/api_config.json)
+
+```json
+{
+  "cf_api_token": "xxx",
+  "cf_account_id": "xxx",
+  "text_model": {
+    "api_token": "xxx",
+    "api_url": "https://api.example.com/v1/chat/completions",
+    "model_name": "qwen3.5-plus"
+  },
+  "vision_model": {
+    "api_token": "xxx",
+    "api_url": "https://api.example.com/v1/chat/completions",
+    "model_name": "qwen3-vl-flash"
+  },
+  "speech_model": {
+    "api_token": "xxx",
+    "api_url": "https://api.openai.com/v1",
+    "model_name": "whisper-1"
+  }
+}
+```
 
 ### 客户端配置 (~/Documents/CZRZ/config.json)
 
@@ -272,11 +489,32 @@ Mumu 是一个宝宝成长记录系统，包含三大服务：照片管理，日
 
 ## 启动命令
 
+```bash
+# 启动所有服务
+./restart_all.sh
 
 # 单独启动
-python3 client.py # 客户端
-
+python3 server_public.py      # 服务端
+python3 client_public_final.py # 客户端
+python3 baby_health_ai/app/main.py # 健康AI
 ```
+
+---
+
+## 开发说明
+
+### 添加新的数据表
+
+1. 在 `models.py` 中定义模型
+2. 在 `database.py` 中添加操作函数
+3. 在 `server_public.py` 中调用
+
+### 添加新的API
+
+1. 在 `server_public.py` 中添加端点
+2. 使用 `database.py` 中的函数操作数据
+3. 更新此文档
+
 ---
 
 ## 移动端优化
@@ -319,6 +557,31 @@ python3 client.py # 客户端
 
 ## 未来规划
 
+### 微信小程序（已调研）
+
+**架构对比**：
+
+| 特性 | 当前网页版 | 微信小程序 |
+|------|-----------|-----------|
+| 部署 | 用户本地运行客户端 | 微信托管 |
+| AI调用 | 服务端代理 | 服务端代理 |
+| 存储 | 本地 + 服务端 | 服务端 |
+| 照片访问 | 本地文件夹 | 微信相册 |
+| 视频处理 | 本地提取音频 | 小程序限制多 |
+| 离线使用 | ✅ 完全支持 | ❌ 需联网 |
+| 自动备份 | ✅ 客户端定时 | ❌ 需手动 |
+
+**可行性评估**：
+- ❌ **不建议优先开发小程序**
+- 微信对AI调用、视频处理、本地存储限制较多
+- 当前网页版已经通过Cloudflare Tunnel实现公网访问
+- 移动端浏览器访问体验已优化
+
+**可能的小程序功能**（简化版）：
+- 查看日志和照片
+- 手动上传照片
+- 查看成长画像
+- 发送留言
 
 ### App开发（长期规划）
 
@@ -355,6 +618,7 @@ python3 client.py # 客户端
 
 | 文件 | 说明 |
 |------|------|
+| `server_public.py` | 服务端主程序 |
 | `client_public_final.py` | 客户端主程序 |
 | `models.py` | 数据库模型定义 |
 | `database.py` | 数据库操作模块 |
@@ -365,3 +629,73 @@ python3 client.py # 客户端
 | `video_audio_processor.py` | 视频语音处理 |
 | `baby_log_generator.py` | 日志生成 |
 | `restart_all.sh` | 一键重启脚本 |
+
+---
+
+## Git 上传和 Release 构建流程
+
+### 方式一：使用脚本（推荐）
+
+```bash
+cd /home/bob/projects/mumu-client
+
+# 修改代码后，执行发布
+./release.sh v31 "fix: 修复xxx问题"
+```
+
+脚本会自动完成：
+1. 提交代码更改并推送 tag
+2. 等待 GitHub Actions 构建完成
+3. 下载三个平台的安装包
+4. 重命名并覆盖到官网下载目录
+
+### 方式二：手动执行
+
+#### 1. 提交代码到 mumu-client 仓库
+
+```bash
+cd /home/bob/projects/mumu-client
+
+# 查看修改状态
+git status
+
+# 添加修改的文件
+git add -A
+# 或只添加特定文件
+git add .github/workflows/build-release.yml
+
+# 提交
+git commit -m "fix: 修复xxx问题"
+
+# 创建并推送 tag（触发构建）
+git tag v31
+git push origin v31
+```
+
+#### 2. 等待构建完成
+
+访问 https://github.com/jxbaoxiaodong/mumu-client/actions 查看构建状态
+
+#### 3. 下载并覆盖到官网
+
+```bash
+cd /home/bob/projects/mumu/landing_page/download/
+
+# 下载 Windows
+curl -L -o mumu-windows.exe "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-windows.exe"
+
+# 下载 Linux 并打包
+curl -L -o mumu-linux "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-linux"
+tar -czvf mumu-linux-x64.tar.gz mumu-linux
+rm mumu-linux
+
+# 下载 macOS 并重命名
+curl -L -o mumu-macos "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-macos"
+mv mumu-macos mumu-macos.dmg
+```
+
+### 注意事项
+
+1. **workflow 文件不需要每次修改** - `.github/workflows/build-release.yml` 已固定正确
+2. **备份位置** - 如需恢复 workflow：`/media/bob/System/LINUX_FILES/projects_backup/mumu-client-workflows.tar.gz`
+3. **GitHub Token** - 已保存在 `.env` 文件中，请勿提交到仓库

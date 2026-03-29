@@ -332,9 +332,9 @@
         
         // 更新所有关联AI按钮
         async function updateAllAILinkButtons() {
-            const buttons = document.querySelectorAll('.link-ai-btn');
-            for (let button of buttons) {
-                await updateAILinkButton(button);
+            var buttons = document.querySelectorAll('.link-ai-btn');
+            for (var i = 0; i < buttons.length; i++) {
+                await updateAILinkButton(buttons[i]);
             }
         }
         

@@ -124,8 +124,8 @@
 </style>
 
 <script>
-let currentGeneratedLog = '';
-let currentClientId = '';
+var currentGeneratedLog = '';
+var currentClientId = '';
 
 document.getElementById('aiModal').addEventListener('show.bs.modal', function() {
     resetModal();
@@ -134,23 +134,23 @@ document.getElementById('aiModal').addEventListener('show.bs.modal', function() 
 
 function loadLogStyleSettings() {
     fetch('/api/settings/current')
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.success) {
-                const logStyle = data.log_style || '简练';
-                const customStyle = data.custom_style || '';
+                var logStyle = data.log_style || '简练';
+                var customStyle = data.custom_style || '';
                 
                 document.getElementById('logStyleModal').value = logStyle;
                 document.getElementById('customStyleModalText').value = customStyle;
                 toggleCustomStyleModal();
             }
         })
-        .catch(e => console.error('加载日志风格设置失败:', e));
+        .catch(function(e) { console.error('加载日志风格设置失败:', e); });
 }
 
 function saveLogStyleSettings() {
-    const logStyle = document.getElementById('logStyleModal').value;
-    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
+    var logStyle = document.getElementById('logStyleModal').value;
+    var customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
     
     fetch('/api/settings/log-style', {
         method: 'POST',
@@ -160,13 +160,13 @@ function saveLogStyleSettings() {
             custom_style: customStyle
         })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (!data.success) {
             console.error('保存日志风格失败:', data.message);
         }
     })
-    .catch(e => console.error('保存日志风格失败:', e));
+    .catch(function(e) { console.error('保存日志风格失败:', e); });
 }
 
 function resetModal() {
@@ -176,8 +176,8 @@ function resetModal() {
 }
 
 function toggleCustomStyleModal() {
-    const logStyle = document.getElementById('logStyleModal').value;
-    const customInput = document.getElementById('customStyleModalInput');
+    var logStyle = document.getElementById('logStyleModal').value;
+    var customInput = document.getElementById('customStyleModalInput');
     if (logStyle === '自定义') {
         customInput.style.display = 'block';
     } else {
@@ -187,7 +187,7 @@ function toggleCustomStyleModal() {
 }
 
 function showGeneratingToast() {
-    let toast = document.getElementById('logGeneratingToast');
+    var toast = document.getElementById('logGeneratingToast');
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'logGeneratingToast';
@@ -200,7 +200,7 @@ function showGeneratingToast() {
 }
 
 function hideGeneratingToast() {
-    const toast = document.getElementById('logGeneratingToast');
+    var toast = document.getElementById('logGeneratingToast');
     if (toast) {
         toast.style.display = 'none';
     }
@@ -219,10 +219,10 @@ function clearGeneratingState() {
 }
 
 function checkGeneratingState() {
-    const stateStr = localStorage.getItem('log_generating');
+    var stateStr = localStorage.getItem('log_generating');
     if (!stateStr) return null;
     try {
-        const state = JSON.parse(stateStr);
+        var state = JSON.parse(stateStr);
         if (state.generating && (Date.now() - state.startTime < 120000)) {
             return state;
         } else {
@@ -232,44 +232,42 @@ function checkGeneratingState() {
     return null;
 }
 
-async function generateAILogAsync() {
-    const date = document.getElementById('logDate').value;
-    const userNote = document.getElementById('userNote').value.trim();
-    const clientId = window.currentClientId || '';
-    const logStyle = document.getElementById('logStyleModal').value;
-    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
+function generateAILogAsync() {
+    var date = document.getElementById('logDate').value;
+    var userNote = document.getElementById('userNote').value.trim();
+    var clientId = window.currentClientId || '';
+    var logStyle = document.getElementById('logStyleModal').value;
+    var customStyle = logStyle === '自定义' ? document.getElementById('customStyleModalText').value : '';
     
     if (!clientId) {
         alert('未找到客户端ID');
         return;
     }
     
-    const modal = bootstrap.Modal.getInstance(document.getElementById('aiModal'));
+    var modal = bootstrap.Modal.getInstance(document.getElementById('aiModal'));
     modal.hide();
     
     saveGeneratingState(date);
-    const toast = showGeneratingToast();
+    var toast = showGeneratingToast();
     
-    const includeNews = document.getElementById('includeNews').checked;
+    var includeNews = document.getElementById('includeNews').checked;
     
-    try {
-        const response = await fetch('/api/ai/generate-log', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                client_id: clientId,
-                date: date,
-                user_note: userNote,
-                featured_photo: (typeof currentFeaturedPhoto !== 'undefined' ? currentFeaturedPhoto : null),
-                include_news: includeNews,
-                log_style: logStyle,
-                custom_style: customStyle,
-                auto_save: true
-            })
-        });
-        
-        const data = await response.json();
-        
+    fetch('/api/ai/generate-log', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            client_id: clientId,
+            date: date,
+            user_note: userNote,
+            featured_photo: (typeof currentFeaturedPhoto !== 'undefined' ? currentFeaturedPhoto : null),
+            include_news: includeNews,
+            log_style: logStyle,
+            custom_style: customStyle,
+            auto_save: true
+        })
+    })
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
         hideGeneratingToast();
         clearGeneratingState();
         
@@ -279,7 +277,7 @@ async function generateAILogAsync() {
             } else {
                 alert('日志生成成功！');
             }
-            setTimeout(() => location.reload(), 500);
+            setTimeout(function() { location.reload(); }, 500);
         } else {
             if (typeof showNotification === 'function') {
                 showNotification('生成失败: ' + (data.message || '未知错误'), 'error');
@@ -287,7 +285,8 @@ async function generateAILogAsync() {
                 alert('生成失败: ' + (data.message || '未知错误'));
             }
         }
-    } catch (error) {
+    })
+    .catch(function(error) {
         hideGeneratingToast();
         clearGeneratingState();
         if (typeof showNotification === 'function') {
@@ -295,46 +294,56 @@ async function generateAILogAsync() {
         } else {
             alert('生成失败: ' + error.message);
         }
-    }
+    });
 }
 
-async function loadTodayPhotosForDate(date) {
-    const container = document.getElementById('todayPhotosPreview');
+function loadTodayPhotosForDate(date) {
+    var container = document.getElementById('todayPhotosPreview');
     if (!container) return;
     
-    try {
-        const response = await fetch(`/api/photos/by_date/${date}`);
-        const data = await response.json();
-        
-        if (data.success && data.photos && data.photos.length > 0) {
-            container.innerHTML = data.photos.slice(0, 6).map(photo => `
-                <img src="/photo/${photo.filename}" class="photo-preview-item" alt="照片">
-            `).join('') + (data.photos.length > 6 ? `<span class="text-muted small align-self-center">+${data.photos.length - 6}</span>` : '');
-        } else {
-            container.innerHTML = '<span class="text-muted small">该日期暂无照片</span>';
-        }
-    } catch (error) {
-        container.innerHTML = '<span class="text-muted small">加载失败</span>';
-    }
+    fetch('/api/photos/by_date/' + date)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.success && data.photos && data.photos.length > 0) {
+                var html = '';
+                for (var i = 0; i < Math.min(data.photos.length, 6); i++) {
+                    html += '<img src="/photo/' + data.photos[i].filename + '" class="photo-preview-item" alt="照片">';
+                }
+                if (data.photos.length > 6) {
+                    html += '<span class="text-muted small align-self-center">+' + (data.photos.length - 6) + '</span>';
+                }
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<span class="text-muted small">该日期暂无照片</span>';
+            }
+        })
+        .catch(function(error) {
+            container.innerHTML = '<span class="text-muted small">加载失败</span>';
+        });
 }
 
-async function loadTodayPhotos() {
-    const date = document.getElementById('logDate').value;
-    const container = document.getElementById('todayPhotosPreview');
+function loadTodayPhotos() {
+    var date = document.getElementById('logDate').value;
+    var container = document.getElementById('todayPhotosPreview');
     
-    try {
-        const response = await fetch(`/api/photos/by_date/${date}`);
-        const data = await response.json();
-        
-        if (data.success && data.photos && data.photos.length > 0) {
-            container.innerHTML = data.photos.slice(0, 6).map(photo => `
-                <img src="/photo/${photo.filename}" class="photo-preview-item" alt="照片">
-            `).join('') + (data.photos.length > 6 ? `<span class="text-muted small align-self-center">+${data.photos.length - 6}</span>` : '');
-        } else {
-            container.innerHTML = '<span class="text-muted small">今日暂无照片</span>';
-        }
-    } catch (error) {
-        container.innerHTML = '<span class="text-muted small">加载失败</span>';
-    }
+    fetch('/api/photos/by_date/' + date)
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (data.success && data.photos && data.photos.length > 0) {
+                var html = '';
+                for (var i = 0; i < Math.min(data.photos.length, 6); i++) {
+                    html += '<img src="/photo/' + data.photos[i].filename + '" class="photo-preview-item" alt="照片">';
+                }
+                if (data.photos.length > 6) {
+                    html += '<span class="text-muted small align-self-center">+' + (data.photos.length - 6) + '</span>';
+                }
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<span class="text-muted small">今日暂无照片</span>';
+            }
+        })
+        .catch(function(error) {
+            container.innerHTML = '<span class="text-muted small">加载失败</span>';
+        });
 }
 </script>

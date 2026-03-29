@@ -19,10 +19,7 @@
 </div>
 {% endif %}
 
-<!-- 引入分享库 (本地) -->
-<link rel="stylesheet" href="{{ url_for('static', filename='vendor/social-share/share.min.css') }}">
-<script src="{{ url_for('static', filename='vendor/social-share/social-share.min.js') }}"></script>
-
+<!-- 引入分享库 (本地) - 移到底部异步加载 -->
 <style>
 /* ===== 设计系统 ===== */
 :root {
@@ -1409,7 +1406,7 @@
         <div class="journal-content-unified">
             {% if today_log %}
             <div class="journal-body-uni">
-                {{ today_log.content | replace('\n', '<br>') | safe }}
+                {{ today_log.content | replace('\n', '<br>') | e }}
             </div>
             
             {% if news_item %}
@@ -1864,6 +1861,39 @@ if (typeof window.calendarWeekdays === 'undefined') {
     window.calendarWeekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 }
 
+// 移动端手势支持 - 左右滑动切换日期
+(function setupSwipeGestures() {
+    var touchStartX = 0;
+    var touchEndX = 0;
+    var minSwipeDistance = 50; // 最小滑动距离
+    
+    document.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+    }, {passive: true});
+    
+    document.addEventListener('touchend', function(e) {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+    }, {passive: true});
+    
+    function handleSwipe() {
+        var swipeDistance = touchEndX - touchStartX;
+        
+        // 左滑 - 下一天
+        if (swipeDistance < -minSwipeDistance) {
+            if (typeof changeDate === 'function') {
+                changeDate(1);
+            }
+        }
+        // 右滑 - 前一天
+        else if (swipeDistance > minSwipeDistance) {
+            if (typeof changeDate === 'function') {
+                changeDate(-1);
+            }
+        }
+    }
+})();
+
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
@@ -1898,11 +1928,11 @@ function loadDateData(dateStr) {
                 location.reload();
             }
         })
-        .catch(err => {
+        .catch(function(err) {
             console.error('加载数据失败:', err);
             location.reload();
         })
-        .finally(() => {
+        .then(function() {
             document.body.style.cursor = 'default';
         });
 }
@@ -1950,8 +1980,8 @@ function updatePageWithDateData(data, dateStr) {
     updateLogContent(data.log, data.news);
     
     // 6. 缓存照片数据并根据当前 Tab 过滤显示
-    cachedPhotos = data.photos || [];
-    let filteredPhotos = cachedPhotos;
+    window.cachedPhotos = data.photos || [];
+    let filteredPhotos = window.cachedPhotos;
     if (currentGalleryFilter === 'photo') {
         filteredPhotos = filteredPhotos.filter(p => !p.is_video);
     } else if (currentGalleryFilter === 'video') {
@@ -1961,7 +1991,7 @@ function updatePageWithDateData(data, dateStr) {
     
     // 7. 更新大照片框（优先使用精选照片）
     console.log('[FeaturedPhoto] Updating with:', {
-        photos: data.photos?.length,
+        photos: data.photos && data.photos.length,
         featured_photo: data.featured_photo,
         featured_photo_hash: data.featured_photo_hash
     });
@@ -2218,7 +2248,7 @@ function updatePhotoGallery(photos, dateStr) {
     const galleryGrid = document.getElementById('galleryGrid');
     const emptyGallery = document.getElementById('emptyGallery');
     
-    console.log('[DEBUG] updatePhotoGallery:', photos?.length, '张照片');
+    console.log('[DEBUG] updatePhotoGallery:', photos && photos.length, '张照片');
     
     if (!photos || photos.length === 0) {
         // 没有素材，显示空状态
@@ -2303,7 +2333,7 @@ function updateFeaturedPhoto(photos, featuredPhoto, featuredPhotoHash) {
     const photoActionButtons = document.getElementById('photoActionButtons');
     
     console.log('[FeaturedPhoto] updateFeaturedPhoto called:', {
-        photosCount: photos?.length,
+        photosCount: photos && photos.length,
         featuredPhoto: featuredPhoto,
         featuredPhotoHash: featuredPhotoHash,
         hasFeatured: !!(featuredPhotoHash || featuredPhoto)
@@ -2385,9 +2415,10 @@ function updateFeaturedPhoto(photos, featuredPhoto, featuredPhotoHash) {
     }
     
     // 没有精选照片时，找第一张图片，如果全是视频则用第一个视频的缩略图
-    let displayPhoto = null;
-    let isVideo = false;
-    for (const p of photos) {
+    var displayPhoto = null;
+    var isVideo = false;
+    for (var i = 0; i < photos.length; i++) {
+        var p = photos[i];
         if (!p.is_video) {
             displayPhoto = p;
             break;
@@ -2436,7 +2467,7 @@ function fallbackToFirstPhoto(imgElement) {
 // Tab 切换功能
 let currentGalleryFilter = 'all';
 // 从服务器渲染的数据初始化缓存
-let cachedPhotos = {{ today_photos | tojson }} || [];
+window.cachedPhotos = {{ today_photos | tojson }} || [];
 
 // AI自动选择精选照片
 function autoSelectFeatured() {
@@ -2561,7 +2592,7 @@ function switchGalleryTab(type) {
     document.getElementById('tab' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
     
     // 使用缓存数据过滤，不再请求服务器
-    let filteredPhotos = cachedPhotos || [];
+    let filteredPhotos = window.cachedPhotos || [];
     if (type === 'photo') {
         filteredPhotos = filteredPhotos.filter(p => !p.is_video);
     } else if (type === 'video') {
@@ -2580,18 +2611,18 @@ function updateWeatherDisplay(weather) {
     
     if (weather && (weather.temperature || weather.condition || weather.city)) {
         // 根据天气状况选择图标
-        let icon = '🌤️';
-        const cond = weather.condition || '';
-        if (cond.includes('晴')) icon = '☀️';
-        else if (cond.includes('多云')) icon = '⛅';
-        else if (cond.includes('阴')) icon = '☁️';
-        else if (cond.includes('雨')) icon = '🌧️';
-        else if (cond.includes('雪')) icon = '❄️';
-        else if (cond.includes('雾')) icon = '🌫️';
+        var icon = '🌤️';
+        var cond = weather.condition || '';
+        if (cond.indexOf('晴') !== -1) icon = '☀️';
+        else if (cond.indexOf('多云') !== -1) icon = '⛅';
+        else if (cond.indexOf('阴') !== -1) icon = '☁️';
+        else if (cond.indexOf('雨') !== -1) icon = '🌧️';
+        else if (cond.indexOf('雪') !== -1) icon = '❄️';
+        else if (cond.indexOf('雾') !== -1) icon = '🌫️';
         
-        const temp = weather.temperature || '--';
-        const condition = weather.condition || '';
-        const city = weather.city || '';
+        var temp = weather.temperature || '--';
+        var condition = weather.condition || '';
+        var city = weather.city || '';
         
         weatherEl.innerHTML = `<span class="weather-icon-small">${icon}</span><span>${city} ${temp}° ${condition}</span>`;
         weatherEl.style.display = 'inline-flex';
@@ -2626,7 +2657,7 @@ function selectAsFeatured(filename) {
     
     if (featuredWrapper && featuredPhoto) {
         // 通过哈希查找照片
-        const photoEntry = cachedPhotos.find(p => p.filename === filename);
+        const photoEntry = window.cachedPhotos.find(p => p.filename === filename);
         const fileHash = photoEntry ? photoEntry.hash : null;
         
         if (fileHash) {
@@ -3085,7 +3116,7 @@ function editBabyLog(dateStr) {
         }
         
         // 显示编辑模态框
-        const logContent = document.querySelector('.journal-body-uni')?.innerText || '';
+        const logContent = document.querySelector('.journal-body-uni') ? document.querySelector('.journal-body-uni').innerText : '';
         document.getElementById('editLogDate').value = dateStr;
         document.getElementById('editLogContent').value = logContent;
         new bootstrap.Modal(document.getElementById('editLogModal')).show();
@@ -3487,6 +3518,9 @@ function openFullscreen(filename, isVideo) {
     
     // 添加键盘事件
     document.addEventListener('keydown', handleFullscreenKeydown);
+    
+    // 添加移动端触摸手势支持
+    setupFullscreenTouchGestures(overlay);
 }
 
 function showFullscreenPhoto() {
@@ -3521,12 +3555,68 @@ function showFullscreenPhoto() {
     
     // 图片加载失败，尝试压缩版
     img.onerror = function() {
-        if (!img.src.includes('/photo/thumb/')) {
-            img.src = `/photo/thumb/${photo.filename}`;
+        if (img.src.indexOf('/photo/thumb/') === -1) {
+            img.src = '/photo/thumb/' + photo.filename;
         } else {
             loadingText.textContent = '图片加载失败';
         }
     };
+}
+
+// 全屏照片查看器的触摸手势支持
+function setupFullscreenTouchGestures(element) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    let touchStartTime = 0;
+    const minSwipeDistance = 50;
+    const maxSwipeTime = 300; // 毫秒
+    
+    element.addEventListener('touchstart', function(e) {
+        touchStartX = e.changedTouches[0].screenX;
+        touchStartY = e.changedTouches[0].screenY;
+        touchStartTime = new Date().getTime();
+    }, {passive: true});
+    
+    element.addEventListener('touchend', function(e) {
+        touchEndX = e.changedTouches[0].screenX;
+        touchEndY = e.changedTouches[0].screenY;
+        const touchEndTime = new Date().getTime();
+        const touchDuration = touchEndTime - touchStartTime;
+        
+        handleFullscreenSwipe(touchDuration);
+    }, {passive: true});
+    
+    function handleFullscreenSwipe(duration) {
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        const absDeltaX = Math.abs(deltaX);
+        const absDeltaY = Math.abs(deltaY);
+        
+        // 快速滑动或长距离滑动才触发
+        if (duration > maxSwipeTime && absDeltaX < minSwipeDistance * 2) {
+            return;
+        }
+        
+        // 水平滑动（切换照片）
+        if (absDeltaX > absDeltaY && absDeltaX > minSwipeDistance) {
+            if (deltaX > 0) {
+                // 右滑 - 上一张
+                navigateFullscreen(-1);
+            } else {
+                // 左滑 - 下一张
+                navigateFullscreen(1);
+            }
+        }
+        // 垂直滑动（关闭查看器）
+        else if (absDeltaY > absDeltaX && absDeltaY > minSwipeDistance * 1.5) {
+            if (deltaY > 0) {
+                // 下滑 - 关闭
+                closeFullscreen();
+            }
+        }
+    }
 }
 
 function navigateFullscreen(direction) {
@@ -3721,22 +3811,19 @@ document.addEventListener('DOMContentLoaded', function() {
     createGlobalShareModal();
     checkLogGeneratingState();
     loadProfileEntry();
-
-    // 预加载成长卡片（加载完成后自动显示）
-    setTimeout(preloadDailyCards, 1000);
 });
 
 function loadProfileEntry() {
     fetch('/api/ai/profile')
         .then(r => r.json())
-        .then(data => {
+        .then(function(data) {
             if (data.success && data.profile) {
-                const profile = data.profile;
+                var profile = data.profile;
                 
-                const summary = profile.guidance?.summary || '';
-                if (summary && !summary.includes('暂无足够数据')) {
+                var summary = (profile.guidance && profile.guidance.summary) || '';
+                if (summary && summary.indexOf('暂无足够数据') === -1) {
                     // 把简介放到标题位置，加双引号
-                    const titleEl = document.getElementById('profileEntryName');
+                    var titleEl = document.getElementById('profileEntryName');
                     titleEl.textContent = '"' + summary + '"';
                     titleEl.classList.add('profile-entry-quote');
                 } else {
@@ -3961,12 +4048,12 @@ function submitAIQuestion() {
             showNotification('AI分析失败: ' + data.message, 'error');
         }
     })
-    .catch(err => {
+    .catch(function(err) {
         if (err !== 'require_password') {
             showNotification('请求失败: ' + err.message, 'error');
         }
     })
-    .finally(() => {
+    .then(function() {
         document.getElementById('aiSubmitBtn').disabled = false;
         document.getElementById('aiLoading').style.display = 'none';
     });
@@ -4417,17 +4504,34 @@ let cardCache = {
     maxRetries: 2        // 最大重试次数
 };
 
+// 立即显示右下角卡片入口
+function showMiniCard() {
+    let miniCard = document.getElementById('miniGrowthCard');
+
+    if (!miniCard) {
+        miniCard = document.createElement('div');
+        miniCard.id = 'miniGrowthCard';
+        miniCard.className = 'mini-growth-card';
+        document.body.appendChild(miniCard);
+    }
+
+    miniCard.innerHTML = `
+        <div class="mini-card-icon">✨</div>
+        <div class="mini-card-text">今日卡片</div>
+    `;
+    miniCard.onclick = () => {
+        window.location.href = '/cards';
+    };
+    miniCard.classList.add('show');
+}
+
 // 从后端缓存加载卡片
 function loadCardsFromCache() {
     if (cardCache.loading || cardCache.loaded) return;
     cardCache.loading = true;
 
     console.log('[Card] 从后端缓存加载卡片...');
-    
-    // 显示加载中的迷你卡片
-    showMiniCardLoading('加载中...');
 
-    // 先检查今日里程碑
     fetch('/api/card/milestone/today')
         .then(r => r.json())
         .then(data => {
@@ -4473,8 +4577,8 @@ function loadNormalCards() {
                 // 缓存为空，检查重试次数
                 if (cardCache.retryCount < cardCache.maxRetries) {
                     cardCache.retryCount++;
-                    console.log(`[Card] 缓存为空，触发更新 (重试 ${cardCache.retryCount}/${cardCache.maxRetries})...`);
-                    updateCardCache();
+                    console.log(`[Card] 缓存为空，稍后重试 (重试 ${cardCache.retryCount}/${cardCache.maxRetries})...`);
+                    setTimeout(loadCardsFromCache, 3000);
                 } else {
                     // 超过最大重试次数，停止加载
                     console.log('[Card] 重试次数用完，无卡片可显示');
@@ -4492,75 +4596,30 @@ function loadNormalCards() {
         });
 }
 
-// 预加载卡片图片
+// 预加载卡片图片（延迟执行，不阻塞页面）
 function preloadCardImages(cards, callback) {
-    if (!cards || cards.length === 0) {
-        cardCache.imagesLoaded = true;
-        if (callback) callback();
-        return;
-    }
-
-    // 收集所有需要预加载的图片URL
-    const imageUrls = new Set();
-    cards.forEach(card => {
-        if (card.photo) imageUrls.add(card.photo);
-        if (card.before_photo) imageUrls.add(card.before_photo);
-        if (card.after_photo) imageUrls.add(card.after_photo);
-    });
-
-    const urls = Array.from(imageUrls);
-    if (urls.length === 0) {
-        console.log('[Card] 无需预加载图片');
-        cardCache.imagesLoaded = true;
-        if (callback) callback();
-        return;
-    }
-
-    console.log(`[Card] 开始预加载 ${urls.length} 张图片...`);
-    let loadedCount = 0;
-    let errorCount = 0;
-    const total = urls.length;
-
-    // 更新加载进度显示
-    const updateProgress = () => {
-        const progress = Math.round((loadedCount + errorCount) / total * 100);
-        showMiniCardLoading(`加载中 ${progress}%`);
-    };
+    cardCache.imagesLoaded = true;
+    if (callback) callback();
     
-    updateProgress();
-
-    urls.forEach(url => {
-        const img = new Image();
-        img.onload = () => {
-            loadedCount++;
-            updateProgress();
-            if (loadedCount + errorCount === total) {
-                cardCache.imagesLoaded = true;
-                console.log(`[Card] 图片预加载完成: ${loadedCount} 成功, ${errorCount} 失败`);
-                if (callback) callback();
-            }
-        };
-        img.onerror = () => {
-            errorCount++;
-            updateProgress();
-            console.warn(`[Card] 图片加载失败: ${url}`);
-            if (loadedCount + errorCount === total) {
-                cardCache.imagesLoaded = true;
-                console.log(`[Card] 图片预加载完成: ${loadedCount} 成功, ${errorCount} 失败`);
-                if (callback) callback();
-            }
-        };
-        img.src = url;
-    });
-
-    // 设置超时（30秒），避免无限等待
     setTimeout(() => {
-        if (!cardCache.imagesLoaded) {
-            console.warn('[Card] 图片预加载超时，强制显示按钮');
-            cardCache.imagesLoaded = true;
-            if (callback) callback();
-        }
-    }, 30000);
+        if (!cards || cards.length === 0) return;
+
+        const imageUrls = new Set();
+        cards.forEach(card => {
+            if (card.photo) imageUrls.add(card.photo);
+            if (card.before_photo) imageUrls.add(card.before_photo);
+            if (card.after_photo) imageUrls.add(card.after_photo);
+        });
+
+        const urls = Array.from(imageUrls);
+        if (urls.length === 0) return;
+
+        console.log(`[Card] 后台预加载 ${urls.length} 张图片...`);
+        urls.forEach(url => {
+            const img = new Image();
+            img.src = url;
+        });
+    }, 5000);
 }
 
 // 显示加载中的迷你卡片
@@ -4582,42 +4641,14 @@ function showMiniCardLoading(text) {
     miniCard.onclick = null;  // 加载中不可点击
 }
 
-// 更新后端缓存
-function updateCardCache() {
-    console.log('[Card] 更新后端缓存...');
-
-    fetchWithPassword('/api/card/cache/update', { method: 'POST' })
-        .then(data => {
-            if (data && data.success) {
-                console.log(`[Card] 缓存更新完成，共 ${data.total} 张`);
-                if (data.total > 0) {
-                    // 有卡片，重新加载
-                    cardCache.loaded = false;
-                    loadCardsFromCache();
-                } else {
-                    // 没有卡片，停止加载
-                    console.log('[Card] 无卡片可显示');
-                    cardCache.loading = false;
-                    cardCache.loaded = true;
-                    hideMiniCard();
-                }
-            }
-        })
-        .catch(err => {
-            if (err !== 'require_password') {
-                console.error('[Card] 更新失败:', err);
-            }
-            // 更新失败也停止加载
-            cardCache.loading = false;
-        });
-}
-
 // 数组随机打乱
 function shuffleArray(array) {
-    const arr = [...array];
-    for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
+    var arr = array.slice();
+    for (var i = arr.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
     }
     return arr;
 }
@@ -4630,8 +4661,9 @@ function showRandomCard() {
     }
 
     // 找一张未显示过的卡片
-    let card = null;
-    for (const c of cardCache.cards) {
+    var card = null;
+    for (var i = 0; i < cardCache.cards.length; i++) {
+        var c = cardCache.cards[i];
         if (!cardCache.shownIds.has(c.id)) {
             card = c;
             break;
@@ -4714,9 +4746,10 @@ function refreshCardCache(callback) {
         .then(data => {
             if (data.success && data.cards) {
                 // 合并新卡片（去重）
-                const existingIds = new Set(cardCache.cards.map(c => c.id));
-                let added = 0;
-                for (const card of data.cards) {
+                var existingIds = new Set(cardCache.cards.map(function(c) { return c.id; }));
+                var added = 0;
+                for (var i = 0; i < data.cards.length; i++) {
+                    var card = data.cards[i];
                     if (!existingIds.has(card.id)) {
                         cardCache.cards.push(card);
                         added++;
@@ -4753,11 +4786,33 @@ function showDailyGrowthCard(forceShow = false) {
 // 辅助函数：将完整路径转换为 /photo/filename 格式
 function getPhotoUrl(path) {
     if (!path) return '';
-    // 如果已经是 /photo/ 或 /collage/ 格式，直接返回
-    if (path.startsWith('/photo/') || path.startsWith('/collage/')) return path;
+    // 如果已经是 /photo/ 格式，直接返回
+    if (path.indexOf('/photo/') === 0) return path;
     // 提取文件名
-    const filename = path.split('/').pop();
-    return `/photo/${filename}`;
+    var filename = path.split('/').pop();
+    return '/photo/' + filename;
+}
+
+// 辅助函数：获取缩略图URL（节省内存）
+function getPhotoThumbUrl(path) {
+    if (!path) return '';
+    // 如果是 /photo/ 格式，转换为缩略图
+    if (path.indexOf('/photo/') === 0) {
+        var filename = path.replace('/photo/', '');
+        return '/photo/thumb/' + filename;
+    }
+    // 其他格式（绝对路径），提取文件名
+    var filename = path.split('/').pop();
+    return '/photo/thumb/' + filename;
+}
+
+// 创建带缩略图回退的图片HTML
+function createThumbImgHtml(path, className, extraAttrs) {
+    var thumbUrl = getPhotoThumbUrl(path);
+    var origUrl = getPhotoUrl(path);
+    var cls = className ? ' class="' + className + '"' : '';
+    var attrs = extraAttrs || '';
+    return '<img src="' + thumbUrl + '"' + cls + ' crossorigin="anonymous" onerror="this.onerror=null;this.src=\'' + origUrl + '\'"' + attrs + '>';
 }
 
 function renderDailyGrowthCard(card) {
@@ -4785,7 +4840,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card photo-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.style.display='none'">
+                    <img src="${getPhotoThumbUrl(card.photo)}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(card.photo)}'">
                 </div>
                 <div class="card-photo-date">${card.photo_date || ''}</div>
                 <div class="card-content">
@@ -4862,7 +4917,7 @@ function renderDailyGrowthCard(card) {
         cardHtml = `
             <div class="growth-card collage-card">
                 <div class="card-photo-wrapper">
-                    <img src="${card.photo}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.style.display='none'">
+                    <img src="${getPhotoThumbUrl(card.photo)}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(card.photo)}'">
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '成长合辑'}</div>
@@ -4878,15 +4933,17 @@ function renderDailyGrowthCard(card) {
     } else if (cardType === 'comparison_card') {
         // 成长对比卡片（往昔 vs 近日）
         const photoPaths = card.photo_paths || [];
-        const beforePhoto = getPhotoUrl(photoPaths[0]);
-        const afterPhoto = photoPaths.length > 1 ? getPhotoUrl(photoPaths[1]) : null;
+        const beforePhoto = getPhotoThumbUrl(photoPaths[0]);
+        const beforePhotoOrig = getPhotoUrl(photoPaths[0]);
+        const afterPhoto = photoPaths.length > 1 ? getPhotoThumbUrl(photoPaths[1]) : null;
+        const afterPhotoOrig = photoPaths.length > 1 ? getPhotoUrl(photoPaths[1]) : null;
         const stats = card.stats || {};
         cardHtml = `
             <div class="growth-card comparison-card">
                 <div class="expression-compare">
-                    ${beforePhoto ? `<div class="compare-item"><div class="compare-label">${stats.before_date || card.before_date || '早期'}</div><img src="${beforePhoto}" crossorigin="anonymous"></div>` : ''}
+                    ${beforePhoto ? `<div class="compare-item"><div class="compare-label">${stats.before_date || card.before_date || '早期'}</div><img src="${beforePhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${beforePhotoOrig}'"></div>` : ''}
                     <div class="compare-arrow">→</div>
-                    ${afterPhoto ? `<div class="compare-item"><div class="compare-label">${stats.after_date || card.after_date || '现在'}</div><img src="${afterPhoto}" crossorigin="anonymous"></div>` : ''}
+                    ${afterPhoto ? `<div class="compare-item"><div class="compare-label">${stats.after_date || card.after_date || '现在'}</div><img src="${afterPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${afterPhotoOrig}'"></div>` : ''}
                 </div>
                 <div class="card-content">
                     <div class="card-title">${card.title || '成长对比'}</div>
@@ -4904,7 +4961,7 @@ function renderDailyGrowthCard(card) {
         const photoPaths = card.photo_paths || [];
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -4927,7 +4984,7 @@ function renderDailyGrowthCard(card) {
         const photoPaths = card.photo_paths || [];
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -4961,7 +5018,7 @@ function renderDailyGrowthCard(card) {
         `).join('') : '';
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -4992,7 +5049,7 @@ function renderDailyGrowthCard(card) {
         `).join('') : '';
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -5015,20 +5072,25 @@ function renderDailyGrowthCard(card) {
         `;
     } else if (cardType === 'love_hug_card') {
         // 爱的抱抱卡片
-        const stats = card.stats || {};
-        const huggerStats = stats.hugger_stats || {};
-        const hugCount = stats.hug_count || 1;
-        const photoPaths = card.photo_paths || [];
-        const huggerStatsHtml = Object.keys(huggerStats).length > 0 ? Object.entries(huggerStats).map(([name, count]) => `
-            <div class="hugger-stat-item">
-                <span class="hugger-name">${name}</span>
-                <span class="hugger-bar"><span class="hugger-bar-fill" style="width: ${Math.min(100, count / hugCount * 100)}%"></span></span>
-                <span class="hugger-count">${count}次</span>
-            </div>
-        `).join('') : '';
+        var stats = card.stats || {};
+        var huggerStats = stats.hugger_stats || card.hugger_stats || {};
+        var hugCount = stats.hug_count || card.hug_count || 1;
+        var photoPaths = card.photo_paths || [];
+        var huggerStatsHtml = '';
+        if (Object.keys(huggerStats).length > 0) {
+            var statKeys = Object.keys(huggerStats);
+            huggerStatsHtml = statKeys.map(function(name) {
+                var count = huggerStats[name];
+                return '<div class="hugger-stat-item">' +
+                    '<span class="hugger-name">' + name + '</span>' +
+                    '<span class="hugger-bar"><span class="hugger-bar-fill" style="width: ' + Math.min(100, count / hugCount * 100) + '%"></span></span>' +
+                    '<span class="hugger-count">' + count + '次</span>' +
+                '</div>';
+            }).join('');
+        }
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -5084,7 +5146,7 @@ function renderDailyGrowthCard(card) {
         const yearsHtml = yearSamples.length > 0 ? yearSamples.map(s => `
             <div class="year-sample-item">
                 <div class="year-label">${s.year}年</div>
-                ${s.photo ? `<div class="year-photo"><img src="${getPhotoUrl(s.photo.path)}" crossorigin="anonymous"></div>` : ''}
+                ${s.photo ? `<div class="year-photo"><img src="${getPhotoThumbUrl(s.photo.path)}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(s.photo.path)}'"></div>` : ''}
             </div>
         `).join('') : '';
         cardHtml = `
@@ -5112,7 +5174,7 @@ function renderDailyGrowthCard(card) {
             <div class="season-item" style="--season-color: ${s.color}">
                 <div class="season-emoji">${s.emoji}</div>
                 <div class="season-name">${s.season}</div>
-                ${s.photo ? `<div class="season-photo"><img src="${getPhotoUrl(s.photo.path)}" crossorigin="anonymous"></div>` : ''}
+                ${s.photo ? `<div class="season-photo"><img src="${getPhotoThumbUrl(s.photo.path)}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(s.photo.path)}'"></div>` : ''}
             </div>
         `).join('') : '';
         cardHtml = `
@@ -5146,7 +5208,7 @@ function renderDailyGrowthCard(card) {
         `).join('') : '';
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -5171,8 +5233,10 @@ function renderDailyGrowthCard(card) {
         // 表情模仿秀卡片
         const stats = card.stats || {};
         const photoPaths = card.photo_paths || [];
-        const earlyPhoto = getPhotoUrl(photoPaths[0]);
-        const recentPhoto = photoPaths.length > 1 ? getPhotoUrl(photoPaths[photoPaths.length - 1]) : null;
+        const earlyPhoto = getPhotoThumbUrl(photoPaths[0]);
+        const earlyPhotoOrig = getPhotoUrl(photoPaths[0]);
+        const recentPhoto = photoPaths.length > 1 ? getPhotoThumbUrl(photoPaths[photoPaths.length - 1]) : null;
+        const recentPhotoOrig = photoPaths.length > 1 ? getPhotoUrl(photoPaths[photoPaths.length - 1]) : null;
         const monthsDiff = stats.months_diff || card.months_diff || 0;
         cardHtml = `
             <div class="growth-card expression-mimic-card">
@@ -5183,9 +5247,9 @@ function renderDailyGrowthCard(card) {
                     <div class="card-title">${card.title || '表情模仿秀'}</div>
                     <div class="card-subtitle">${card.subtitle || ''}</div>
                     <div class="expression-compare">
-                        ${earlyPhoto ? `<div class="compare-item"><div class="compare-label">${monthsDiff || '?'}个月前</div><img src="${earlyPhoto}" crossorigin="anonymous"></div>` : ''}
+                        ${earlyPhoto ? `<div class="compare-item"><div class="compare-label">${monthsDiff || '?'}个月前</div><img src="${earlyPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${earlyPhotoOrig}'"></div>` : ''}
                         <div class="compare-arrow">→</div>
-                        ${recentPhoto ? `<div class="compare-item"><div class="compare-label">现在</div><img src="${recentPhoto}" crossorigin="anonymous"></div>` : ''}
+                        ${recentPhoto ? `<div class="compare-item"><div class="compare-label">现在</div><img src="${recentPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${recentPhotoOrig}'"></div>` : ''}
                     </div>
                     <div class="card-highlight">${card.content || ''}</div>
                 </div>
@@ -5254,7 +5318,7 @@ function renderDailyGrowthCard(card) {
         `).join('') : '';
         const photosHtml = photoPaths.length > 0 ? `
             <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoUrl(p)}" class="card-grid-photo" crossorigin="anonymous">`).join('')}
+                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
             </div>
         ` : '';
         cardHtml = `
@@ -5587,54 +5651,13 @@ function closeDailyCard() {
         document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
         document.body.classList.remove('modal-open');
         document.body.style.overflow = '';
-    }, 100);
-
-    // 显示右下角小卡片
-    setTimeout(showMiniCard, 300);
+    });
 }
 
-function showMiniCard() {
-    // 只有数据和图片都加载完成后才显示迷你卡片
-    if (!cardCache.loaded) {
-        console.log('[Card] 数据未加载完成，不显示迷你卡片');
-        return;
-    }
-
-    // 检查是否有可用卡片
-    const hasCards = (cardCache.cards && cardCache.cards.length > 0) ||
-                     (cardCache.milestoneCards && cardCache.milestoneCards.length > 0);
-    if (!hasCards) {
-        console.log('[Card] 没有可用卡片，不显示迷你卡片');
-        return;
-    }
-
-    // 检查图片是否预加载完成
-    if (!cardCache.imagesLoaded) {
-        console.log('[Card] 图片未预加载完成，不显示迷你卡片');
-        return;
-    }
-
-    let miniCard = document.getElementById('miniGrowthCard');
-
-    if (!miniCard) {
-        miniCard = document.createElement('div');
-        miniCard.id = 'miniGrowthCard';
-        miniCard.className = 'mini-growth-card';
-        document.body.appendChild(miniCard);
-    }
-
-    // 更新为可点击的"今日卡片"按钮
-    miniCard.innerHTML = `
-        <div class="mini-card-icon">✨</div>
-        <div class="mini-card-text">今日卡片</div>
-    `;
-    miniCard.onclick = () => {
-        // 从缓存显示大卡片（秒开）
-        showCachedCard();
-    };
-    miniCard.classList.add('show');
-    console.log('[Card] 迷你卡片按钮已显示');
-}
+// 页面加载完成后立即显示右下角卡片入口
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(showMiniCard, 100);
+});
 
 function hideMiniCard() {
     const miniCard = document.getElementById('miniGrowthCard');
@@ -5809,8 +5832,52 @@ function hideMiniCard() {
     display: none;
 }
 
+/* 移动端基础适配 */
+@media (max-width: 767px) {
+    /* 日期头部适配 */
+    .date-header-unified {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .date-main-unified {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .date-number-big {
+        font-size: 2.5rem;
+    }
+    
+    /* 照片网格适配 */
+    .gallery-grid-uni {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 8px;
+    }
+}
+
+/* 平板适配 (768px - 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+    .hero-unified {
+        grid-template-columns: 1fr;
+    }
+    
+    .gallery-grid-uni {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+    
+    .hero-left-content {
+        padding: 20px 30px;
+    }
+    
+    .photo-frame-large {
+        height: 400px;
+    }
+}
+
 /* 桌面端hover展开 */
-@media (min-width: 768px) {
+@media (min-width: 1025px) {
     .mini-growth-card {
         width: auto;
         height: auto;
@@ -6233,7 +6300,9 @@ function hideMiniCard() {
 }
 
 .hugger-bar-fill {
+    display: block;
     height: 100%;
+    width: 0;
     background: linear-gradient(90deg, #FF8FAB, #FFB6C1);
     border-radius: 4px;
     transition: width 0.5s ease;
@@ -6537,7 +6606,9 @@ function hideMiniCard() {
 }
 
 .emotion-bar-fill {
+    display: block;
     height: 100%;
+    width: 0;
     background: var(--emotion-color, #999);
     border-radius: 4px;
     transition: width 0.5s ease;

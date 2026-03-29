@@ -46,15 +46,50 @@
 
 <script>
 // 照片浏览相关变量
-let currentPhotoIndex = 0;
-let currentPhotoList = [];
+var currentPhotoIndex = 0;
+var currentPhotoList = [];
 
 function viewPhotoDetail(filename) {
+    console.log('[详情] 打开照片详情, filename:', filename);
+    
     // 获取当前日期的所有照片列表
     currentPhotoList = window.currentPhotos || [];
+    console.log('[详情] 当前照片列表数量:', currentPhotoList.length);
     
+    // 如果列表为空，尝试从DOM获取
+    if (currentPhotoList.length === 0) {
+        console.log('[详情] 尝试从DOM获取照片');
+        var photoElements = document.querySelectorAll('.gallery-item-uni');
+        currentPhotoList = Array.from(photoElements).map(function(el) {
+            var img = el.querySelector('img');
+            var fname = el.dataset.photoId;
+            return { filename: fname, url: img ? img.src : '' };
+        });
+        console.log('[详情] 从DOM获取照片数量:', currentPhotoList.length);
+    }
+    
+    // 如果还是为空，从API重新加载
+    if (currentPhotoList.length === 0) {
+        var dateStr = window.currentCalendarDate ? formatDate(window.currentCalendarDate) : formatDate(new Date());
+        console.log('[详情] 重新加载日期:', dateStr);
+        fetch('/api/photos?date=' + dateStr)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.photos) {
+                    currentPhotoList = data.photos;
+                    console.log('[详情] 从API获取照片数量:', currentPhotoList.length);
+                    continueViewPhotoDetail(filename);
+                }
+            });
+        return;
+    }
+    
+    continueViewPhotoDetail(filename);
+}
+
+function continueViewPhotoDetail(filename) {
     // 找到当前照片的索引
-    currentPhotoIndex = currentPhotoList.findIndex(p => p.filename === filename);
+    currentPhotoIndex = currentPhotoList.findIndex(function(p) { return p.filename === filename; });
     if (currentPhotoIndex === -1) currentPhotoIndex = 0;
     
     // 显示照片
@@ -65,17 +100,30 @@ function viewPhotoDetail(filename) {
 }
 
 function showCurrentPhoto() {
-    if (currentPhotoList.length === 0) return;
+    if (currentPhotoList.length === 0) {
+        console.log('[详情] 照片列表为空');
+        return;
+    }
     
-    const photo = currentPhotoList[currentPhotoIndex];
+    var photo = currentPhotoList[currentPhotoIndex];
+    if (!photo || !photo.filename) {
+        console.log('[详情] 照片数据无效');
+        return;
+    }
     
     // 设置图片
-    const img = document.getElementById('detailPhoto');
-    if (photo.url) {
-        img.src = photo.url;
-    } else {
-        img.src = '/photo/' + photo.filename;
-    }
+    var img = document.getElementById('detailPhoto');
+    var safeFilename = photo.filename.split('/').pop();
+    var imageUrl = photo.url || '/photo/' + encodeURIComponent(safeFilename);
+    img.src = imageUrl;
+    
+    // 图片加载失败时尝试缩略图
+    img.onerror = function() {
+        console.log('[详情] 图片加载失败，尝试缩略图');
+        if (img.src.indexOf('/photo/thumb/') === -1) {
+            img.src = '/photo/thumb/' + encodeURIComponent(safeFilename);
+        }
+    };
     
     // 设置描述和日期
     document.getElementById('detailCaption').textContent = photo.caption || photo.tag || '无标注';
@@ -83,7 +131,7 @@ function showCurrentPhoto() {
     
     // 更新计数器
     document.getElementById('photoCounter').textContent = 
-        `${currentPhotoIndex + 1} / ${currentPhotoList.length}`;
+        (currentPhotoIndex + 1) + ' / ' + currentPhotoList.length;
     
     // 更新按钮状态
     document.getElementById('prevPhotoBtn').disabled = currentPhotoIndex === 0;
@@ -95,7 +143,7 @@ function showCurrentPhoto() {
 }
 
 function navigatePhoto(direction) {
-    const newIndex = currentPhotoIndex + direction;
+    var newIndex = currentPhotoIndex + direction;
     if (newIndex >= 0 && newIndex < currentPhotoList.length) {
         currentPhotoIndex = newIndex;
         showCurrentPhoto();

@@ -409,6 +409,14 @@
                         </div>
                     </div>
 
+                    <!-- 重启客户端按钮 -->
+                    <div class="d-grid mb-3">
+                        <button class="btn btn-warning" id="restartClientBtn" onclick="restartClient()">
+                            <i class="fas fa-redo me-2"></i>重启客户端
+                        </button>
+                        <small class="text-muted text-center mt-1">停止并重新启动客户端和Tunnel服务</small>
+                    </div>
+
                     <!-- 保存按钮 -->
                     <div class="d-grid">
                         <button class="btn btn-primary" onclick="saveModalSettings()">
@@ -462,23 +470,23 @@
 function uploadSettingsAvatar(input) {
     if (!input.files || input.files.length === 0) return;
     
-    const file = input.files[0];
-    const formData = new FormData();
+    var file = input.files[0];
+    var formData = new FormData();
     formData.append('avatar', file);
     
     fetch('/api/settings/avatar', {
         method: 'POST',
         body: formData
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.success) {
             // 更新设置模态框头像
-            const newUrl = data.avatar_url + '?t=' + Date.now();
+            var newUrl = data.avatar_url + '?t=' + Date.now();
             document.getElementById('settingsAvatarPreview').src = newUrl;
             
             // 更新导航栏头像
-            const navAvatar = document.querySelector('.navbar-brand img');
+            var navAvatar = document.querySelector('.navbar-brand img');
             if (navAvatar) navAvatar.src = newUrl;
             
             showNotification('头像更新成功', 'success');
@@ -486,14 +494,14 @@ function uploadSettingsAvatar(input) {
             showNotification(data.message || '上传失败', 'error');
         }
     })
-    .catch(err => {
+    .catch(function(err) {
         showNotification('上传失败: ' + err.message, 'error');
     });
 }
 
 // 复制用户ID
 function copyModalClientId() {
-    const clientId = document.getElementById('modalClientIdDisplay').textContent.trim();
+    var clientId = document.getElementById('modalClientIdDisplay').textContent.trim();
     if (!clientId || clientId === '未注册') {
         showNotification('用户ID未注册', 'error');
         return;
@@ -503,7 +511,7 @@ function copyModalClientId() {
         showNotification('用户ID已复制', 'success');
     }).catch(function(err) {
         // 降级方案
-        const textArea = document.createElement('textarea');
+        var textArea = document.createElement('textarea');
         textArea.value = clientId;
         textArea.style.position = 'fixed';
         textArea.style.left = '-9999px';
@@ -529,7 +537,7 @@ function copyToClipboard(text) {
         showNotification('已复制到剪贴板', 'success');
     }).catch(function(err) {
         // 降级方案
-        const textArea = document.createElement('textarea');
+        var textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
         textArea.style.left = '-9999px';
@@ -553,8 +561,8 @@ function showSettingsPasswordVerify() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: '' })
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
         if (data.success) {
             // localhost 免密码或未设置密码，直接进入设置
             document.getElementById('enterModifySection').classList.add('d-none');
@@ -569,7 +577,7 @@ function showSettingsPasswordVerify() {
             document.getElementById('settingsPassword').focus();
         }
     })
-    .catch(error => {
+    .catch(function(error) {
         console.error('Error:', error);
         // 出错时也显示密码验证
         document.getElementById('enterModifySection').classList.add('d-none');
@@ -589,7 +597,7 @@ function backToEnterSection() {
 }
 
 function verifySettingsPassword() {
-    const password = document.getElementById('settingsPassword').value;
+    var password = document.getElementById('settingsPassword').value;
     
     fetch('/api/settings/verify', {
         method: 'POST',
@@ -598,8 +606,8 @@ function verifySettingsPassword() {
         },
         body: JSON.stringify({ password: password })
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
         if (data.success) {
             // 验证成功，显示设置内容
             document.getElementById('passwordVerifySection').classList.add('d-none');
@@ -613,36 +621,36 @@ function verifySettingsPassword() {
             document.getElementById('passwordError').classList.remove('d-none');
         }
     })
-    .catch(error => {
+    .catch(function(error) {
         console.error('Error:', error);
         showNotification('验证失败，请稍后重试', 'error');
     });
 }
 
 function saveModalSettings() {
-    const babyName = document.getElementById('modalBabyName').value;
-    const babyGender = document.getElementById('modalGender').value;
-    const babyBirthday = document.getElementById('modalBirthday').value;
-    const province = document.getElementById('modalProvince').value;
-    const city = document.getElementById('modalCity').value;
-    const fullCity = city || province || '';
+    var babyName = document.getElementById('modalBabyName').value;
+    var babyGender = document.getElementById('modalGender').value;
+    var babyBirthday = document.getElementById('modalBirthday').value;
+    var province = document.getElementById('modalProvince').value;
+    var city = document.getElementById('modalCity').value;
+    var fullCity = city || province || '';
     
-    const folders = [];
-    document.querySelectorAll('#modalFolderList .media-folder').forEach(input => {
+    var folders = [];
+    document.querySelectorAll('#modalFolderList .media-folder').forEach(function(input) {
         if (input.value.trim()) {
             folders.push(input.value.trim());
         }
     });
     
-    const newPassword = document.getElementById('modalNewPassword').value;
-    const confirmPassword = document.getElementById('modalConfirmPassword').value;
+    var newPassword = document.getElementById('modalNewPassword').value;
+    var confirmPassword = document.getElementById('modalConfirmPassword').value;
     
     if (newPassword && newPassword !== confirmPassword) {
         showNotification('两次输入的新密码不一致', 'error');
         return;
     }
     
-    const requestData = {
+    var requestData = {
         baby_name: babyName,
         baby_gender: babyGender,
         baby_birthday: babyBirthday,
@@ -664,20 +672,20 @@ function saveModalSettings() {
         },
         body: JSON.stringify(requestData)
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(function(response) { return response.json(); })
+    .then(function(data) {
         if (data.success) {
             showNotification('设置已保存', 'success');
             // 关闭模态框
             var modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
             modal.hide();
             // 刷新页面
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(function() { location.reload(); }, 1500);
         } else {
             showNotification('保存失败：' + data.message, 'error');
         }
     })
-    .catch(error => {
+    .catch(function(error) {
         console.error('Error:', error);
         showNotification('保存失败，请稍后重试', 'error');
     });
@@ -685,19 +693,13 @@ function saveModalSettings() {
 
 // 添加文件夹
 function addModalFolder() {
-    const folderList = document.getElementById('modalFolderList');
-    const newRow = document.createElement('div');
+    var folderList = document.getElementById('modalFolderList');
+    var newRow = document.createElement('div');
     newRow.className = 'input-group mb-2';
-    newRow.innerHTML = `
-        <input type="text" class="form-control media-folder"
-               placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
-        <button class="btn btn-outline-danger remove-folder-btn" type="button">
-            <i class="fas fa-trash"></i>
-        </button>
-    `;
+    newRow.innerHTML = '<input type="text" class="form-control media-folder" placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）"><button class="btn btn-outline-danger remove-folder-btn" type="button"><i class="fas fa-trash"></i></button>';
     
     // 添加 Enter 键监听
-    const input = newRow.querySelector('input');
+    var input = newRow.querySelector('input');
     input.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             addModalFolder();
@@ -707,7 +709,7 @@ function addModalFolder() {
     folderList.appendChild(newRow);
     
     // 启用所有删除按钮
-    document.querySelectorAll('#modalFolderList .remove-folder-btn').forEach(btn => {
+    document.querySelectorAll('#modalFolderList .remove-folder-btn').forEach(function(btn) {
         btn.disabled = false;
     });
 }
@@ -715,8 +717,8 @@ function addModalFolder() {
 // 删除文件夹
 document.addEventListener('click', function(e) {
     if (e.target.closest('#modalFolderList .remove-folder-btn')) {
-        const row = e.target.closest('.input-group');
-        const remaining = document.querySelectorAll('#modalFolderList .media-folder').length;
+        var row = e.target.closest('.input-group');
+        var remaining = document.querySelectorAll('#modalFolderList .media-folder').length;
         if (remaining > 1) {
             row.remove();
         }
@@ -725,17 +727,18 @@ document.addEventListener('click', function(e) {
 
 // 初始化省份城市选择器
 function initModalCitySelector(savedCity) {
-    let defaultProvince = '';
-    let defaultCity = '';
+    var defaultProvince = '';
+    var defaultCity = '';
     
     if (savedCity) {
-        const provinces = getProvinces();
-        let found = false;
+        var provinces = getProvinces();
+        var found = false;
         
-        for (const province of provinces) {
+        for (var i = 0; i < provinces.length; i++) {
+            var province = provinces[i];
             if (savedCity === province) {
                 defaultProvince = province;
-                const cities = getCitiesByProvince(province);
+                var cities = getCitiesByProvince(province);
                 if (cities.length > 0) {
                     defaultCity = cities[0];
                 }
@@ -743,12 +746,13 @@ function initModalCitySelector(savedCity) {
                 break;
             }
             
-            if (savedCity.startsWith(province)) {
+            if (savedCity.indexOf(province) === 0) {
                 defaultProvince = province;
-                const cityPart = savedCity.substring(province.length);
-                const cities = getCitiesByProvince(province);
-                for (const city of cities) {
-                    if (cityPart.includes(city.replace(province, '')) || cityPart === city || city === cityPart) {
+                var cityPart = savedCity.substring(province.length);
+                var cities = getCitiesByProvince(province);
+                for (var j = 0; j < cities.length; j++) {
+                    var city = cities[j];
+                    if (cityPart.indexOf(city.replace(province, '')) !== -1 || cityPart === city || city === cityPart) {
                         defaultCity = city;
                         found = true;
                         break;
@@ -759,11 +763,13 @@ function initModalCitySelector(savedCity) {
         }
         
         if (!found && savedCity) {
-            for (const province of provinces) {
-                const cities = getCitiesByProvince(province);
-                for (const city of cities) {
-                    const cityNameOnly = city.replace(province, '');
-                    if ((cityNameOnly && savedCity.includes(cityNameOnly)) || savedCity === cityNameOnly || savedCity === city) {
+            for (var i = 0; i < provinces.length; i++) {
+                var province = provinces[i];
+                var cities = getCitiesByProvince(province);
+                for (var j = 0; j < cities.length; j++) {
+                    var city = cities[j];
+                    var cityNameOnly = city.replace(province, '');
+                    if ((cityNameOnly && savedCity.indexOf(cityNameOnly) !== -1) || savedCity === cityNameOnly || savedCity === city) {
                         defaultProvince = province;
                         defaultCity = city;
                         found = true;
@@ -789,8 +795,8 @@ function initModalCitySelector(savedCity) {
 // 加载当前设置
 function loadCurrentSettings() {
     fetch('/api/settings/current')
-        .then(response => response.json())
-        .then(data => {
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
             if (data.success) {
                 document.getElementById('modalBabyName').value = data.baby_name || '';
                 document.getElementById('modalGender').value = data.baby_gender || '';
@@ -802,20 +808,14 @@ function loadCurrentSettings() {
                 toggleCustomStyleInput();
                 initModalCitySelector(data.user_city || '');
                 
-                const folderList = document.getElementById('modalFolderList');
+                var folderList = document.getElementById('modalFolderList');
                 folderList.innerHTML = '';
                 
                 if (data.media_folders && data.media_folders.length > 0) {
-                    data.media_folders.forEach(folder => {
-                        const newRow = document.createElement('div');
+                    data.media_folders.forEach(function(folder) {
+                        var newRow = document.createElement('div');
                         newRow.className = 'input-group mb-2';
-                        newRow.innerHTML = `
-                            <input type="text" class="form-control media-folder" value="${folder}"
-                                   placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
-                            <button class="btn btn-outline-danger remove-folder-btn" type="button">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        `;
+                        newRow.innerHTML = '<input type="text" class="form-control media-folder" value="' + folder + '" placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）"><button class="btn btn-outline-danger remove-folder-btn" type="button"><i class="fas fa-trash"></i></button>';
                         folderList.appendChild(newRow);
                     });
                 } else {
@@ -823,7 +823,7 @@ function loadCurrentSettings() {
                 }
             }
         })
-        .catch(error => {
+        .catch(function(error) {
             console.error('Error loading settings:', error);
             addModalFolder();
         });
@@ -831,8 +831,8 @@ function loadCurrentSettings() {
 
 // 切换自定义风格输入框显示
 function toggleCustomStyleInput() {
-    const logStyle = document.getElementById('logStyle').value;
-    const customInput = document.getElementById('customStyleInput');
+    var logStyle = document.getElementById('logStyle').value;
+    var customInput = document.getElementById('customStyleInput');
     if (logStyle === '自定义') {
         customInput.style.display = 'block';
     } else {
@@ -842,8 +842,8 @@ function toggleCustomStyleInput() {
 
 // 从设置页面保存日志风格（实时保存到服务端）
 function saveLogStyleFromSettings() {
-    const logStyle = document.getElementById('logStyle').value;
-    const customStyle = logStyle === '自定义' ? document.getElementById('customStyleText').value : '';
+    var logStyle = document.getElementById('logStyle').value;
+    var customStyle = logStyle === '自定义' ? document.getElementById('customStyleText').value : '';
     
     fetch('/api/settings/log-style', {
         method: 'POST',
@@ -853,13 +853,13 @@ function saveLogStyleFromSettings() {
             custom_style: customStyle
         })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.success) {
             console.log('日志风格已保存:', logStyle, customStyle);
         }
     })
-    .catch(e => console.error('保存日志风格失败:', e));
+    .catch(function(e) { console.error('保存日志风格失败:', e); });
 }
 
 // 重置模态框状态
@@ -876,15 +876,15 @@ document.getElementById('settingsModal').addEventListener('hidden.bs.modal', fun
 
 // ==================== 压缩功能相关 ====================
 
-let compressionEnabled = false;
-let savedCompressionSettings = {};
+var compressionEnabled = false;
+var savedCompressionSettings = {};
 
 // 检查 FFmpeg 状态
 function checkFFmpegStatus() {
     fetch('/api/compression/check-ffmpeg')
-        .then(r => r.json())
-        .then(data => {
-            const statusEl = document.getElementById('ffmpegStatus');
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var statusEl = document.getElementById('ffmpegStatus');
             if (data.available) {
                 statusEl.className = 'badge bg-success';
                 statusEl.textContent = '可用';
@@ -893,8 +893,8 @@ function checkFFmpegStatus() {
                 statusEl.textContent = '不可用';
             }
         })
-        .catch(err => {
-            const statusEl = document.getElementById('ffmpegStatus');
+        .catch(function(err) {
+            var statusEl = document.getElementById('ffmpegStatus');
             statusEl.className = 'badge bg-danger';
             statusEl.textContent = '检测失败';
         });
@@ -903,10 +903,10 @@ function checkFFmpegStatus() {
 // 加载压缩状态
 function loadCompressionStatus() {
     fetch('/api/compression/status')
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.success) {
-                const status = data.data;
+                var status = data.data;
                 compressionEnabled = status.enabled;
                 savedCompressionSettings = {
                     video_quality: status.video_quality,
@@ -917,9 +917,9 @@ function loadCompressionStatus() {
                 document.getElementById('videoQuality').value = status.video_quality || '均衡';
                 document.getElementById('imageQuality').value = status.image_quality || '均衡';
                 document.getElementById('videoStatus').textContent = 
-                    `${status.videos_compressed} / ${status.total_videos || status.videos_compressed}`;
+                    status.videos_compressed + ' / ' + (status.total_videos || status.videos_compressed);
                 document.getElementById('imageStatus').textContent = 
-                    `${status.images_compressed} / ${status.total_images || status.images_compressed}`;
+                    status.images_compressed + ' / ' + (status.total_images || status.images_compressed);
                 
                 // 更新按钮状态
                 updateCompressionButton();
@@ -938,13 +938,13 @@ function loadCompressionStatus() {
                 }
             }
         })
-        .catch(err => console.error('加载压缩状态失败:', err));
+        .catch(function(err) { console.error('加载压缩状态失败:', err); });
 }
 
 // 保存压缩设置（自动触发）
 function saveCompressionSettings() {
-    const videoQuality = document.getElementById('videoQuality').value;
-    const imageQuality = document.getElementById('imageQuality').value;
+    var videoQuality = document.getElementById('videoQuality').value;
+    var imageQuality = document.getElementById('imageQuality').value;
     
     fetch('/api/compression/update', {
         method: 'POST',
@@ -954,25 +954,25 @@ function saveCompressionSettings() {
             image_quality: imageQuality
         })
     })
-    .then(r => r.json())
-    .then(data => {
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
         if (data.success) {
             savedCompressionSettings = { video_quality: videoQuality, image_quality: imageQuality };
             loadCompressionStatus();
         }
     })
-    .catch(err => console.error('保存压缩设置失败:', err));
+    .catch(function(err) { console.error('保存压缩设置失败:', err); });
 }
 
 // 重新生成压缩文件
 function regenerateCompression() {
-    const btn = document.getElementById('regenerateBtn');
+    var btn = document.getElementById('regenerateBtn');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在重新生成...';
     
     fetch('/api/compression/regenerate', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.success) {
                 showNotification(data.message, 'success');
                 loadCompressionStatus();
@@ -982,7 +982,7 @@ function regenerateCompression() {
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sync me-2"></i>重新生成压缩文件';
         })
-        .catch(err => {
+        .catch(function(err) {
             showNotification('操作失败: ' + err.message, 'error');
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sync me-2"></i>重新生成压缩文件';
@@ -994,7 +994,7 @@ document.getElementById('settingsModal').addEventListener('shown.bs.modal', func
      checkFFmpegStatus();
      loadCompressionStatus();
      // 初始化索引起始日期输入框
-     const indexAfterDate = '{{ index_after_date|default("") }}';
+     var indexAfterDate = '{{ index_after_date|default("") }}';
      if (indexAfterDate) {
          document.getElementById('rebuildIndexStartDate').value = indexAfterDate;
      }
@@ -1002,13 +1002,13 @@ document.getElementById('settingsModal').addEventListener('shown.bs.modal', func
 
 // 重建素材索引
 function rebuildPhotoIndex() {
-    const btn = document.getElementById('rebuildIndexBtn');
-    const startDate = document.getElementById('rebuildIndexStartDate').value;
+    var btn = document.getElementById('rebuildIndexBtn');
+    var startDate = document.getElementById('rebuildIndexStartDate').value;
     
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在启动扫描...';
     
-    const payload = {};
+    var payload = {};
     if (startDate) payload.start_date = startDate;
     
     fetch('/api/photos/scan', { 
@@ -1016,8 +1016,8 @@ function rebuildPhotoIndex() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.success) {
                 pollScanProgress();
             } else {
@@ -1026,7 +1026,7 @@ function rebuildPhotoIndex() {
                 btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
             }
         })
-        .catch(err => {
+        .catch(function(err) {
             showNotification('操作失败: ' + err.message, 'error');
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
@@ -1034,16 +1034,16 @@ function rebuildPhotoIndex() {
 }
 
 function pollScanProgress() {
-    const btn = document.getElementById('rebuildIndexBtn');
+    var btn = document.getElementById('rebuildIndexBtn');
     
     fetch('/api/photos/scan/progress')
-        .then(r => r.json())
-        .then(data => {
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
             if (data.running) {
-                const percent = data.total > 0 ? Math.round(data.current / data.total * 100) : 0;
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>扫描中 ${data.current}/${data.total} (${percent}%)`;
+                var percent = data.total > 0 ? Math.round(data.current / data.total * 100) : 0;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>扫描中 ' + data.current + '/' + data.total + ' (' + percent + '%)';
                 if (data.message) {
-                    btn.innerHTML += `<br><small>${data.message}</small>`;
+                    btn.innerHTML += '<br><small>' + data.message + '</small>';
                 }
                 setTimeout(pollScanProgress, 1000);
             } else if (data.result && data.result.error) {
@@ -1051,16 +1051,49 @@ function pollScanProgress() {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
             } else if (data.result) {
-                showNotification(`索引重建完成！新增 ${data.result.new} 个，已有 ${data.result.existing} 个，总计 ${data.result.total} 个文件`, 'success');
+                showNotification('索引重建完成！新增 ' + data.result.new + ' 个，已有 ' + data.result.existing + ' 个，总计 ' + data.result.total + ' 个文件', 'success');
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-sync-alt me-2"></i>重建素材索引';
             } else {
-                btn.innerHTML = `<i class="fas fa-spinner fa-spin me-2"></i>${data.message || '处理中...'}`;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + (data.message || '处理中...');
                 setTimeout(pollScanProgress, 1000);
             }
         })
-        .catch(err => {
+        .catch(function(err) {
             setTimeout(pollScanProgress, 2000);
+        });
+}
+
+// 重启客户端
+function restartClient() {
+    if (!confirm('确定要重启客户端服务吗？这将停止当前进程并重新启动。')) {
+        return;
+    }
+    
+    var btn = document.getElementById('restartClientBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在重启...';
+    
+    fetch('/api/settings/restart', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                showNotification('服务正在重启，请稍候...', 'info');
+                btn.innerHTML = '<i class="fas fa-check me-2"></i>已启动';
+                // 5秒后刷新页面
+                setTimeout(function() {
+                    window.location.reload();
+                }, 5000);
+            } else {
+                showNotification('重启失败: ' + data.message, 'error');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-redo me-2"></i>重启客户端';
+            }
+        })
+        .catch(function(err) {
+            showNotification('操作失败: ' + err.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-redo me-2"></i>重启客户端';
         });
 }
 </script>

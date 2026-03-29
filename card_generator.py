@@ -322,7 +322,7 @@ def get_recent_photos(base_url: str = "http://localhost:3000", limit: int = 5) -
     """获取最近的照片（从多天收集）"""
     try:
         # 获取有照片的日期
-        resp = requests.get(f"{base_url}/api/photos/dates", timeout=10)
+        resp = requests.get(f"{base_url}/api/photos/dates", timeout=120)
         if resp.status_code != 200:
             return []
 
@@ -333,7 +333,7 @@ def get_recent_photos(base_url: str = "http://localhost:3000", limit: int = 5) -
         # 从多天收集照片，直到达到limit
         all_photos = []
         for date in dates[:7]:  # 最多查看7天
-            resp = requests.get(f"{base_url}/api/photos/by_date/{date}", timeout=10)
+            resp = requests.get(f"{base_url}/api/photos/by_date/{date}", timeout=120)
             if resp.status_code == 200:
                 photos = resp.json().get('photos', [])
                 # 只返回图片，不要视频

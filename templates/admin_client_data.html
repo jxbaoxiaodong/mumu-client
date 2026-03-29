@@ -236,7 +236,7 @@
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between">
                                         <strong>${log.date}</strong>
-                                        <small class="text-muted">${log.metadata?.city || ''} ${log.metadata?.weather || ''}</small>
+                                        <small class="text-muted">${log.metadata && log.metadata.city || ''} ${log.metadata && log.metadata.weather || ''}</small>
                                     </div>
                                     <p class="mb-0 mt-2">${log.content.substring(0, 100)}...</p>
                                 </div>

@@ -428,10 +428,11 @@ function deleteTagFromGallery(filename) {
 
 // 加载标签筛选按钮（圆润样式）
 function loadTagFilters(photos) {
-    const container = document.getElementById('tagFilterButtons');
+    var container = document.getElementById('tagFilterButtons');
     
     // 提取所有唯一标签
-    const tags = [...new Set(photos.map(p => p.tag).filter(t => t))];
+    var tagSet = new Set(photos.map(function(p) { return p.tag; }).filter(function(t) { return t; }));
+    var tags = Array.from(tagSet);
     
     // 获取当前选中的标签
     const activeTag = document.querySelector('.tag-filter-btn.active');

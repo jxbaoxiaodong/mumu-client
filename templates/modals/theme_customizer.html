@@ -52,7 +52,7 @@ async function generateCustomTheme() {
         const quotaData = await quotaCheck.json();
         
         if (quotaData.success && quotaData.quota) {
-            const themeQuota = quotaData.quota.features?.generate_theme;
+            const themeQuota = quotaData.quota.features && quotaData.quota.features.generate_theme;
             if (themeQuota && themeQuota.remaining <= 0) {
                 showNotification('❌ 今日主题生成额度已用完，请明天再试', 'error', 5000);
                 return;
@@ -98,7 +98,7 @@ async function generateCustomTheme() {
             console.log('[主题生成] 主题已应用');
             
             // 构建成功消息
-            let title = `🎉 主题「${data.theme?.name || '自定义'}」已生成！`;
+            let title = `🎉 主题「${data.theme && data.theme.name || '自定义'}」已生成！`;
             let message = 'AI已自动应用新主题';
             
             if (data.limitations) {

@@ -387,12 +387,12 @@
         function saveQRCode(event) {
             event.preventDefault();
             
-            const previewSrc = document.getElementById('qrCodePreview').src;
-            const urlValue = document.getElementById('qrCodeUrl').value.trim();
+            var previewSrc = document.getElementById('qrCodePreview').src;
+            var urlValue = document.getElementById('qrCodeUrl').value.trim();
             
             // 如果有新上传的图片（不是空的data URL）
-            let qrCodeData = '';
-            if (previewSrc && previewSrc.startsWith('data:image')) {
+            var qrCodeData = '';
+            if (previewSrc && previewSrc.indexOf('data:image') === 0) {
                 qrCodeData = previewSrc;
             }
             

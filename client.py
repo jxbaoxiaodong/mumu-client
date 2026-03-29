@@ -16,6 +16,7 @@ import warnings
 import tempfile
 import hashlib
 import hmac
+import ipaddress
 import atexit
 import signal
 from datetime import datetime, timedelta, timezone
@@ -295,6 +296,33 @@ def is_local_request():
     """检查是否为本地请求"""
     remote_addr = request.remote_addr
     return remote_addr in ["127.0.0.1", "localhost"]
+
+
+def _is_private_or_loopback_ip(ip_text: str) -> bool:
+    if not ip_text:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_text.strip())
+        return ip_obj.is_private or ip_obj.is_loopback
+    except Exception:
+        return False
+
+
+def get_request_source_ip():
+    """
+    获取请求真实来源IP。
+    - 直连请求：使用 request.remote_addr
+    - 本机反向代理/隧道转发：仅当 remote_addr 为回环时，信任转发头
+    """
+    remote_addr = (request.remote_addr or "").strip()
+    if _is_private_or_loopback_ip(remote_addr):
+        cf_ip = (request.headers.get("CF-Connecting-IP") or "").strip()
+        if cf_ip:
+            return cf_ip
+        xff = (request.headers.get("X-Forwarded-For") or "").strip()
+        if xff:
+            return xff.split(",")[0].strip()
+    return remote_addr
 
 
 def post_with_retry(session, url, json_data, max_retries=3, timeout=10):
@@ -1898,6 +1926,21 @@ ingress:
             errors_to_send = ERROR_REPORT_QUEUE.copy() if ERROR_REPORT_QUEUE else []
             payload["errors"] = errors_to_send
 
+            try:
+                from card_cache import get_card_cache
+
+                cache = get_card_cache()
+                payload["cached_daily_card_ids"] = [
+                    card_id
+                    for card_id in (
+                        (card.get("id") or card.get("card_id"))
+                        for card in cache.get_all_cards()
+                    )
+                    if card_id
+                ]
+            except Exception as e:
+                print(f"⚠ 读取本地卡片ID失败: {e}")
+
             response = self.session.post(
                 f"{self.server_url}/czrz/client/heartbeat",
                 json=payload,
@@ -1949,7 +1992,8 @@ ingress:
                         removed = 0
 
                         # 删除不在服务端列表中的缓存卡片
-                        if daily_card_ids:
+                        # 只有当服务端返回了有效的卡片ID列表时才进行过滤
+                        if daily_card_ids and len(daily_card_ids) > 0:
                             server_id_set = set(daily_card_ids)
                             before_count = len(cache.cards)
                             cache.cards = [
@@ -1966,7 +2010,7 @@ ingress:
                         added = 0
                         for card in daily_cards:
                             card_id = card.get("card_id")
-                            if not cache.get_card_by_id(card_id):
+                            if not cache.get_card_by_id(card_id) and not cache.has_equivalent_card(card):
                                 card["id"] = card_id
                                 card["category"] = "extended"
                                 # 将照片文件名转为本地URL
@@ -1984,7 +2028,8 @@ ingress:
                         if added > 0:
                             print(f"📦 从服务端新增 {added} 张卡片到本地缓存")
 
-                        if added > 0 or (daily_card_ids and removed > 0):
+                        # 只有当有实际变化时才保存缓存
+                        if added > 0 or removed > 0:
                             cache._save_cache()
                     except Exception as e:
                         print(f"⚠ 保存卡片失败: {e}")
@@ -2346,6 +2391,36 @@ static_folder = get_static_folder()
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 
+
+@app.before_request
+def enforce_public_read_only():
+    """
+    公网只读策略：
+    - 内网/本机请求：允许读写
+    - 公网请求：仅允许 GET/HEAD/OPTIONS
+    """
+    source_ip = get_request_source_ip()
+    is_private_source = _is_private_or_loopback_ip(source_ip)
+    method = (request.method or "").upper()
+    is_read_only_method = method in {"GET", "HEAD", "OPTIONS"}
+    public_write_whitelist = {
+        ("POST", "/api/card/share"),  # 公网允许标记分享
+        ("POST", "/message"),  # 公网允许提交留言
+    }
+    is_whitelisted_public_write = (method, request.path) in public_write_whitelist
+
+    if not is_private_source and not is_read_only_method and not is_whitelisted_public_write:
+        logger.warning(
+            f"[SECURITY] 拒绝公网写请求: ip={source_ip}, method={method}, path={request.path}"
+        )
+        return jsonify(
+            {
+                "success": False,
+                "message": "公网访问仅允许只读操作（GET/HEAD/OPTIONS）",
+                "source_ip": source_ip,
+            }
+        ), 403
+
 # 调试信息
 logger.info(f"模板文件夹: {template_folder}")
 logger.info(f"静态文件夹: {static_folder}")
@@ -2576,6 +2651,30 @@ def index():
         index_after_date=getattr(public_client, "index_after_date", ""),
         weather=weather,
     )
+
+
+@app.route("/cards")
+def cards_page():
+    """成长卡片页面"""
+    baby_name = USER_CONFIG.get("baby_name", "宝宝")
+    try:
+        from card_cache import get_card_cache
+
+        cache = get_card_cache()
+        sync_card_cache_silently()
+        cards = [
+            convert_photo_path_for_client(card) for card in cache.get_all_cards()
+        ]
+        cards = select_rotating_cards(cards, per_day=50)
+
+        for card in cards:
+            card_id = card.get("id", "")
+            card["shared"] = cache.is_shared(card_id)
+    except Exception as e:
+        print(f"[Card] 读取缓存失败: {e}")
+        cards = []
+
+    return render_template("cards.html", baby_name=baby_name, cards=cards)
 
 
 @app.route("/setup")
@@ -3129,7 +3228,7 @@ def get_or_create_video_thumbnail(video_path: Path) -> Path:
 
 @app.route("/photo/thumb/<filename>")
 def get_photo_thumb(filename):
-    """获取照片缩略图（通过索引查找）"""
+    """获取照片缩略图"""
     from flask import send_file
 
     try:
@@ -3142,12 +3241,24 @@ def get_photo_thumb(filename):
         pm = PhotoManager(media_folders, public_client.data_dir)
         entry = pm.get_photo_by_filename(filename)
 
-        if not entry:
-            return jsonify({"success": False, "message": "照片不在索引中"}), 404
+        photo_path = None
+        if entry:
+            photo_path = Path(entry["path"])
+            if not photo_path.exists():
+                photo_path = None
 
-        photo_path = Path(entry["path"])
-        if not photo_path.exists():
-            return jsonify({"success": False, "message": "照片文件不存在"}), 404
+        if not photo_path:
+            for folder in media_folders:
+                folder_path = Path(folder)
+                for file_path in folder_path.rglob(filename):
+                    if file_path.is_file():
+                        photo_path = file_path
+                        break
+                if photo_path:
+                    break
+
+        if not photo_path:
+            return jsonify({"success": False, "message": "照片不存在"}), 404
 
         thumb_path = get_or_create_thumbnail(photo_path, size=(400, 400))
         return send_file(thumb_path)
@@ -4517,6 +4628,14 @@ def get_exe_path():
     return None
 
 
+def get_manual_update_url():
+    """手动更新入口（非 Windows EXE 环境使用）"""
+    base = (public_client.server_url or "").rstrip("/")
+    if not base:
+        return "/"
+    return f"{base}/download"
+
+
 @app.route("/api/version/check")
 def api_check_version():
     """检查版本更新（支持多平台）"""
@@ -4558,6 +4677,7 @@ def api_check_version():
             windows_exe = is_windows_exe()
             exe_path = str(get_exe_path()) if windows_exe else None
 
+            auto_update_supported = is_windows_exe()
             return jsonify(
                 {
                     "success": True,
@@ -4570,6 +4690,9 @@ def api_check_version():
                     "is_windows_exe": windows_exe,
                     "exe_path": exe_path,
                     "platform": platform,
+                    "auto_update_supported": auto_update_supported,
+                    "manual_update_required": not auto_update_supported,
+                    "manual_update_url": get_manual_update_url(),
                 }
             )
         else:
@@ -4584,6 +4707,16 @@ def api_check_version():
 def api_download_update():
     """下载更新（支持多平台格式）"""
     try:
+        if not is_windows_exe():
+            return jsonify(
+                {
+                    "success": False,
+                    "manual_update_required": True,
+                    "manual_update_url": get_manual_update_url(),
+                    "message": "当前平台请手动下载新版本覆盖安装",
+                }
+            )
+
         data = request.get_json() or {}
         download_url = data.get("download_url", "")
         expected_md5 = data.get("md5", "")
@@ -4670,6 +4803,16 @@ def api_download_update():
 def api_install_update():
     """安装更新 - 静默替换当前客户端"""
     try:
+        if not is_windows_exe():
+            return jsonify(
+                {
+                    "success": False,
+                    "manual_update_required": True,
+                    "manual_update_url": get_manual_update_url(),
+                    "message": "当前平台不支持自动安装，请手动更新",
+                }
+            )
+
         import subprocess
         import os
         import sys
@@ -4852,6 +4995,16 @@ except Exception as e:
 def api_auto_update():
     """一键自动更新：下载并安装"""
     try:
+        if not is_windows_exe():
+            return jsonify(
+                {
+                    "success": False,
+                    "manual_update_required": True,
+                    "manual_update_url": get_manual_update_url(),
+                    "message": "当前平台不支持一键自动更新，请手动下载",
+                }
+            )
+
         # 1. 获取版本信息
         response = public_client.signed_request(
             "GET", f"{public_client.server_url}/czrz/version/latest", timeout=10
@@ -6108,7 +6261,9 @@ def api_card_cache_list():
         from card_cache import get_card_cache
 
         cache = get_card_cache()
-        cards = cache.get_all_cards()
+        sync_card_cache_silently()
+        cards = [convert_photo_path_for_client(card) for card in cache.get_all_cards()]
+        cards = select_rotating_cards(cards, per_day=50)
 
         # 添加分享状态
         for card in cards:
@@ -6127,7 +6282,10 @@ def api_card_milestone_today():
         from card_cache import get_card_cache
 
         cache = get_card_cache()
-        cards = cache.get_today_milestone_cards()
+        cards = [
+            convert_photo_path_for_client(card)
+            for card in cache.get_today_milestone_cards()
+        ]
 
         # 添加分享状态
         for card in cards:
@@ -6151,37 +6309,143 @@ def convert_photo_path_for_client(obj):
     if not obj:
         return obj
 
-    # 处理字符串路径
+    path_keys = {
+        "path",
+        "photo",
+        "before_photo",
+        "after_photo",
+        "cover_path",
+        "thumbnail",
+        "thumb",
+        "src",
+    }
+
     if isinstance(obj, str):
-        if obj.startswith("/collage/") or obj.startswith("/photo/"):
+        if obj.startswith("/photo/"):
             return obj
         import urllib.parse
 
-        # 处理绝对路径
         if obj.startswith("/"):
             filename = obj.split("/")[-1]
             return f"/photo/{urllib.parse.quote(filename)}"
-        # 处理纯文件名（服务端传来的索引）
         return f"/photo/{urllib.parse.quote(obj)}"
 
-    # 处理字典中的path字段
-    if isinstance(obj, dict) and "path" in obj:
-        path = obj["path"]
-        if isinstance(path, str):
-            import urllib.parse
+    if isinstance(obj, list):
+        return [convert_photo_path_for_client(item) for item in obj]
 
-            if path.startswith("/photo/"):
-                return obj
-            # 处理绝对路径
-            if path.startswith("/"):
-                filename = path.split("/")[-1]
-                obj["path"] = f"/photo/{urllib.parse.quote(filename)}"
-            # 处理纯文件名（服务端传来的索引）
+    if isinstance(obj, dict):
+        converted = {}
+        for key, value in obj.items():
+            if key in path_keys:
+                converted[key] = convert_photo_path_for_client(value)
+            elif key in {
+                "photo_paths",
+                "photos",
+                "year_samples",
+                "seasons",
+                "evolution_photos",
+                "assets",
+                "cards",
+            }:
+                converted[key] = convert_photo_path_for_client(value)
             else:
-                obj["path"] = f"/photo/{urllib.parse.quote(path)}"
-        return obj
+                converted[key] = value
+        return converted
 
     return obj
+
+
+def select_rotating_cards(cards, per_day: int = 50, date_str: str = None):
+    """
+    按天轮换展示卡片：
+    - 不删除、不过滤总库，仅决定“今天展示哪一页”
+    - 稳定排序 + 按日偏移，避免每天都看同一批
+    """
+    if not cards:
+        return []
+
+    if per_day <= 0:
+        return cards
+
+    if not date_str:
+        date_str = datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        day_seed = datetime.strptime(date_str, "%Y-%m-%d").toordinal()
+    except Exception:
+        day_seed = datetime.now().toordinal()
+
+    def stable_key(card):
+        card_id = str(card.get("id") or card.get("card_id") or "")
+        # 稳定哈希，保证每天分页可复现
+        return hashlib.md5(card_id.encode("utf-8")).hexdigest()
+
+    ordered_cards = sorted(cards, key=stable_key)
+    total = len(ordered_cards)
+    if total <= per_day:
+        return ordered_cards
+
+    # 先保证每个类别至少展示 1 张（如果有）
+    by_type = {}
+    for card in ordered_cards:
+        card_type = card.get("type") or card.get("card_type") or "unknown"
+        by_type.setdefault(card_type, []).append(card)
+
+    selected = []
+    selected_ids = set()
+    for card_type, type_cards in sorted(by_type.items()):
+        if len(selected) >= per_day:
+            break
+        if not type_cards:
+            continue
+        idx = day_seed % len(type_cards)
+        chosen = type_cards[idx]
+        card_id = chosen.get("id") or chosen.get("card_id")
+        if card_id not in selected_ids:
+            selected.append(chosen)
+            selected_ids.add(card_id)
+
+    # 再按日轮换补齐剩余名额
+    remaining = per_day - len(selected)
+    if remaining <= 0:
+        return selected
+
+    total_pages = (total + remaining - 1) // remaining
+    page_idx = day_seed % total_pages
+    start = page_idx * remaining
+    end = start + remaining
+    for card in ordered_cards[start:end]:
+        card_id = card.get("id") or card.get("card_id")
+        if card_id in selected_ids:
+            continue
+        selected.append(card)
+        selected_ids.add(card_id)
+        if len(selected) >= per_day:
+            break
+
+    # 如果还有空位，从头补齐
+    if len(selected) < per_day:
+        for card in ordered_cards:
+            card_id = card.get("id") or card.get("card_id")
+            if card_id in selected_ids:
+                continue
+            selected.append(card)
+            selected_ids.add(card_id)
+            if len(selected) >= per_day:
+                break
+
+    return selected
+
+
+def sync_card_cache_silently():
+    """静默从服务端同步一次卡片缓存"""
+    try:
+        if not public_client or not getattr(public_client, "client_id", None):
+            return False
+        return public_client.send_heartbeat()
+    except Exception as e:
+        print(f"[Card] 静默同步失败: {e}")
+        return False
 
 
 @app.route("/api/card/cache/random")
@@ -6199,86 +6463,24 @@ def api_card_cache_random():
             else []
         )
 
-        cards = cache.get_random_cards(count, exclude_ids)
+        cards = [
+            convert_photo_path_for_client(card)
+            for card in cache.get_random_cards(count, exclude_ids)
+        ]
 
-        # 转换照片路径并添加分享状态
+        if not cards:
+            sync_card_cache_silently()
+            cards = [
+                convert_photo_path_for_client(card)
+                for card in cache.get_random_cards(count, exclude_ids)
+            ]
+
+        # 添加分享状态
         for card in cards:
             card_id = card.get("id", "")
             card["shared"] = cache.is_shared(card_id)
 
-            # 1. 处理主照片
-            if "photo" in card:
-                card["photo"] = convert_photo_path_for_client(card["photo"])
-
-            # 2. 处理year_samples (same_day_different_year_card)
-            if "year_samples" in card:
-                for sample in card["year_samples"]:
-                    if "photo" in sample:
-                        sample["photo"] = convert_photo_path_for_client(sample["photo"])
-
-            # 3. 处理early_photo/recent_photo (expression_mimic_card)
-            for field in ["early_photo", "recent_photo"]:
-                if field in card:
-                    card[field] = convert_photo_path_for_client(card[field])
-
-            # 4. 处理seasons (four_seasons_wardrobe_card)
-            if "seasons" in card:
-                for season in card["seasons"]:
-                    if "photo" in season:
-                        season["photo"] = convert_photo_path_for_client(season["photo"])
-
-            # 5. 处理photos数组 (little_traveler_card, smile_collection_card等)
-            if "photos" in card and isinstance(card["photos"], list):
-                for photo in card["photos"]:
-                    if isinstance(photo, dict) and "path" in photo:
-                        convert_photo_path_for_client(photo)
-
-            # 6. 处理evolution_photos (expression_evolution_card)
-            if "evolution_photos" in card and isinstance(
-                card["evolution_photos"], list
-            ):
-                for photo in card["evolution_photos"]:
-                    if isinstance(photo, dict) and "path" in photo:
-                        convert_photo_path_for_client(photo)
-
-            # 7. 处理photo_paths数组
-            if "photo_paths" in card and isinstance(card["photo_paths"], list):
-                card["photo_paths"] = [
-                    convert_photo_path_for_client(p) if isinstance(p, str) else p
-                    for p in card["photo_paths"]
-                ]
-
         return jsonify({"success": True, "cards": cards})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/card/cache/update", methods=["POST"])
-@require_local_or_password
-def api_card_cache_update():
-    """更新卡片缓存"""
-    try:
-        from card_cache import get_card_cache
-
-        cache = get_card_cache()
-
-        baby_name = USER_CONFIG.get("baby_name", "宝宝")
-        # 使用公网URL
-        base_url = (
-            public_client.public_url
-            if public_client and public_client.public_url
-            else f"http://localhost:{public_client.client_port if public_client else 3000}"
-        )
-
-        cache.update_cache(baby_name, base_url, force=True)
-
-        return jsonify(
-            {
-                "success": True,
-                "message": "缓存更新完成",
-                "total": len(cache.get_all_cards()),
-            }
-        )
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -6370,80 +6572,6 @@ def api_card_share_stats():
     except Exception as e:
         print(f"[Card] 获取分享统计失败: {e}")
         return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/collage/styles", methods=["GET"])
-def api_collage_styles():
-    """获取可用的合图风格"""
-    try:
-        from photo_collage import get_available_styles
-
-        styles = get_available_styles()
-        return jsonify({"success": True, "styles": styles})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/collage/generate", methods=["POST"])
-@require_local_or_password
-def api_collage_generate():
-    """生成照片合图"""
-    try:
-        from photo_collage import PhotoCollageGenerator
-        from photo_manager import PhotoManager
-
-        data = request.get_json() or {}
-        style = data.get("style", "grid")
-        photo_paths = data.get("photos", [])  # 照片路径列表
-        title = data.get("title", "")
-
-        if len(photo_paths) < 2:
-            return jsonify({"success": False, "message": "至少需要2张照片"})
-
-        # 过滤存在的照片
-        valid_paths = [p for p in photo_paths if Path(p).exists()]
-        if len(valid_paths) < 2:
-            return jsonify({"success": False, "message": "有效照片不足2张"})
-
-        # 生成合图
-        generator = PhotoCollageGenerator(
-            output_dir=str(public_client.data_dir / "collage")
-        )
-        collage_path = generator.generate(
-            photos=valid_paths,
-            style=style,
-            title=title or "成长瞬间",
-        )
-
-        if collage_path:
-            return jsonify(
-                {
-                    "success": True,
-                    "collage_path": collage_path,
-                    "url": f"/collage/{Path(collage_path).name}",
-                }
-            )
-        else:
-            return jsonify({"success": False, "message": "生成合图失败"})
-
-    except Exception as e:
-        print(f"[Collage] 生成失败: {e}")
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/collage/<filename>")
-def get_collage(filename):
-    """获取合图文件"""
-    try:
-        collage_dir = public_client.data_dir / "collage"
-        file_path = collage_dir / filename
-
-        if not file_path.exists():
-            return jsonify({"success": False, "message": "合图不存在"}), 404
-
-        return send_file(file_path)
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
 
 
 def get_profile_data():
@@ -9201,7 +9329,7 @@ if __name__ == "__main__":
             print(f"🔗 公网访问: {public_client.public_url}")
 
         print(f"🏢 管理后台: https://{public_client.server_domain}/admin")
-        print(f"🔑 默认密码: admin123")
+        print(f"🔑 管理员密码: 请在服务端设置 ADMIN_PASSWORD 环境变量")
         print("=" * 60)
 
         # 打开浏览器
