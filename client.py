@@ -3353,6 +3353,7 @@ def get_photo_thumb(filename):
     """获取照片缩略图"""
     from flask import send_file
 
+    photo_path = None
     try:
         media_folders = getattr(public_client, "media_folders", [])
         if not media_folders:
@@ -3363,7 +3364,6 @@ def get_photo_thumb(filename):
         pm = PhotoManager(media_folders, public_client.data_dir)
         entry = pm.get_photo_by_filename(filename)
 
-        photo_path = None
         if entry:
             photo_path = Path(entry["path"])
             if not photo_path.exists():
@@ -3387,6 +3387,12 @@ def get_photo_thumb(filename):
 
     except Exception as e:
         print(f"[ERROR] 获取缩略图失败: {e}")
+        if photo_path and photo_path.exists():
+            try:
+                print(f"[INFO] 缩略图失败，回退原图: {photo_path}")
+                return send_file(photo_path)
+            except Exception as fallback_error:
+                print(f"[ERROR] 回退原图也失败: {fallback_error}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 

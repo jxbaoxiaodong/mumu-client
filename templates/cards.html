@@ -294,6 +294,10 @@ function getPhotoThumbUrl(path) {
     return '/photo/thumb/' + path.split('/').pop();
 }
 
+function getCardImageUrl(path) {
+    return getPhotoThumbUrl(path);
+}
+
 function formatCardDate(dateStr) {
     if (!dateStr) return '';
     var text = String(dateStr).trim();
@@ -369,10 +373,10 @@ function renderTagCollageCard(card) {
             var path = typeof photo === 'string' ? photo : (photo.path || photo.photo || '');
             var dateText = typeof photo === 'object' ? (photo.date || photo.created_at || '') : '';
             var badge = dateText ? '<div class="tag-photo-date">' + escapeHtml(formatCardDate(dateText)) + '</div>' : '';
-            return '<div class="tag-photo-item"><img src="' + getPhotoThumbUrl(path) + '" crossorigin="anonymous">' + badge + '</div>';
+            return '<div class="tag-photo-item"><img src="' + getCardImageUrl(path) + '" crossorigin="anonymous">' + badge + '</div>';
         }).join('') + '</div>';
     } else if (coverPhoto) {
-        html += '<div class="card-photo-wrapper" style="margin-top:14px;"><img src="' + getPhotoUrl(coverPhoto) + '" style="width:100%;border-radius:12px;" crossorigin="anonymous"></div>';
+        html += '<div class="card-photo-wrapper" style="margin-top:14px;"><img src="' + getCardImageUrl(coverPhoto) + '" style="width:100%;border-radius:12px;" crossorigin="anonymous"></div>';
     }
     html += '</div>';
     html += buildCardFooter();
@@ -394,14 +398,14 @@ function renderComparisonCard(card) {
     html += '<div class="comparison-side">';
     if (beforePhoto) {
         html += beforeDate ? '<div class="card-date-badge centered">' + escapeHtml(beforeDate) + '</div>' : '';
-        html += '<img src="' + getPhotoUrl(beforePhoto) + '" crossorigin="anonymous">';
+        html += '<img src="' + getCardImageUrl(beforePhoto) + '" crossorigin="anonymous">';
     }
     html += '</div>';
     html += '<div class="comparison-arrow">→</div>';
     html += '<div class="comparison-side">';
     if (afterPhoto) {
         html += afterDate ? '<div class="card-date-badge centered">' + escapeHtml(afterDate) + '</div>' : '';
-        html += '<img src="' + getPhotoUrl(afterPhoto) + '" crossorigin="anonymous">';
+        html += '<img src="' + getCardImageUrl(afterPhoto) + '" crossorigin="anonymous">';
     }
     html += '</div>';
     html += '</div>';
@@ -450,7 +454,7 @@ function renderYearCompareCard(card) {
             var photo = sample.photo || sample;
             var path = typeof photo === 'string' ? photo : (photo.path || '');
             var year = sample.year || (sample.photo && sample.photo.year) || sample.label || '';
-            return '<div class="year-sample-item"><img src="' + getPhotoThumbUrl(path) + '" crossorigin="anonymous"><div class="year-badge">' + escapeHtml(year) + '</div></div>';
+            return '<div class="year-sample-item"><img src="' + getCardImageUrl(path) + '" crossorigin="anonymous"><div class="year-badge">' + escapeHtml(year) + '</div></div>';
         }).join('') + '</div>';
     }
     html += '</div>';
@@ -491,11 +495,11 @@ function renderExpressionCard(card) {
     html += '<div class="card-text">' + escapeHtml(card.subtitle || card.content || '') + '</div>';
     html += '<div class="expression-compare">';
     if (firstPhoto) {
-        html += '<div class="compare-item"><div class="compare-label">' + escapeHtml(firstLabel || '早期') + '</div><img src="' + getPhotoUrl(firstPhoto) + '" crossorigin="anonymous"></div>';
+        html += '<div class="compare-item"><div class="compare-label">' + escapeHtml(firstLabel || '早期') + '</div><img src="' + getCardImageUrl(firstPhoto) + '" crossorigin="anonymous"></div>';
     }
     html += '<div class="compare-arrow">→</div>';
     if (secondPhoto) {
-        html += '<div class="compare-item"><div class="compare-label">' + escapeHtml(secondLabel || '近期') + '</div><img src="' + getPhotoUrl(secondPhoto) + '" crossorigin="anonymous"></div>';
+        html += '<div class="compare-item"><div class="compare-label">' + escapeHtml(secondLabel || '近期') + '</div><img src="' + getCardImageUrl(secondPhoto) + '" crossorigin="anonymous"></div>';
     }
     html += '</div>';
     if (monthsDiff !== '') {
@@ -572,7 +576,7 @@ function renderUserAnnotationCard(card) {
     if (photoPath) {
         html += '<div class="annotation-card-photo">';
         html += photoLabel ? '<div class="card-date-badge centered">' + escapeHtml(photoLabel) + '</div>' : '';
-        html += '<img src="' + getPhotoUrl(photoPath) + '" crossorigin="anonymous">';
+        html += '<img src="' + getCardImageUrl(photoPath) + '" crossorigin="anonymous">';
         html += '</div>';
     }
     if (tagText) {
@@ -611,7 +615,7 @@ function renderPhotoGrid(photoPaths, maxPhotos) {
     if (!photoPaths || photoPaths.length === 0) return '';
     var photos = photoPaths.slice(0, maxPhotos);
     var photoHtml = photos.map(function(path) {
-        var thumbUrl = getPhotoThumbUrl(path);
+        var thumbUrl = getCardImageUrl(path);
         return '<img src="' + thumbUrl + '" style="width:100%;height:auto;object-fit:cover;border-radius:8px;">';
     }).join('');
     return '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px;">' + photoHtml + '</div>';
@@ -644,7 +648,7 @@ function renderDailyGrowthCard(card) {
     } else if (layout === 'photo_grid' || cardType === 'smile_collection_card' || cardType === 'little_traveler_card' || cardType === 'sleep_evolution_card' || cardType === 'love_hug_card' || cardType === 'sleep_pose_collection_card' || cardType === 'home_to_world_card') {
         cardHtml = renderMultiPhotoCard(card);
     } else if (card.photo) {
-        var photoUrl = getPhotoUrl(card.photo);
+        var photoUrl = getCardImageUrl(card.photo);
         cardHtml = '<div class="growth-card"><img src="' + photoUrl + '" style="width:100%;border-radius:12px;" crossorigin="anonymous"><div class="card-content"><div class="card-title">' + escapeHtml(card.title || '成长瞬间') + '</div><div class="card-text">' + escapeHtml(card.subtitle || card.content || '') + '</div></div>' + buildCardFooter() + '</div>';
     }
     // 默认卡片
