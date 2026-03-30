@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from datetime import datetime, date
 
 from sqlmodel import SQLModel, Session, create_engine, select
+from sqlalchemy import event
 
 from models import (
     Client,
@@ -51,6 +52,7 @@ def get_index_engine():
     global _index_engine
     if _index_engine is None:
         _index_engine = create_engine(f"sqlite:///{INDEX_DB_PATH}")
+        _apply_sqlite_pragmas(_index_engine)
         SQLModel.metadata.create_all(_index_engine)
     return _index_engine
 
@@ -84,6 +86,7 @@ def get_user_engine(client_id: str):
     """获取用户数据库引擎"""
     db_path = get_user_db_path(client_id)
     engine = create_engine(f"sqlite:///{db_path}")
+    _apply_sqlite_pragmas(engine)
 
     # 创建表
     SQLModel.metadata.create_all(
@@ -104,6 +107,20 @@ def get_user_engine(client_id: str):
     )
 
     return engine
+
+
+def _apply_sqlite_pragmas(engine):
+    """为 SQLite 引擎设置 WAL 和超时，提升并发写入稳定性"""
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            cursor.execute("PRAGMA busy_timeout=5000;")
+        finally:
+            cursor.close()
 
 
 def get_user_session(client_id: str):

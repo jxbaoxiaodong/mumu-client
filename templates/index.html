@@ -1861,38 +1861,7 @@ if (typeof window.calendarWeekdays === 'undefined') {
     window.calendarWeekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
 }
 
-// 移动端手势支持 - 左右滑动切换日期
-(function setupSwipeGestures() {
-    var touchStartX = 0;
-    var touchEndX = 0;
-    var minSwipeDistance = 50; // 最小滑动距离
-    
-    document.addEventListener('touchstart', function(e) {
-        touchStartX = e.changedTouches[0].screenX;
-    }, {passive: true});
-    
-    document.addEventListener('touchend', function(e) {
-        touchEndX = e.changedTouches[0].screenX;
-        handleSwipe();
-    }, {passive: true});
-    
-    function handleSwipe() {
-        var swipeDistance = touchEndX - touchStartX;
-        
-        // 左滑 - 下一天
-        if (swipeDistance < -minSwipeDistance) {
-            if (typeof changeDate === 'function') {
-                changeDate(1);
-            }
-        }
-        // 右滑 - 前一天
-        else if (swipeDistance > minSwipeDistance) {
-            if (typeof changeDate === 'function') {
-                changeDate(-1);
-            }
-        }
-    }
-})();
+// 移动端日期切换：点击左侧/右侧日期导航按钮
 
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;

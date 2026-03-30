@@ -45,7 +45,12 @@ RATE_LIMITS = {
 }
 
 # 根据路径判断请求类型
-HEARTBEAT_PATHS = ["/czrz/heartbeat", "/czrz/health", "/czrz/ping"]
+HEARTBEAT_PATHS = [
+    "/czrz/client/heartbeat",
+    "/czrz/heartbeat",
+    "/czrz/health",
+    "/czrz/ping",
+]
 SENSITIVE_PATHS = [
     "/czrz/baby/log",  # AI日志生成
     "/czrz/upload",  # 文件上传

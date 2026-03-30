@@ -286,16 +286,125 @@ def require_local_or_password_real(f):
 
 def require_local_or_password(f):
     """
-    密码验证装饰器 - 已禁用
-    所有接口直接通过，不进行密码验证
+    权限控制装饰器：本地连接免密码，远程连接需要密码
+    支持 session 记住验证状态（永久有效，直到手动清除浏览器cookie）
     """
-    return f
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # 检查是否本地连接
+        remote_addr = request.remote_addr
+        if remote_addr in ["127.0.0.1", "localhost"]:
+            # 本地连接，免密码
+            return f(*args, **kwargs)
+
+        # 检查 session 中是否已经验证过密码
+        from flask import session
+        if session.get('password_verified'):
+            # 已验证过，直接通过
+            return f(*args, **kwargs)
+
+        # 远程连接，需要验证密码
+        # 从请求头或请求体获取密码
+        password = None
+
+        # 1. 尝试从请求头获取
+        password = request.headers.get("X-Admin-Password")
+
+        # 2. 尝试从请求体获取（JSON）
+        if not password and request.is_json:
+            try:
+                data = request.get_json() or {}
+                password = data.get("admin_password") or data.get("password")
+            except:
+                pass
+
+        # 3. 尝试从表单获取
+        if not password:
+            password = request.form.get("admin_password") or request.form.get(
+                "password"
+            )
+
+        # 检查是否设置了密码
+        stored_password = getattr(public_client, "admin_password", None)
+
+        if not stored_password:
+            # 没有设置密码，允许操作（但记录警告）
+            logger.warning(
+                f"[SECURITY] 远程访问未设置密码: {remote_addr} -> {request.endpoint}"
+            )
+            return f(*args, **kwargs)
+
+        # 验证密码
+        if password == stored_password:
+            # 验证成功，设置 session（永久有效）
+            session['password_verified'] = True
+            session.permanent = True  # 使用配置的10年有效期（相当于永久）
+            return f(*args, **kwargs)
+        else:
+            logger.warning(
+                f"[SECURITY] 远程访问密码错误: {remote_addr} -> {request.endpoint}"
+            )
+            return jsonify(
+                {"success": False, "message": "需要密码验证", "require_password": True}
+            ), 403
+
+    return decorated_function
 
 
 def is_local_request():
     """检查是否为本地请求"""
     remote_addr = request.remote_addr
     return remote_addr in ["127.0.0.1", "localhost"]
+
+
+def check_local_or_password():
+    """
+    检查本地或密码验证（用于函数内部调用，而非装饰器）
+    本地连接免密码，远程连接需要密码验证（session 记住验证状态）
+    返回 None 表示验证通过，返回 Response 表示验证失败
+    """
+    from flask import session
+
+    remote_addr = request.remote_addr
+    if remote_addr in ["127.0.0.1", "localhost"]:
+        return None
+
+    # 检查 session 中是否已经验证过密码
+    if session.get('password_verified'):
+        return None
+
+    # 尝试从请求头获取密码
+    password = request.headers.get("X-Admin-Password")
+
+    # 尝试从请求体获取（JSON）
+    if not password and request.is_json:
+        try:
+            data = request.get_json() or {}
+            password = data.get("admin_password") or data.get("password")
+        except Exception as e:
+            logger.info(f"[Quota] 获取配额失败: {e}")
+
+    # 尝试从表单获取
+    if not password:
+        password = request.form.get("admin_password") or request.form.get("password")
+
+    # 检查是否设置了密码
+    stored_password = getattr(public_client, "admin_password", None)
+
+    if not stored_password:
+        # 没有设置密码，允许操作
+        return None
+
+    # 验证密码
+    if password == stored_password:
+        # 验证成功，设置 session（永久有效）
+        session['password_verified'] = True
+        session.permanent = True
+        return None
+    else:
+        return jsonify(
+            {"success": False, "message": "需要密码验证", "require_password": True}
+        ), 403
 
 
 def _is_private_or_loopback_ip(ip_text: str) -> bool:
@@ -2391,6 +2500,15 @@ static_folder = get_static_folder()
 
 app = Flask(__name__, template_folder=template_folder, static_folder=static_folder)
 
+# 配置 Flask session
+app.secret_key = USER_CONFIG.get("secret_key") or USER_CONFIG.get("client_id") or "mumu_default_secret_key"
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=3650)  # 10年，相当于永久有效
+app.config['SESSION_COOKIE_NAME'] = 'mumu_session'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# 注意：在本地开发或非HTTPS环境下，不要设置 SESSION_COOKIE_SECURE
+
 
 @app.before_request
 def enforce_public_read_only():
@@ -2474,8 +2592,8 @@ def inject_quota_info():
                     quota_percent = (
                         int(quota_used / quota_total * 100) if quota_total > 0 else 0
                     )
-        except:
-            pass
+        except Exception as e:
+            logger.info(f"[Quota] 获取Token使用失败: {e}")
 
         try:
             resp = public_client.signed_request(
@@ -2674,7 +2792,11 @@ def cards_page():
         print(f"[Card] 读取缓存失败: {e}")
         cards = []
 
-    return render_template("cards.html", baby_name=baby_name, cards=cards)
+    avatar_url = getattr(
+        public_client, "avatar_url", "/static/images/default-avatar.png"
+    )
+
+    return render_template("cards.html", baby_name=baby_name, cards=cards, avatar_url=avatar_url)
 
 
 @app.route("/setup")
@@ -2919,7 +3041,7 @@ def health():
             "server_domain": public_client.server_domain,
             "server_connected": public_client.client_id is not None,
             "time": datetime.now().isoformat(),
-            "version": "public-final-2.0",
+            "version": "public-final-2.0.1",
         }
     )
 
@@ -3657,25 +3779,10 @@ def photo_folder_settings():
         )
 
     elif request.method == "POST":
-        # POST修改设置需要权限检查
-        remote_addr = request.remote_addr
-        if remote_addr not in ["127.0.0.1", "localhost"]:
-            # 远程连接需要验证密码
-            password = None
-            password = request.headers.get("X-Admin-Password")
-            if not password and request.is_json:
-                try:
-                    data = request.get_json() or {}
-                    password = data.get("admin_password") or data.get("password")
-                except:
-                    pass
-            if not password:
-                password = request.form.get("admin_password") or request.form.get(
-                    "password"
-                )
-            # 验证密码
-            if not public_client._verify_admin_password(password):
-                return jsonify({"success": False, "message": "需要管理员密码"}), 403
+        # POST修改设置需要权限检查（使用统一的 session 检查）
+        check_result = check_local_or_password()
+        if check_result:
+            return check_result
 
         # 修改设置
         data = request.get_json()
@@ -4283,8 +4390,8 @@ def api_save_log():
                             message=f"家长编辑了{date}的成长日志",
                             notification_type="log",
                         )
-                    except:
-                        pass
+                    except Exception as e:
+                        logger.info(f"[通知] 添加通知失败: {e}")
                     return jsonify({"success": True, "message": "保存成功"})
                 else:
                     return jsonify(
@@ -4532,8 +4639,8 @@ def api_submit_feedback():
         if feedback_file.exists():
             try:
                 feedback_list = json.loads(feedback_file.read_text(encoding="utf-8"))
-            except:
-                pass
+            except Exception as e:
+                logger.info(f"[反馈] 读取本地反馈失败: {e}")
 
         feedback_entry = {
             "id": len(feedback_list) + 1,
@@ -5437,7 +5544,7 @@ def delete_message(message_id):
 
 @app.route("/api/verify-password", methods=["POST"])
 def verify_password():
-    """通用的密码验证API"""
+    """通用的密码验证API - 验证成功后设置 session"""
     try:
         data = request.get_json()
         password = data.get("password", "")
@@ -5455,6 +5562,10 @@ def verify_password():
             return jsonify({"success": True, "message": "未设置密码，允许操作"})
 
         if password == stored_password:
+            # 验证成功，设置 session（永久有效）
+            from flask import session
+            session['password_verified'] = True
+            session.permanent = True  # 使用配置的10年有效期（相当于永久）
             return jsonify({"success": True, "message": "验证通过"})
         else:
             return jsonify({"success": False, "message": "密码错误，请询问家人或朋友"})
@@ -5867,7 +5978,7 @@ def select_best_photo_local():
         if best_photo:
             save_featured_photo_server(
                 date or datetime.now().strftime("%Y-%m-%d"),
-                CLIENT_CONFIG.get("client_id", ""),
+                public_client.client_id,
                 photo_path,
                 ai_description or "",
             )
@@ -5902,7 +6013,7 @@ def ai_ask():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return jsonify(
                 {
@@ -5981,7 +6092,7 @@ def ai_feedback():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return jsonify({"success": False, "message": "未配置宝宝ID"})
 
@@ -6032,7 +6143,7 @@ def ai_get_profile():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return jsonify({"success": False, "message": "未配置宝宝ID"})
 
@@ -6141,7 +6252,7 @@ def ai_get_features():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return jsonify({"success": False, "message": "未配置宝宝ID"})
 
@@ -6514,7 +6625,7 @@ def get_local_profile_data():
         if not ai_config.get("enabled", False):
             return None
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return None
 
@@ -6581,7 +6692,7 @@ def get_profile_data():
         if not ai_config.get("enabled", False):
             return None
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return None
 
@@ -6656,31 +6767,10 @@ def ai_feedback_proxy(child_id):
                 timeout=30,
             )
         else:
-            # POST请求需要权限验证
-            remote_addr = request.remote_addr
-            if remote_addr not in ["127.0.0.1", "localhost"]:
-                # 远程连接，需要验证密码
-                password = request.headers.get("X-Admin-Password")
-                if not password and request.is_json:
-                    try:
-                        data = request.get_json() or {}
-                        password = data.get("admin_password") or data.get("password")
-                    except:
-                        pass
-                if not password:
-                    password = request.form.get("admin_password") or request.form.get(
-                        "password"
-                    )
-
-                stored_password = getattr(public_client, "admin_password", None)
-                if stored_password and password != stored_password:
-                    return jsonify(
-                        {
-                            "success": False,
-                            "message": "需要密码验证",
-                            "require_password": True,
-                        }
-                    ), 403
+            # POST请求需要权限验证（使用统一的 session 检查）
+            check_result = check_local_or_password()
+            if check_result:
+                return check_result
 
             data = request.get_json()
             response = public_client.signed_request(
@@ -6898,6 +6988,46 @@ def ai_batch_sync():
 AI_REVIEW_TASKS = {}
 
 
+def _is_ai_review_running() -> bool:
+    """检查是否已有AI刷新任务在执行"""
+    for task in AI_REVIEW_TASKS.values():
+        if not task.get("completed"):
+            return True
+    return False
+
+
+def _cleanup_stale_ai_review_tasks(timeout_seconds: int = 6 * 60 * 60) -> bool:
+    """
+    清理可能卡死的AI刷新任务
+
+    Returns:
+        bool: 是否清理过任务
+    """
+    now_ts = time.time()
+    cleaned = False
+
+    for task_id, task in list(AI_REVIEW_TASKS.items()):
+        if task.get("completed"):
+            continue
+
+        started_at = task.get("started_at")
+        if not started_at:
+            continue
+
+        try:
+            started_dt = datetime.fromisoformat(started_at)
+        except Exception:
+            continue
+
+        if (now_ts - started_dt.timestamp()) > timeout_seconds:
+            task["completed"] = True
+            task["message"] = "任务超时已自动结束"
+            task["status"] = "timeout"
+            cleaned = True
+
+    return cleaned
+
+
 @app.route("/api/ai/auto-review", methods=["POST"])
 @require_local_or_password
 def start_ai_auto_review():
@@ -6906,13 +7036,20 @@ def start_ai_auto_review():
     import uuid
 
     try:
+        _cleanup_stale_ai_review_tasks()
+        if _is_ai_review_running():
+            return jsonify({"success": False, "message": "刷新正在进行中，请稍后再试"})
+
         ai_config = CLIENT_CONFIG.get("ai_service", {})
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "")
+        child_id = ai_config.get("child_id", "") or public_client.client_id
         if not child_id:
             return jsonify({"success": False, "message": "未配置宝宝ID"})
+
+        if not public_client.client_id:
+            return jsonify({"success": False, "message": "未注册客户端，请先连接服务端"})
 
         media_folders = getattr(public_client, "media_folders", [])
         if not media_folders:
@@ -6980,6 +7117,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
     try:
         pm = PhotoManager(media_folders, public_client.data_dir)
+        server_client_id = public_client.client_id
         all_dates = pm.get_all_dates()
 
         today = datetime.now().strftime("%Y-%m-%d")
@@ -7051,12 +7189,14 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 photo_hash_map = {}  # 存储照片哈希用于检查
 
                 # 1. 获取数据库中的照片哈希记录
-                db_photos = get_processed_photos(date, child_id)
+                db_photos = get_processed_photos(date, server_client_id)
                 db_photo_map = {}
                 for db_photo in db_photos:
                     if isinstance(db_photo, dict):
                         path = db_photo.get("path", "")
-                        db_hash = db_photo.get("file_hash", "")
+                        db_hash = db_photo.get("hash", "") or db_photo.get(
+                            "file_hash", ""
+                        )
                         if path and db_hash:
                             db_photo_map[path] = db_hash
 
@@ -7086,7 +7226,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                         unprocessed_photos.append(photo_path)
 
                 # 4. 检查视频是否需要处理
-                db_videos = get_processed_videos(date, child_id)
+                db_videos = get_processed_videos(date, server_client_id)
                 db_video_map = {}
                 for db_video in db_videos:
                     if isinstance(db_video, dict):
@@ -7264,7 +7404,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                         analyze_all_photos(
                             unprocessed_photos,  # 只分析新照片
                             max_photos=20,
-                            client_id=child_id,
+                            client_id=server_client_id,
                             date=date,
                             ai_result=ai_result,
                         )
@@ -7279,7 +7419,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 analysis_result = None
                 try:
                     logger.info(f"[DEBUG] 从数据库获取当天所有照片描述")
-                    all_descriptions = get_processed_photos(date, child_id)
+                    all_descriptions = get_processed_photos(date, server_client_id)
 
                     if all_descriptions:
                         # 构建 analysis_result 格式
@@ -7389,7 +7529,9 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             )
 
                         # 检查是否已有相同的精选照片
-                        existing_featured = get_featured_photo_info(date, child_id)
+                        existing_featured = get_featured_photo_info(
+                            date, server_client_id
+                        )
                         existing_hash = (
                             existing_featured.get("file_hash", "")
                             if existing_featured
@@ -7400,7 +7542,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             # 保存或更新精选照片
                             save_featured_photo_server(
                                 date,
-                                child_id,
+                                server_client_id,
                                 best_photo,
                                 ai_description,
                                 file_hash=best_photo_hash,
@@ -7437,7 +7579,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             }
                         )
                 else:
-                    featured_info = get_featured_photo_info(date, child_id)
+                    featured_info = get_featured_photo_info(date, server_client_id)
                     AI_REVIEW_TASKS[task_id]["details"].append(
                         {
                             "date": date,
@@ -7492,7 +7634,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                                 # 准备上传数据
                                 upload_data = {
-                                    "client_id": child_id,
+                                    "client_id": server_client_id,
                                     "date": date,
                                     "video_path": str(video_path),
                                     "file_hash": video_hash,
@@ -7568,7 +7710,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 log_generated = False
 
                 # 获取照片描述用于生成日志
-                all_descriptions = get_processed_photos(date, child_id)
+                all_descriptions = get_processed_photos(date, server_client_id)
                 valid_photos = []
                 for desc in all_descriptions:
                     if isinstance(desc, dict) and desc.get("description"):
@@ -7598,7 +7740,11 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                         try:
                             log_content = generate_ai_log(
-                                date, combined_desc, child_id, log_style, custom_style
+                                date,
+                                combined_desc,
+                                server_client_id,
+                                log_style,
+                                custom_style,
                             )
 
                             if log_content:
@@ -7608,7 +7754,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                     else None
                                 )
                                 save_log_server(
-                                    date, child_id, log_content, featured_desc
+                                    date, server_client_id, log_content, featured_desc
                                 )
                                 needs_sync = True
                                 log_generated = True
@@ -7699,10 +7845,14 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
         try:
             server_url = USER_CONFIG.get("server_url", "")
             if server_url:
-                # 触发服务端同步
-                httpx.post(
+                # 触发服务端同步（需要签名）
+                public_client.signed_request(
+                    "POST",
                     f"{server_url}/czrz/ai/sync-trigger",
-                    headers={"User-Agent": "CZRZ-Client"},
+                    json={
+                        "client_id": public_client.client_id,
+                        "child_id": child_id,
+                    },
                     timeout=30,
                 )
                 logger.info("[AI回顾] 已触发服务端同步到健康AI")
@@ -7712,9 +7862,13 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                 time_module.sleep(2)
 
-                httpx.post(
+                public_client.signed_request(
+                    "POST",
                     f"{server_url}/czrz/profile/generate-trigger",
-                    headers={"User-Agent": "CZRZ-Client"},
+                    json={
+                        "client_id": public_client.client_id,
+                        "child_id": child_id,
+                    },
                     timeout=30,
                 )
                 logger.info("[AI回顾] 已触发画像生成")
@@ -8369,7 +8523,11 @@ def select_best_photo_ai(photo_paths: list, max_photos: int = 20) -> tuple:
 
 
 def save_featured_photo_server(
-    date: str, client_id: str, photo_path: str, ai_description: str
+    date: str,
+    client_id: str,
+    photo_path: str,
+    ai_description: str,
+    file_hash: str = "",
 ):
     """保存精选照片到服务端（使用文件哈希）"""
     try:
@@ -8389,12 +8547,13 @@ def save_featured_photo_server(
             logger.info(f"[AI回顾] 未找到照片索引: {filename}")
             return False
 
-        file_hash = entry.get("hash")
+        if not file_hash:
+            file_hash = entry.get("hash")
         if not file_hash:
             logger.info(f"[AI回顾] 照片缺少哈希: {filename}")
             return False
 
-        public_client.signed_request(
+        resp = public_client.signed_request(
             "POST",
             f"{public_client.server_url}/czrz/photo/featured/update",
             json={
@@ -8407,8 +8566,13 @@ def save_featured_photo_server(
             },
             timeout=10,
         )
-        logger.info(f"[AI回顾] 精选照片已保存到服务端: {filename}")
-        return True
+        if resp.status_code == 200:
+            logger.info(f"[AI回顾] 精选照片已保存到服务端: {filename}")
+            return True
+        logger.info(
+            f"[AI回顾] 保存精选照片到服务端失败: status={resp.status_code}"
+        )
+        return False
     except Exception as e:
         logger.info(f"[AI回顾] 保存精选照片到服务端失败: {e}")
         return False
@@ -8624,8 +8788,8 @@ def get_weather_for_date(date: str) -> str:
                 if isinstance(weather, dict):
                     return weather.get("condition") or weather.get("city")
                 return str(weather)
-    except:
-        pass
+    except Exception as e:
+        logger.info(f"[天气] 获取日志天气失败: {e}")
     return None
 
 
@@ -8715,20 +8879,10 @@ def compression_settings():
             return jsonify({"success": True, "data": settings})
 
         else:
-            # POST请求需要权限验证
-            remote_addr = request.remote_addr
-            if remote_addr not in ["127.0.0.1", "localhost"]:
-                password = None
-                password = request.headers.get("X-Admin-Password")
-                if not password and request.is_json:
-                    try:
-                        data = request.get_json() or {}
-                        password = data.get("admin_password") or data.get("password")
-                    except:
-                        pass
-                expected_password = USER_CONFIG.get("admin_password", "admin")
-                if not password or password != expected_password:
-                    return jsonify({"success": False, "message": "权限验证失败"})
+            # POST请求需要权限验证（使用统一的 session 检查）
+            check_result = check_local_or_password()
+            if check_result:
+                return check_result
 
             data = request.get_json()
             if data:
@@ -9338,8 +9492,8 @@ if __name__ == "__main__":
 
             webbrowser.open(f"http://localhost:{port}")
             print("✅ 浏览器已打开")
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ 打开浏览器失败: {e}")
 
         # 启动后台心跳循环
         if public_client.client_id:

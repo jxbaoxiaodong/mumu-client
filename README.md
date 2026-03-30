@@ -698,4 +698,4 @@ mv mumu-macos mumu-macos.dmg
 
 1. **workflow 文件不需要每次修改** - `.github/workflows/build-release.yml` 已固定正确
 2. **备份位置** - 如需恢复 workflow：`/media/bob/System/LINUX_FILES/projects_backup/mumu-client-workflows.tar.gz`
-3. **GitHub Token** - 已保存在 `.env` 文件中，请勿提交到仓库
+3. **GitHub Token** - 已从 `.env` 文件读取，不再硬编码
