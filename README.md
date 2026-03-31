@@ -503,6 +503,20 @@ python3 baby_health_ai/app/main.py # 健康AI
 
 ## 开发说明
 
+### 发布客户端新版本
+
+> **📚 详细操作流程请阅读 `GITEE_SYNC_GUIDE.md`**
+> 
+> 该文档包含：项目结构说明、环境配置（GitHub/Gitee Token）、一键发布和分步操作、常见问题解决
+
+**快速命令：**
+
+```bash
+# 一键发布（推荐）
+cd /home/bob/projects/mumu
+./release.sh v37 "feat: 新功能描述"
+```
+
 ### 添加新的数据表
 
 1. 在 `models.py` 中定义模型
@@ -633,6 +647,10 @@ python3 baby_health_ai/app/main.py # 健康AI
 ---
 
 ## Git 上传和 Release 构建流程
+
+> **📚 详细操作流程请阅读 `GITEE_SYNC_GUIDE.md`**
+> 
+> 该文档包含：项目结构、环境配置（Token设置）、分步操作说明、常见问题解决方案
 
 ### 方式一：使用脚本（推荐）
 

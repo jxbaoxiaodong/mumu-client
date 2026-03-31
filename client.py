@@ -6118,7 +6118,8 @@ def ai_feedback():
             return jsonify({"success": False, "message": "反馈内容不能为空"})
 
         payload = {
-            "client_id": child_id,
+            "client_id": public_client.client_id,
+            "ai_child_id": child_id,
             "feedback_text": feedback_text,
             "feedback_type": data.get("feedback_type", "user_input"),
         }
@@ -6708,7 +6709,7 @@ def get_profile_data():
 
         response = public_client.signed_request(
             "GET",
-            f"{server_url}/api/ai/profile/{child_id}",
+            f"{server_url}/api/ai/children/{child_id}/profile",
             timeout=1200,
         )
 
@@ -6806,11 +6807,10 @@ def ai_delete_feedback(child_id, feedback_id):
         return jsonify({"success": False, "message": "未配置服务端地址"})
 
     try:
-        response = requests.delete(
+        response = public_client.signed_request(
+            "DELETE",
             f"{server_url}/api/ai/children/{child_id}/feedback/{feedback_id}",
             timeout=30,
-            headers={"User-Agent": "CZRZ-Client/2.0"},
-            verify=False,
         )
 
         if response.status_code == 200:
@@ -6978,10 +6978,10 @@ def ai_batch_sync():
 
         return jsonify(
             {
-                "success": True,
+                "success": success_count == total_days,
                 "message": f"同步完成，成功 {success_count}/{total_days} 天",
                 "total": total_days,
-                "success": success_count,
+                "success_count": success_count,
             }
         )
 
