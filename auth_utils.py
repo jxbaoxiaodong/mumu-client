@@ -150,6 +150,7 @@ SKIP_SIGNATURE_PATHS = [
     "/czrz/client/heartbeat",  # 心跳（使用install_key验证）
     "/czrz/client/token-check",  # Token检查（已验证）
     "/czrz/client/download/",  # 下载（文件分发）
+    "/admin",  # 管理后台（独立认证）
     "/admin/",  # 管理后台（独立认证）
     "/static/",  # 静态文件（公开）
     "/favicon.ico",  # 图标（公开）
@@ -169,8 +170,12 @@ def should_skip_signature(path: str) -> bool:
     Returns:
         是否跳过
     """
+    # 移除末尾斜杠进行匹配，避免遗漏 /admin vs /admin/ 问题
+    path_norm = path.rstrip('/')
+
     for skip_path in SKIP_SIGNATURE_PATHS:
-        if path.startswith(skip_path):
+        skip_norm = skip_path.rstrip('/')
+        if path.startswith(skip_path) or path_norm == skip_norm:
             return True
 
     for prefix in SKIP_SIGNATURE_PREFIXES:

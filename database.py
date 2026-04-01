@@ -148,6 +148,10 @@ def user_session(client_id: str):
 
 def create_client(client_id: str, baby_name: str = "宝宝", **kwargs) -> Dict:
     """创建新客户端，返回字典"""
+    import logging
+    import traceback
+    logger = logging.getLogger("czrz_server")
+    
     time_fields = ["registered_at", "last_active", "last_heartbeat"]
     for field in time_fields:
         if field in kwargs and isinstance(kwargs[field], str):
@@ -156,16 +160,22 @@ def create_client(client_id: str, baby_name: str = "宝宝", **kwargs) -> Dict:
             except (ValueError, TypeError):
                 kwargs[field] = None
 
-    with index_session() as session:
-        client = Client(
-            client_id=client_id,
-            baby_name=baby_name,
-            **kwargs,
-        )
-        session.add(client)
-        session.flush()
-        session.refresh(client)
-        return client.model_dump()
+    try:
+        with index_session() as session:
+            client = Client(
+                client_id=client_id,
+                baby_name=baby_name,
+                **kwargs,
+            )
+            session.add(client)
+            session.flush()
+            session.refresh(client)
+            logger.info(f"[create_client] 成功创建客户端: {client_id}, baby_name: {baby_name}")
+            return client.model_dump()
+    except Exception as e:
+        logger.error(f"[create_client] 创建客户端 {client_id} 失败: {e}")
+        logger.error(traceback.format_exc())
+        raise
 
 
 def get_client(client_id: str) -> Optional[Dict]:
