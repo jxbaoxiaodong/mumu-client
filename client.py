@@ -2078,6 +2078,22 @@ ingress:
                         print(f"🔐 密钥已保存")
                     self.save_config()
 
+                # 服务端要求刷新配置（根据MAC匹配到已有客户端）
+                if data.get("requires_refresh") and not data.get("auto_registered"):
+                    new_client_id = data.get("client_id")
+                    new_secret_key = data.get("secret_key")
+                    if new_client_id and new_client_id != self.client_id:
+                        print(f"🔄 服务端识别到已有客户端，更新配置...")
+                        print(f"   原ID: {self.client_id}")
+                        print(f"   新ID: {new_client_id}")
+                        logger.info(f"根据MAC匹配更新客户端ID: {self.client_id} -> {new_client_id}")
+                        self.client_id = new_client_id
+                        if new_secret_key:
+                            USER_CONFIG["secret_key"] = new_secret_key
+                            self.secret_key = new_secret_key
+                        self.save_config()
+                        print(f"✅ 配置已更新，下次请求将使用新ID")
+
                 if data.get("disabled"):
                     print(f"⚠ 客户端已被禁用: {data.get('message')}")
                     logger.warning(f"客户端已被禁用: {data.get('message')}")
