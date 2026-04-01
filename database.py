@@ -317,12 +317,15 @@ def list_tunnels() -> List[Dict]:
         result = []
         for t in tunnels:
             data = t.model_dump()
-            if data.get("created_at"):
-                data["created_at"] = str(data["created_at"])
-            if data.get("allocated_at"):
-                data["allocated_at"] = str(data["allocated_at"])
-            if data.get("released_at"):
-                data["released_at"] = str(data["released_at"])
+            # 处理日期：空字符串转换为None，None转换为空字符串
+            for field in ["created_at", "allocated_at", "released_at"]:
+                val = data.get(field)
+                if val == "":
+                    data[field] = ""
+                elif val is not None:
+                    data[field] = str(val)
+                else:
+                    data[field] = ""
             result.append(data)
         return result
 

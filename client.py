@@ -23,10 +23,11 @@ from datetime import datetime, timedelta, timezone
 import threading
 import time
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, redirect, send_file
+from flask import Flask, render_template, request, jsonify, redirect, send_file, session
 from werkzeug.utils import secure_filename
 import requests
 import urllib3
+from urllib.parse import quote
 
 # 抑制特定域名的 SSL 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -225,136 +226,88 @@ from functools import wraps
 
 def require_local_or_password_real(f):
     """
-    权限控制装饰器：本地连接免密码，远程连接需要密码
-    用于保护所有写操作API
-
-    注意：此装饰器已禁用，保留代码供将来需要时恢复
+    兼容旧名称：统一走家庭码会话校验。
     """
+    return require_local_or_password(f)
 
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        # 检查是否本地连接
-        remote_addr = request.remote_addr
-        if remote_addr in ["127.0.0.1", "localhost"]:
-            # 本地连接，免密码
-            return f(*args, **kwargs)
 
-        # 远程连接，需要验证密码
-        # 从请求头或请求体获取密码
-        password = None
+def get_family_code() -> str:
+    """家庭码（复用 setup 的管理密码）"""
+    code = ""
+    try:
+        if public_client and getattr(public_client, "admin_password", None):
+            code = public_client.admin_password
+    except Exception:
+        code = ""
+    if not code:
+        code = USER_CONFIG.get("admin_password", "") or ""
+    return str(code).strip()
 
-        # 1. 尝试从请求头获取
-        password = request.headers.get("X-Admin-Password")
 
-        # 2. 尝试从请求体获取（JSON）
-        if not password and request.is_json:
-            try:
-                data = request.get_json() or {}
-                password = data.get("admin_password") or data.get("password")
-            except:
-                pass
+def is_family_code_verified() -> bool:
+    """当前会话是否已通过家庭码校验"""
+    return bool(session.get("family_code_verified") or session.get("password_verified"))
 
-        # 3. 尝试从表单获取
-        if not password:
-            password = request.form.get("admin_password") or request.form.get(
-                "password"
-            )
 
-        # 检查是否设置了密码
-        stored_password = getattr(public_client, "admin_password", None)
+def mark_family_code_verified() -> None:
+    """标记会话已完成家庭码验证（兼容旧 password_verified）"""
+    session["family_code_verified"] = True
+    session["password_verified"] = True
+    session.permanent = True
 
-        if not stored_password:
-            # 没有设置密码，允许操作（但记录警告）
-            logger.warning(
-                f"[SECURITY] 远程访问未设置密码: {remote_addr} -> {request.endpoint}"
-            )
-            return f(*args, **kwargs)
 
-        # 验证密码
-        if password == stored_password:
-            return f(*args, **kwargs)
-        else:
-            logger.warning(
-                f"[SECURITY] 远程访问密码错误: {remote_addr} -> {request.endpoint}"
-            )
-            return jsonify(
-                {"success": False, "message": "需要密码验证", "require_password": True}
-            ), 403
+def verify_family_code(candidate: str) -> bool:
+    """校验家庭码"""
+    stored = get_family_code()
+    if not stored:
+        return True
+    return str(candidate or "").strip() == stored
 
-    return decorated_function
+
+def _build_family_gate_response():
+    """返回统一的家庭码拦截响应（API 用）"""
+    next_path = request.full_path if request.query_string else request.path
+    if next_path.endswith("?"):
+        next_path = next_path[:-1]
+    redirect_url = f"/family-access?next={quote(next_path or '/', safe='')}"
+    return (
+        jsonify(
+            {
+                "success": False,
+                "message": "请先输入家庭码",
+                "require_family_code": True,
+                "redirect_url": redirect_url,
+            }
+        ),
+        401,
+    )
 
 
 def require_local_or_password(f):
     """
-    权限控制装饰器：本地连接免密码，远程连接需要密码
-    支持 session 记住验证状态（永久有效，直到手动清除浏览器cookie）
+    权限控制装饰器（统一为家庭码会话）：
+    - 局域网/本机：免验证
+    - 公网：首次输入家庭码，之后会话内与局域网一致
     """
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        # 检查是否本地连接
-        remote_addr = request.remote_addr
-        if remote_addr in ["127.0.0.1", "localhost"]:
-            # 本地连接，免密码
+        source_ip = get_request_source_ip()
+        if _is_private_or_loopback_ip(source_ip):
             return f(*args, **kwargs)
 
-        # 检查 session 中是否已经验证过密码
-        from flask import session
-        if session.get('password_verified'):
-            # 已验证过，直接通过
+        if is_family_code_verified():
             return f(*args, **kwargs)
 
-        # 远程连接，需要验证密码
-        # 从请求头或请求体获取密码
-        password = None
-
-        # 1. 尝试从请求头获取
-        password = request.headers.get("X-Admin-Password")
-
-        # 2. 尝试从请求体获取（JSON）
-        if not password and request.is_json:
-            try:
-                data = request.get_json() or {}
-                password = data.get("admin_password") or data.get("password")
-            except:
-                pass
-
-        # 3. 尝试从表单获取
-        if not password:
-            password = request.form.get("admin_password") or request.form.get(
-                "password"
-            )
-
-        # 检查是否设置了密码
-        stored_password = getattr(public_client, "admin_password", None)
-
-        if not stored_password:
-            # 没有设置密码，允许操作（但记录警告）
-            logger.warning(
-                f"[SECURITY] 远程访问未设置密码: {remote_addr} -> {request.endpoint}"
-            )
-            return f(*args, **kwargs)
-
-        # 验证密码
-        if password == stored_password:
-            # 验证成功，设置 session（永久有效）
-            session['password_verified'] = True
-            session.permanent = True  # 使用配置的10年有效期（相当于永久）
-            return f(*args, **kwargs)
-        else:
-            logger.warning(
-                f"[SECURITY] 远程访问密码错误: {remote_addr} -> {request.endpoint}"
-            )
-            return jsonify(
-                {"success": False, "message": "需要密码验证", "require_password": True}
-            ), 403
+        return _build_family_gate_response()
 
     return decorated_function
 
 
 def is_local_request():
     """检查是否为本地请求"""
-    remote_addr = request.remote_addr
-    return remote_addr in ["127.0.0.1", "localhost"]
+    source_ip = get_request_source_ip()
+    return _is_private_or_loopback_ip(source_ip)
 
 
 def check_local_or_password():
@@ -363,48 +316,14 @@ def check_local_or_password():
     本地连接免密码，远程连接需要密码验证（session 记住验证状态）
     返回 None 表示验证通过，返回 Response 表示验证失败
     """
-    from flask import session
-
-    remote_addr = request.remote_addr
-    if remote_addr in ["127.0.0.1", "localhost"]:
+    source_ip = get_request_source_ip()
+    if _is_private_or_loopback_ip(source_ip):
         return None
 
-    # 检查 session 中是否已经验证过密码
-    if session.get('password_verified'):
+    if is_family_code_verified():
         return None
 
-    # 尝试从请求头获取密码
-    password = request.headers.get("X-Admin-Password")
-
-    # 尝试从请求体获取（JSON）
-    if not password and request.is_json:
-        try:
-            data = request.get_json() or {}
-            password = data.get("admin_password") or data.get("password")
-        except Exception as e:
-            logger.info(f"[Quota] 获取配额失败: {e}")
-
-    # 尝试从表单获取
-    if not password:
-        password = request.form.get("admin_password") or request.form.get("password")
-
-    # 检查是否设置了密码
-    stored_password = getattr(public_client, "admin_password", None)
-
-    if not stored_password:
-        # 没有设置密码，允许操作
-        return None
-
-    # 验证密码
-    if password == stored_password:
-        # 验证成功，设置 session（永久有效）
-        session['password_verified'] = True
-        session.permanent = True
-        return None
-    else:
-        return jsonify(
-            {"success": False, "message": "需要密码验证", "require_password": True}
-        ), 403
+    return _build_family_gate_response()
 
 
 def _is_private_or_loopback_ip(ip_text: str) -> bool:
@@ -434,7 +353,7 @@ def get_request_source_ip():
     return remote_addr
 
 
-def post_with_retry(session, url, json_data, max_retries=3, timeout=10):
+def post_with_retry(session, url, json_data, max_retries=3, timeout=30):
     """带重试的POST请求"""
     for attempt in range(max_retries):
         try:
@@ -541,6 +460,7 @@ class PublicClient:
         json_data = kwargs.get("json")
         params = kwargs.get("params")
         body = json.dumps(json_data) if json_data else ""
+        request_path = url
 
         if self.client_id and self.secret_key:
             # 构建完整路径（包括 query string），确保 URL 编码一致
@@ -567,20 +487,48 @@ class PublicClient:
             add_signature_headers(
                 headers, self.client_id, self.secret_key, method, path, body
             )
+            request_path = path
 
         kwargs["headers"] = headers
         kwargs.setdefault("verify", False)
+        method_upper = method.upper()
 
-        if method.upper() == "GET":
-            return self.session.get(url, **kwargs)
-        elif method.upper() == "POST":
-            return self.session.post(url, **kwargs)
-        elif method.upper() == "PUT":
-            return self.session.put(url, **kwargs)
-        elif method.upper() == "DELETE":
-            return self.session.delete(url, **kwargs)
-        else:
-            return self.session.request(method, url, **kwargs)
+        try:
+            if method_upper == "GET":
+                response = self.session.get(url, **kwargs)
+            elif method_upper == "POST":
+                response = self.session.post(url, **kwargs)
+            elif method_upper == "PUT":
+                response = self.session.put(url, **kwargs)
+            elif method_upper == "DELETE":
+                response = self.session.delete(url, **kwargs)
+            else:
+                response = self.session.request(method, url, **kwargs)
+        except requests.exceptions.Timeout as e:
+            reporter = globals().get("report_error")
+            if callable(reporter):
+                reporter(
+                    "request_timeout",
+                    f"{method_upper} {request_path} 请求超时",
+                    str(e),
+                )
+            raise
+
+        if response.status_code == 401:
+            detail = ""
+            try:
+                detail = (response.text or "")[:200]
+            except Exception:
+                detail = ""
+            reporter = globals().get("report_error")
+            if callable(reporter):
+                reporter(
+                    "signature_401",
+                    f"{method_upper} {request_path} 返回401",
+                    detail,
+                )
+
+        return response
 
     def init_photo_index(self):
         """
@@ -1481,7 +1429,7 @@ class PublicClient:
         try:
             response = self.session.get(
                 f"{self.server_url}/czrz/health",
-                timeout=10,
+                timeout=30,
                 verify=False,  # 禁用 SSL 验证，避免证书错误
             )
 
@@ -1495,7 +1443,7 @@ class PublicClient:
                 try:
                     config_resp = self.session.get(
                         f"{self.server_url}/czrz/client/server-config",
-                        timeout=5,
+                        timeout=30,
                         verify=False,
                     )
                     if config_resp.status_code == 200:
@@ -1553,6 +1501,14 @@ class PublicClient:
                 print("🔧 尝试HTTP连接...")
                 self.try_http_connection()
 
+        except requests.exceptions.Timeout as e:
+            reporter = globals().get("report_error")
+            if callable(reporter):
+                reporter("request_timeout", "首次连接服务端超时", str(e))
+            print(f"⏱ 连接超时: {e}")
+            logger.error(f"连接超时: {e}")
+            print("🔧 尝试HTTP连接...")
+            self.try_http_connection()
         except requests.exceptions.SSLError as e:
             print(f"🔒 SSL证书错误: {e}")
             logger.error(f"SSL证书错误: {e}")
@@ -1570,7 +1526,7 @@ class PublicClient:
         print(f"🔄 尝试HTTP连接: {http_url}")
 
         try:
-            response = self.session.get(f"{http_url}/czrz/health", timeout=10)
+            response = self.session.get(f"{http_url}/czrz/health", timeout=30)
             if response.status_code == 200:
                 print("✅ HTTP连接成功")
                 self.server_url = http_url
@@ -1578,6 +1534,12 @@ class PublicClient:
             else:
                 print(f"❌ HTTP连接失败: {response.status_code}")
                 self._enter_local_mode(f"HTTP连接失败 ({response.status_code})")
+        except requests.exceptions.Timeout as e:
+            reporter = globals().get("report_error")
+            if callable(reporter):
+                reporter("request_timeout", "HTTP回退连接超时", str(e))
+            print(f"❌ HTTP连接超时: {e}")
+            self._enter_local_mode(f"HTTP连接超时: {e}")
         except Exception as e:
             print(f"❌ HTTP连接错误: {e}")
             self._enter_local_mode(f"HTTP连接错误: {e}")
@@ -1619,7 +1581,7 @@ class PublicClient:
 
         try:
             response = self.session.post(
-                f"{self.server_url}/czrz/register", json=device_info, timeout=15
+                f"{self.server_url}/czrz/register", json=device_info, timeout=60
             )
 
             if response.status_code == 200:
@@ -1682,7 +1644,7 @@ class PublicClient:
                     "POST",
                     f"{self.server_url}/czrz/cloudflare/credentials",
                     json={"client_id": self.client_id},
-                    timeout=15,
+                    timeout=60,
                 )
 
                 if response.status_code == 200:
@@ -1773,7 +1735,7 @@ class PublicClient:
                 "POST",
                 f"{self.server_url}/czrz/cloudflare/credentials",
                 json={"client_id": self.client_id},
-                timeout=15,
+                timeout=60,
             )
 
             if response.status_code == 200:
@@ -1823,7 +1785,7 @@ class PublicClient:
                         "POST",
                         f"{self.server_url}/czrz/cloudflare/credentials",
                         json={"client_id": self.client_id},
-                        timeout=15,
+                        timeout=60,
                     )
                     if response.status_code == 200:
                         data = response.json()
@@ -1960,7 +1922,7 @@ ingress:
             if self.tunnel_process and self.tunnel_process.poll() is None:
                 try:
                     self.tunnel_process.terminate()
-                    self.tunnel_process.wait(timeout=5)
+                    self.tunnel_process.wait(timeout=30)
                     print(
                         f"🛑 Cloudflare Tunnel 已停止 (PID: {self.tunnel_process.pid})"
                     )
@@ -2053,7 +2015,7 @@ ingress:
             response = self.session.post(
                 f"{self.server_url}/czrz/client/heartbeat",
                 json=payload,
-                timeout=10,
+                timeout=30,
             )
 
             if errors_to_send:
@@ -2225,6 +2187,13 @@ ingress:
                 logger.warning(f"心跳失败: {response.status_code}")
                 return False
 
+        except requests.exceptions.Timeout as e:
+            reporter = globals().get("report_error")
+            if callable(reporter):
+                reporter("request_timeout", "心跳请求超时", str(e))
+            print(f"⚠ 心跳超时: {e}")
+            logger.error(f"心跳超时: {e}")
+            return False
         except Exception as e:
             print(f"⚠ 心跳错误: {e}")
             logger.error(f"心跳错误: {e}")
@@ -2328,7 +2297,7 @@ ingress:
                 "POST",
                 f"{self.server_url}/czrz/cloudflare/credentials",
                 json={"client_id": self.client_id},
-                timeout=15,
+                timeout=60,
             )
 
             if response.status_code == 200:
@@ -2527,33 +2496,45 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 
 @app.before_request
-def enforce_public_read_only():
+def enforce_family_code_access():
     """
-    公网只读策略：
-    - 内网/本机请求：允许读写
-    - 公网请求：仅允许 GET/HEAD/OPTIONS
+    统一访问控制：
+    - 局域网/本机：免家庭码
+    - 公网：首次输入家庭码，之后会话内与局域网一致
     """
-    source_ip = get_request_source_ip()
-    is_private_source = _is_private_or_loopback_ip(source_ip)
-    method = (request.method or "").upper()
-    is_read_only_method = method in {"GET", "HEAD", "OPTIONS"}
-    public_write_whitelist = {
-        ("POST", "/api/card/share"),  # 公网允许标记分享
-        ("POST", "/message"),  # 公网允许提交留言
+    path = request.path or "/"
+    allow_prefixes = ("/static/",)
+    allow_paths = {
+        "/family-access",
+        "/api/family-access",
+        "/setup",
+        "/api/setup",
+        "/favicon.ico",
     }
-    is_whitelisted_public_write = (method, request.path) in public_write_whitelist
 
-    if not is_private_source and not is_read_only_method and not is_whitelisted_public_write:
-        logger.warning(
-            f"[SECURITY] 拒绝公网写请求: ip={source_ip}, method={method}, path={request.path}"
-        )
-        return jsonify(
-            {
-                "success": False,
-                "message": "公网访问仅允许只读操作（GET/HEAD/OPTIONS）",
-                "source_ip": source_ip,
-            }
-        ), 403
+    if path in allow_paths or any(path.startswith(p) for p in allow_prefixes):
+        return None
+
+    source_ip = get_request_source_ip()
+    if _is_private_or_loopback_ip(source_ip):
+        return None
+
+    if is_family_code_verified():
+        return None
+
+    # 兼容未配置家庭码的旧数据，默认放行并写入会话
+    if not get_family_code():
+        mark_family_code_verified()
+        return None
+
+    next_path = request.full_path if request.query_string else path
+    if next_path.endswith("?"):
+        next_path = next_path[:-1]
+
+    if path.startswith("/api/"):
+        return _build_family_gate_response()
+
+    return redirect(f"/family-access?next={quote(next_path or '/', safe='')}")
 
 # 调试信息
 logger.info(f"模板文件夹: {template_folder}")
@@ -2597,7 +2578,7 @@ def inject_quota_info():
                 "GET",
                 f"{public_client.server_url}/czrz/quota/status",
                 params={"client_id": public_client.client_id},
-                timeout=3,
+                timeout=30,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -2616,7 +2597,7 @@ def inject_quota_info():
                 "GET",
                 f"{public_client.server_url}/czrz/client/token-usage",
                 params={"client_id": public_client.client_id},
-                timeout=3,
+                timeout=30,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -2750,7 +2731,7 @@ def index():
             if public_client.client_id:
                 weather_url += f"&client_id={public_client.client_id}"
 
-            weather_resp = public_client.signed_request("GET", weather_url, timeout=5)
+            weather_resp = public_client.signed_request("GET", weather_url, timeout=30)
             if weather_resp.status_code == 200:
                 weather_data = weather_resp.json()
                 weather = weather_data.get("weather") or {}
@@ -2829,6 +2810,54 @@ def setup():
     )
 
 
+@app.route("/family-access")
+def family_access():
+    """公网首次访问家庭码验证页"""
+    if public_client.is_first_run():
+        return redirect("/setup")
+
+    source_ip = get_request_source_ip()
+    if _is_private_or_loopback_ip(source_ip) or is_family_code_verified():
+        next_url = request.args.get("next", "/")
+        if not next_url.startswith("/"):
+            next_url = "/"
+        return redirect(next_url)
+
+    next_url = request.args.get("next", "/")
+    if not next_url.startswith("/"):
+        next_url = "/"
+
+    return render_template(
+        "family_access.html",
+        baby_name=getattr(public_client, "baby_name", "宝宝"),
+        next_url=next_url,
+    )
+
+
+@app.route("/api/family-access", methods=["POST"])
+def api_family_access():
+    """校验家庭码并写入会话"""
+    try:
+        data = request.get_json(silent=True) or {}
+        family_code = (data.get("family_code") or data.get("password") or "").strip()
+        next_url = data.get("next", "/")
+        if not isinstance(next_url, str) or not next_url.startswith("/"):
+            next_url = "/"
+
+        if verify_family_code(family_code):
+            mark_family_code_verified()
+            return jsonify({"success": True, "message": "验证通过", "next": next_url})
+
+        source_ip = get_request_source_ip()
+        logger.warning(f"[SECURITY] 家庭码错误: ip={source_ip}, path={request.path}")
+        return (
+            jsonify({"success": False, "message": "家庭码错误，请询问家人或朋友"}),
+            401,
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @app.route("/api/setup", methods=["POST"])
 def api_setup():
     """初次设置API"""
@@ -2850,7 +2879,7 @@ def api_setup():
             return jsonify({"success": False, "message": "请至少选择一个文件夹"})
 
         if not public_client.admin_password and not admin_password:
-            return jsonify({"success": False, "message": "初次设置需要设置管理密码"})
+            return jsonify({"success": False, "message": "初次设置需要设置管理密码（即家庭码）"})
 
         from pathlib import Path
 
@@ -2936,27 +2965,29 @@ def build_photo_index_api():
 
 @app.route("/api/settings/verify", methods=["POST"])
 def verify_settings_password():
-    """验证设置页面密码"""
+    """兼容旧接口：验证家庭码并写入会话"""
     try:
-        data = request.get_json()
-        password = data.get("password", "")
-
-        # 检查是否来自 localhost 或 127.0.0.1（免密码）
-        remote_addr = request.remote_addr
-        if remote_addr in ["127.0.0.1", "localhost"]:
-            return jsonify({"success": True, "message": "localhost 访问免密码"})
-
-        # 获取保存的密码
-        stored_password = getattr(public_client, "admin_password", None)
-
-        if not stored_password:
-            # 没有设置密码，允许进入
-            return jsonify({"success": True, "message": "未设置密码"})
-
-        if password == stored_password:
+        source_ip = get_request_source_ip()
+        if _is_private_or_loopback_ip(source_ip) or is_family_code_verified():
             return jsonify({"success": True, "message": "验证通过"})
-        else:
-            return jsonify({"success": False, "message": "密码错误"})
+
+        data = request.get_json(silent=True) or {}
+        family_code = data.get("password", "")
+
+        if verify_family_code(family_code):
+            mark_family_code_verified()
+            return jsonify({"success": True, "message": "验证通过"})
+
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "家庭码错误",
+                    "require_family_code": True,
+                }
+            ),
+            401,
+        )
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
@@ -2981,6 +3012,38 @@ def get_current_settings():
         )
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
+
+
+@app.route("/api/share/family-text", methods=["GET"])
+@require_local_or_password
+def get_family_share_text():
+    """生成给亲友的分享文案（含访问链接与家庭码）"""
+    try:
+        share_url = (
+            getattr(public_client, "public_url", "")
+            or request.host_url.rstrip("/")
+        )
+        family_code = get_family_code()
+        baby_name = getattr(public_client, "baby_name", "宝宝")
+
+        text_lines = [
+            f"👶 {baby_name}的成长记录",
+            f"访问链接：{share_url}",
+            f"家庭码：{family_code or '（未设置）'}",
+            "说明：首次打开输入家庭码，之后会自动记住。",
+        ]
+        text = "\n".join(text_lines)
+
+        return jsonify(
+            {
+                "success": True,
+                "text": text,
+                "url": share_url,
+                "family_code": family_code,
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/profile")
@@ -3070,7 +3133,7 @@ def quota_status():
             "GET",
             f"{public_client.server_url}/czrz/quota/status",
             params={"client_id": public_client.client_id},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -3101,7 +3164,7 @@ def usage_list():
             "GET",
             f"{public_client.server_url}/czrz/client/usage-list",
             params={"client_id": public_client.client_id, "filter": filter_type},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -3126,7 +3189,7 @@ def get_token_usage():
             "GET",
             f"{public_client.server_url}/czrz/client/token-usage",
             params={"client_id": public_client.client_id},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -4161,7 +4224,7 @@ def get_calendar_data(month):
                 "GET",
                 f"{public_client.server_url}/czrz/client/logs/dates",
                 params={"client_id": public_client.client_id, "month": month},
-                timeout=5,
+                timeout=30,
             )
             if resp.status_code == 200:
                 result = resp.json()
@@ -4252,7 +4315,7 @@ def get_date_details(date):
             if public_client.client_id:
                 log_url += f"&client_id={public_client.client_id}"
 
-            log_resp = public_client.signed_request("GET", log_url, timeout=10)
+            log_resp = public_client.signed_request("GET", log_url, timeout=30)
             if log_resp.status_code == 200:
                 resp_data = log_resp.json()
                 if resp_data.get("success"):
@@ -4283,7 +4346,7 @@ def get_date_details(date):
             if public_client.client_id:
                 messages_url = f"{public_client.server_url}/czrz/messages/{public_client.client_id}/{date}"
                 messages_resp = public_client.signed_request(
-                    "GET", messages_url, timeout=10
+                    "GET", messages_url, timeout=30
                 )
                 if messages_resp.status_code == 200:
                     messages_data = messages_resp.json()
@@ -4512,7 +4575,7 @@ def api_photo_tag():
                     "tag": tag,
                     "note": note,
                 },
-                timeout=10,
+                timeout=30,
             )
 
             if resp.status_code == 200:
@@ -4547,7 +4610,7 @@ def api_photo_tag():
                     "client_id": public_client.client_id,
                     "filename": filename,
                 },
-                timeout=10,
+                timeout=30,
             )
 
             if resp.status_code == 200:
@@ -4575,7 +4638,7 @@ def api_tagged_photos():
             "GET",
             f"{public_client.server_url}/czrz/client/photos/tagged",
             params={"client_id": public_client.client_id},
-            timeout=10,
+            timeout=30,
         )
 
         if resp.status_code == 200:
@@ -4607,7 +4670,7 @@ def api_get_photo_tag(filename):
             "GET",
             f"{public_client.server_url}/czrz/client/photo/tag",
             params={"client_id": public_client.client_id, "filename": filename},
-            timeout=10,
+            timeout=30,
         )
 
         if resp.status_code == 200:
@@ -4630,7 +4693,7 @@ def api_get_notifications():
             "GET",
             f"{public_client.server_url}/czrz/notifications",
             params={"client_id": public_client.client_id},
-            timeout=5,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -4684,7 +4747,7 @@ def api_submit_feedback():
                 "POST",
                 f"{public_client.server_url}/czrz/client/feedback",
                 json=feedback_entry,
-                timeout=10,
+                timeout=30,
             )
         except Exception as e:
             print(f"[WARN] 上报反馈到服务端失败: {e}")
@@ -4714,7 +4777,7 @@ def api_mark_notification_read():
                 "client_id": public_client.client_id,
                 "notification_id": notification_id,
             },
-            timeout=5,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -4731,7 +4794,7 @@ def api_get_qrcode():
     """获取二维码图片"""
     try:
         response = public_client.signed_request(
-            "GET", f"{public_client.server_url}/czrz/qrcode", timeout=5
+            "GET", f"{public_client.server_url}/czrz/qrcode", timeout=30
         )
 
         if response.status_code == 200:
@@ -4786,7 +4849,7 @@ def api_check_version():
         response = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/version/latest?platform={platform}",
-            timeout=5,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -4957,7 +5020,7 @@ def api_install_update():
         # 获取服务端版本号用于更新配置
         try:
             version_resp = public_client.signed_request(
-                "GET", f"{public_client.server_url}/czrz/version/latest", timeout=5
+                "GET", f"{public_client.server_url}/czrz/version/latest", timeout=30
             )
             new_version = (
                 version_resp.json().get("version", "2.0.0")
@@ -5136,7 +5199,7 @@ def api_auto_update():
 
         # 1. 获取版本信息
         response = public_client.signed_request(
-            "GET", f"{public_client.server_url}/czrz/version/latest", timeout=10
+            "GET", f"{public_client.server_url}/czrz/version/latest", timeout=30
         )
 
         if response.status_code != 200:
@@ -5530,7 +5593,7 @@ def get_messages(date):
         response = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/messages/{public_client.client_id}/{date}",
-            timeout=10,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -5551,7 +5614,7 @@ def delete_message(message_id):
         response = public_client.signed_request(
             "DELETE",
             f"{public_client.server_url}/czrz/messages/{public_client.client_id}/{message_id}",
-            timeout=10,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -5566,31 +5629,29 @@ def delete_message(message_id):
 
 @app.route("/api/verify-password", methods=["POST"])
 def verify_password():
-    """通用的密码验证API - 验证成功后设置 session"""
+    """兼容旧接口：验证家庭码并写入会话"""
     try:
-        data = request.get_json()
-        password = data.get("password", "")
-        action = data.get("action", "unknown")
-
-        # localhost 免密码
-        remote_addr = request.remote_addr
-        if remote_addr in ["127.0.0.1", "localhost"]:
-            return jsonify({"success": True, "message": "localhost 免密码"})
-
-        stored_password = getattr(public_client, "admin_password", None)
-
-        if not stored_password:
-            # 没有设置密码，允许操作
-            return jsonify({"success": True, "message": "未设置密码，允许操作"})
-
-        if password == stored_password:
-            # 验证成功，设置 session（永久有效）
-            from flask import session
-            session['password_verified'] = True
-            session.permanent = True  # 使用配置的10年有效期（相当于永久）
+        source_ip = get_request_source_ip()
+        if _is_private_or_loopback_ip(source_ip) or is_family_code_verified():
             return jsonify({"success": True, "message": "验证通过"})
-        else:
-            return jsonify({"success": False, "message": "密码错误，请询问家人或朋友"})
+
+        data = request.get_json(silent=True) or {}
+        family_code = data.get("password", "")
+
+        if verify_family_code(family_code):
+            mark_family_code_verified()
+            return jsonify({"success": True, "message": "验证通过"})
+
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "家庭码错误，请询问家人或朋友",
+                    "require_family_code": True,
+                }
+            ),
+            401,
+        )
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
@@ -5611,7 +5672,7 @@ def featured_photo_api():
                 "GET",
                 f"{public_client.server_url}/czrz/photo/featured",
                 params={"client_id": client_id, "date": date},
-                timeout=10,
+                timeout=30,
             )
         else:
             # POST操作需要权限验证
@@ -5623,7 +5684,7 @@ def featured_photo_api():
                 "POST",
                 f"{public_client.server_url}/czrz/photo/featured/update",
                 json=data,
-                timeout=10,
+                timeout=30,
             )
         return jsonify(response.json()), response.status_code
     except Exception as e:
@@ -6144,7 +6205,7 @@ def ai_feedback():
             "POST",
             f"{server_url}/czrz/client/profile-feedback",
             json=payload,
-            timeout=10,
+            timeout=30,
         )
 
         if response.status_code == 200:
@@ -6951,7 +7012,7 @@ def ai_batch_sync():
                         "GET",
                         f"{public_client.server_url}/czrz/baby/log",
                         params={"client_id": public_client.client_id, "date": date_str},
-                        timeout=10,
+                        timeout=30,
                     )
                     if log_resp.status_code == 200:
                         log_data = log_resp.json()
@@ -7909,7 +7970,7 @@ def check_has_featured_photo(date: str, client_id: str) -> bool:
             "GET",
             f"{public_client.server_url}/czrz/photo/featured",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -7927,7 +7988,7 @@ def get_featured_photo_info(date: str, client_id: str) -> dict:
             "GET",
             f"{public_client.server_url}/czrz/photo/featured",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         logger.info(
             f"[DEBUG] get_featured_photo_info: status={resp.status_code}, url={resp.url}"
@@ -7970,7 +8031,7 @@ def check_has_log(date: str, client_id: str) -> bool:
             "GET",
             f"{public_client.server_url}/czrz/baby/log",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -7988,7 +8049,7 @@ def get_processed_photos(date: str, client_id: str) -> list:
             "GET",
             f"{public_client.server_url}/czrz/photo/descriptions",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -8006,7 +8067,7 @@ def check_new_feedback(date: str, client_id: str) -> bool:
             "GET",
             f"{public_client.server_url}/czrz/feedback/check",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -8024,7 +8085,7 @@ def check_new_health_metrics(date: str, client_id: str) -> bool:
             "GET",
             f"{public_client.server_url}/czrz/health/check",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -8042,7 +8103,7 @@ def get_processed_videos(date: str, client_id: str) -> list:
             "GET",
             f"{public_client.server_url}/czrz/video/processed",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -8263,7 +8324,7 @@ def get_speech_records_hash(date: str, client_id: str) -> str:
             "GET",
             f"{public_client.server_url}/czrz/speech/records",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code != 200:
             return ""
@@ -8378,7 +8439,7 @@ def get_log_content_hash(date: str, client_id: str) -> str:
             "GET",
             f"{public_client.server_url}/czrz/baby/log",
             params={"client_id": client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code != 200:
             return ""
@@ -8586,7 +8647,7 @@ def save_featured_photo_server(
                 "ai_description": ai_description,
                 "selected_by": "auto",
             },
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             logger.info(f"[AI回顾] 精选照片已保存到服务端: {filename}")
@@ -8607,7 +8668,7 @@ def _check_token_quota() -> tuple:
             "GET",
             f"{public_client.server_url}/czrz/client/token-check",
             params={"client_id": public_client.client_id},
-            timeout=5,
+            timeout=30,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -8629,7 +8690,7 @@ def _report_token_usage(usage: dict, operation: str = "ai_call", context: dict =
                 "operation": operation,
                 "context": context or {},
             },
-            timeout=5,
+            timeout=30,
         )
         print(
             f"[Token] 上报 {operation}: {usage.get('total_tokens', 0)} tokens, 状态: {resp.status_code}"
@@ -8645,7 +8706,7 @@ def api_today_news():
         resp = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/today-news",
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             return jsonify(resp.json())
@@ -8664,7 +8725,7 @@ def get_today_news():
         resp = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/today-news",
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -8785,7 +8846,7 @@ def save_log_server(
                     "generated_by": "ai_auto_review",
                 },
             },
-            timeout=10,
+            timeout=30,
         )
         logger.info(f"[AI回顾] 日志已保存到服务端: {date}")
         return True
@@ -8801,7 +8862,7 @@ def get_weather_for_date(date: str) -> str:
             "GET",
             f"{public_client.server_url}/czrz/baby/log",
             params={"client_id": public_client.client_id, "date": date},
-            timeout=10,
+            timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
@@ -9504,8 +9565,6 @@ if __name__ == "__main__":
         if public_client.public_url:
             print(f"🔗 公网访问: {public_client.public_url}")
 
-        print(f"🏢 管理后台: https://{public_client.server_domain}/admin")
-        print(f"🔑 管理员密码: 请在服务端设置 ADMIN_PASSWORD 环境变量")
         print("=" * 60)
 
         # 打开浏览器

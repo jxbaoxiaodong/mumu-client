@@ -136,7 +136,7 @@ class CompressionManager:
                 [self._ffmpeg_path, "-version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=30,
             )
             self._ffmpeg_available = result.returncode == 0
             if self._ffmpeg_available:
@@ -424,7 +424,7 @@ class CompressionManager:
         """停止后台压缩工作线程"""
         self._stop_event.set()
         if self._worker_thread:
-            self._worker_thread.join(timeout=5)
+            self._worker_thread.join(timeout=30)
         print("⏹️ 压缩工作线程已停止")
 
     def _worker_loop(self):

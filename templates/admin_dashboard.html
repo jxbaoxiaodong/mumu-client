@@ -198,7 +198,7 @@
         <!-- 异常提醒横幅 -->
         <div id="anomalyAlert" class="alert alert-danger alert-dismissible fade show d-none" role="alert" style="margin-bottom: 20px;">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
-            <strong>客户端调用异常!</strong>
+            <strong>客户端连接/调用异常!</strong>
             <div id="anomalyDetails"></div>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
@@ -957,8 +957,12 @@
                     
                     const alertsHtml = data.alerts.slice(0, 5).map(a => {
                         const icon = a.level === 'critical' ? '❌' : '⚠️';
-                        const typeText = a.type === 'call' ? '调用次数' : 'Token消耗';
-                        return `<div class="mt-1"><strong>${a.baby_name}</strong>: ${icon} ${a.message}</div>`;
+                        let typeText = '系统异常';
+                        if (a.type === 'call') typeText = '调用次数';
+                        if (a.type === 'token') typeText = 'Token消耗';
+                        if (a.type === 'timeout') typeText = '连接超时';
+                        if (a.type === 'signature_401') typeText = '签名401';
+                        return `<div class="mt-1"><strong>${a.baby_name}</strong> <span class="badge bg-secondary">${typeText}</span>: ${icon} ${a.message}</div>`;
                     }).join('');
                     
                     detailsDiv.innerHTML = alertsHtml;

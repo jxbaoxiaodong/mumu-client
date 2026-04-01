@@ -52,7 +52,7 @@ def _check_token_quota() -> tuple:
         resp = requests.get(
             f"{server_url}/czrz/client/token-check",
             params={"client_id": client_id},
-            timeout=5,
+            timeout=30,
             verify=False,
             headers={"User-Agent": "CZRZ-Client/2.0"},
         )
@@ -79,7 +79,7 @@ def _report_token_usage(usage: dict, operation: str = "select_photo"):
         resp = requests.post(
             f"{server_url}/czrz/client/token-record",
             json={"client_id": client_id, "usage": usage, "operation": operation},
-            timeout=5,
+            timeout=30,
             verify=False,
             headers={"User-Agent": "CZRZ-Client/2.0"},
         )

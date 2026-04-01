@@ -131,12 +131,12 @@
     <div class="modal-dialog modal-sm">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">🔐 验证密码</h5>
+                <h5 class="modal-title">🔐 家庭码验证</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">请输入管理密码进行此操作。<br>不知道密码？请询问家人或朋友。</p>
-                <input type="password" class="form-control" id="verifyPassword" placeholder="输入密码">
+                <p class="text-muted small">请先完成家庭码验证。</p>
+                <input type="password" class="form-control" id="verifyPassword" placeholder="输入家庭码">
                 <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
             </div>
             <div class="modal-footer">
@@ -280,39 +280,15 @@ function getSelectedRole() {
 let pendingAction = null;
 
 function showPasswordVerify(action) {
-    pendingAction = action;
-    const modal = new bootstrap.Modal(document.getElementById('passwordVerifyModal'));
-    document.getElementById('verifyPassword').value = '';
-    document.getElementById('passwordError').style.display = 'none';
-    modal.show();
+    // 已改为统一家庭码入口，保留函数名做兼容
+    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/family-access?next=${nextUrl}`;
 }
 
 function confirmPassword() {
-    const password = document.getElementById('verifyPassword').value;
-    const errorEl = document.getElementById('passwordError');
-    
-    fetch('/api/verify-password', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({password: password, action: pendingAction})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
-            if (pendingAction === 'send_message') {
-                doSendMessage();
-            } else if (pendingAction === 'send_voice') {
-                doSendVoice();
-            } else if (pendingAction === 'delete_message' && window.pendingDeleteId) {
-                doDeleteMessage(window.pendingDeleteId);
-            }
-            pendingAction = null;
-        } else {
-            errorEl.textContent = data.message || '密码错误';
-            errorEl.style.display = 'block';
-        }
-    });
+    // 旧弹窗入口兼容：统一走家庭码页面，不再做逐操作密码验证
+    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/family-access?next=${nextUrl}`;
 }
 
 // 录音功能
@@ -399,7 +375,7 @@ function messageModalSendText() {
         showNotification('请输入留言内容', 'warning');
         return;
     }
-    showPasswordVerify('send_message');
+    doSendMessage();
 }
 
 function doSendMessage() {
@@ -417,6 +393,11 @@ function doSendMessage() {
     })
     .then(r => r.json())
     .then(data => {
+        if (data && data.require_family_code) {
+            const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = data.redirect_url || `/family-access?next=${nextUrl}`;
+            return;
+        }
         if (data.success) {
             showNotification('留言发送成功', 'success');
             document.getElementById('textMessageContent').value = '';
@@ -434,7 +415,7 @@ function messageModalSendVoice() {
         showNotification('请先录制语音', 'warning');
         return;
     }
-    showPasswordVerify('send_voice');
+    doSendVoice();
 }
 
 function doSendVoice() {
@@ -456,6 +437,11 @@ function doSendVoice() {
         })
         .then(r => r.json())
         .then(data => {
+            if (data && data.require_family_code) {
+                const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = data.redirect_url || `/family-access?next=${nextUrl}`;
+                return;
+            }
             if (data.success) {
                 showNotification('语音留言发送成功', 'success');
                 bootstrap.Modal.getInstance(document.getElementById('messageModal')).hide();
@@ -469,15 +455,7 @@ function doSendVoice() {
 
 // 删除留言
 function deleteMessage(messageId) {
-    window.pendingDeleteId = messageId;
-    if (typeof showPasswordVerify === 'function') {
-        showPasswordVerify('delete_message');
-    } else {
-        // 如果密码验证模态框还没加载，直接确认删除
-        if (confirm('确定要删除这条留言吗？')) {
-            doDeleteMessage(messageId);
-        }
-    }
+    doDeleteMessage(messageId);
 }
 
 function doDeleteMessage(messageId) {
@@ -486,6 +464,11 @@ function doDeleteMessage(messageId) {
     })
     .then(r => r.json())
     .then(data => {
+        if (data && data.require_family_code) {
+            const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = data.redirect_url || `/family-access?next=${nextUrl}`;
+            return;
+        }
         if (data.success) {
             showNotification('留言已删除', 'success');
             setTimeout(() => location.reload(), 500);

@@ -103,7 +103,12 @@
                                     {% endif %}
                                 </div>
                                 <div class="mt-2 p-2 bg-light rounded" style="font-size: 0.7rem;">
-                                    <strong>分享给亲朋：</strong>复制上方地址发送给他们即可访问。同一WiFi用局域网地址更快，否则用公网地址。
+                                    <strong>分享给亲朋：</strong>推荐使用下方“复制分享文案”按钮，自动包含访问链接和家庭码。
+                                </div>
+                                <div class="mt-2 d-grid">
+                                    <button class="btn btn-sm btn-outline-primary" type="button" onclick="copyFamilyShareText()">
+                                        <i class="fas fa-share-alt me-1"></i>复制分享文案（含家庭码）
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -121,7 +126,7 @@
                     <div class="text-center mt-3">
                         <small class="text-muted" style="font-size: 0.75rem;">
                             <i class="fas fa-info-circle me-1"></i>
-                            为保护设置安全，进入修改页面需要验证密码
+                            远程访问首次通过家庭码后，可直接修改设置
                         </small>
                     </div>
                 </div>
@@ -553,38 +558,36 @@ function copyToClipboard(text) {
     });
 }
 
-// 显示密码验证界面
-function showSettingsPasswordVerify() {
-    // 先检查是否需要密码验证（localhost 免密码）
-    fetch('/api/settings/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: '' })
-    })
+// 复制分享文案（含家庭码）
+function copyFamilyShareText() {
+    fetch('/api/share/family-text')
     .then(function(response) { return response.json(); })
     .then(function(data) {
-        if (data.success) {
-            // localhost 免密码或未设置密码，直接进入设置
-            document.getElementById('enterModifySection').classList.add('d-none');
-            document.getElementById('settingsContentSection').classList.remove('d-none');
-            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
-            loadCurrentSettings();
+        if (data && data.require_family_code) {
+            var nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = data.redirect_url || '/family-access?next=' + nextUrl;
+            return;
+        }
+        if (data && data.success && data.text) {
+            copyToClipboard(data.text);
         } else {
-            // 需要密码验证
-            document.getElementById('enterModifySection').classList.add('d-none');
-            document.getElementById('passwordVerifySection').classList.remove('d-none');
-            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-lock me-2"></i>密码验证';
-            document.getElementById('settingsPassword').focus();
+            showNotification('生成分享文案失败', 'error');
         }
     })
     .catch(function(error) {
         console.error('Error:', error);
-        // 出错时也显示密码验证
-        document.getElementById('enterModifySection').classList.add('d-none');
-        document.getElementById('passwordVerifySection').classList.remove('d-none');
-        document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-lock me-2"></i>密码验证';
-        document.getElementById('settingsPassword').focus();
+        showNotification('生成分享文案失败', 'error');
     });
+}
+
+// 显示密码验证界面
+function showSettingsPasswordVerify() {
+    // 统一家庭码策略：首次访问已验证，这里直接进入设置内容
+    document.getElementById('enterModifySection').classList.add('d-none');
+    document.getElementById('passwordVerifySection').classList.add('d-none');
+    document.getElementById('settingsContentSection').classList.remove('d-none');
+    document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
+    loadCurrentSettings();
 }
 
 // 返回进入修改页面界面
@@ -597,34 +600,7 @@ function backToEnterSection() {
 }
 
 function verifySettingsPassword() {
-    var password = document.getElementById('settingsPassword').value;
-    
-    fetch('/api/settings/verify', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ password: password })
-    })
-    .then(function(response) { return response.json(); })
-    .then(function(data) {
-        if (data.success) {
-            // 验证成功，显示设置内容
-            document.getElementById('passwordVerifySection').classList.add('d-none');
-            document.getElementById('settingsContentSection').classList.remove('d-none');
-            document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
-            
-            // 加载当前设置
-            loadCurrentSettings();
-        } else {
-            // 验证失败
-            document.getElementById('passwordError').classList.remove('d-none');
-        }
-    })
-    .catch(function(error) {
-        console.error('Error:', error);
-        showNotification('验证失败，请稍后重试', 'error');
-    });
+    showSettingsPasswordVerify();
 }
 
 function saveModalSettings() {

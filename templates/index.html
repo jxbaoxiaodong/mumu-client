@@ -1449,7 +1449,7 @@
                         </div>
                         <div class="share-menu-item" onclick="copyLink()">
                             <div class="share-menu-icon share-copy"><i class="fas fa-link"></i></div>
-                            <span>复制链接</span>
+                            <span>复制文案</span>
                         </div>
                     </div>
                 </div>
@@ -1708,12 +1708,12 @@
     <div class="modal-dialog modal-sm">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">🔐 验证密码</h5>
+                <h5 class="modal-title">🔐 家庭码验证</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-muted small">请输入管理密码进行此操作。<br>不知道密码？请询问家人或朋友。</p>
-                <input type="password" class="form-control" id="verifyPassword" placeholder="输入密码">
+                <p class="text-muted small">请先完成家庭码验证。</p>
+                <input type="password" class="form-control" id="verifyPassword" placeholder="输入家庭码">
                 <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
             </div>
             <div class="modal-footer">
@@ -2108,7 +2108,7 @@ function updateLogContent(log, news) {
                         </div>
                         <div class="share-menu-item" onclick="copyLink()">
                             <div class="share-menu-icon share-copy"><i class="fas fa-link"></i></div>
-                            <span>复制链接</span>
+                            <span>复制文案</span>
                         </div>
                     </div>
                 </div>
@@ -2545,7 +2545,7 @@ function removePhotosFromIndex(filenames, dateStr) {
         }
     })
     .catch(err => {
-        if (err !== 'require_password') {
+        if (err !== 'require_password' && err !== 'require_family_code') {
             showNotification('移除失败: ' + err.message, 'error');
         }
     });
@@ -2656,7 +2656,7 @@ function selectAsFeatured(filename) {
         }).then(data => {
             // 更换成功，不显示提示
         }).catch(err => {
-            if (err !== 'require_password') {
+            if (err !== 'require_password' && err !== 'require_family_code') {
                 console.error('保存精选照片失败:', err);
             }
         });
@@ -2705,9 +2705,31 @@ function shareToQQ() {
 }
 
 function copyLink() {
-    const url = window.shareUrl || window.location.href;
-    navigator.clipboard.writeText(url).then(() => {
-        showNotification('链接已复制', 'success');
+    fetch('/api/share/family-text')
+    .then(r => r.json())
+    .then(data => {
+        if (data && data.require_family_code) {
+            const redirectUrl = data.redirect_url || '/family-access?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+            window.location.href = redirectUrl;
+            return;
+        }
+        if (data && data.success && data.text) {
+            return navigator.clipboard.writeText(data.text).then(() => {
+                showNotification('分享文案已复制（含家庭码）', 'success');
+            });
+        }
+        const fallbackUrl = window.shareUrl || window.location.href;
+        return navigator.clipboard.writeText(fallbackUrl).then(() => {
+            showNotification('链接已复制', 'success');
+        });
+    })
+    .catch(() => {
+        const fallbackUrl = window.shareUrl || window.location.href;
+        navigator.clipboard.writeText(fallbackUrl).then(() => {
+            showNotification('链接已复制', 'success');
+        }).catch(() => {
+            showNotification('复制失败', 'error');
+        });
     });
     toggleShareMenu();
 }
@@ -2948,7 +2970,7 @@ function submitComment() {
                 }
             })
             .catch(err => {
-                if (err !== 'require_password') {
+                if (err !== 'require_password' && err !== 'require_family_code') {
                     showNotification('发送失败: ' + err.message, 'error');
                 }
             });
@@ -2982,7 +3004,7 @@ function submitComment() {
         }
     })
     .catch(err => {
-        if (err !== 'require_password') {
+        if (err !== 'require_password' && err !== 'require_family_code') {
             showNotification('发送失败: ' + err.message, 'error');
         }
     });
@@ -3069,28 +3091,11 @@ function collectCurrentMetadata() {
 }
 
 function editBabyLog(dateStr) {
-    const password = prompt('请输入管理密码以编辑日记：');
-    if (password === null) return;
-    
-    fetch('/api/settings/verify', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({password})
-    })
-    .then(r => r.json())
-    .then(authData => {
-        if (!authData.success) {
-            showNotification('密码错误', 'error');
-            return;
-        }
-        
-        // 显示编辑模态框
-        const logContent = document.querySelector('.journal-body-uni') ? document.querySelector('.journal-body-uni').innerText : '';
-        document.getElementById('editLogDate').value = dateStr;
-        document.getElementById('editLogContent').value = logContent;
-        new bootstrap.Modal(document.getElementById('editLogModal')).show();
-    })
-    .catch(console.error);
+    // 远程首次访问已统一在家庭码页面验证，这里直接进入编辑
+    const logContent = document.querySelector('.journal-body-uni') ? document.querySelector('.journal-body-uni').innerText : '';
+    document.getElementById('editLogDate').value = dateStr;
+    document.getElementById('editLogContent').value = logContent;
+    new bootstrap.Modal(document.getElementById('editLogModal')).show();
 }
 
 // 保存编辑的日志
@@ -3125,7 +3130,7 @@ function saveEditedLog() {
         }
     })
     .catch(err => {
-        if (err !== 'require_password') {
+        if (err !== 'require_password' && err !== 'require_family_code') {
             console.error(err);
             showNotification('保存失败', 'error');
         }
@@ -3161,7 +3166,7 @@ function deletePhoto(filename) {
             }
         })
         .catch(err => {
-            if (err !== 'require_password') {
+            if (err !== 'require_password' && err !== 'require_family_code') {
                 showNotification('删除失败: ' + err.message, 'error');
             }
         });
@@ -3653,7 +3658,7 @@ function openPhotoTagModal(filename) {
                 }
             })
             .catch(err => {
-                if (err !== 'require_password') {
+                if (err !== 'require_password' && err !== 'require_family_code') {
                     console.error(err);
                 }
             });
@@ -3663,8 +3668,7 @@ function openPhotoTagModal(filename) {
 
 // 删除留言函数（全局可用）
 function deleteMessage(messageId) {
-    window.pendingDeleteId = messageId;
-    showPasswordVerify('delete_message');
+    doDeleteMessage(messageId);
 }
 
 // 显示密码验证模态框
@@ -3673,63 +3677,18 @@ let pendingRequest = null;  // 待重试的请求
 
 function showPasswordVerify(action) {
     pendingAction = action;
-    const modal = new bootstrap.Modal(document.getElementById('passwordVerifyModal'));
-    document.getElementById('verifyPassword').value = '';
-    document.getElementById('passwordError').style.display = 'none';
-    modal.show();
+    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/family-access?next=${nextUrl}`;
 }
 
 // 确认密码验证
 function confirmPasswordVerify() {
-    const password = document.getElementById('verifyPassword').value;
-    const errorEl = document.getElementById('passwordError');
-
-    fetch('/api/verify-password', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({password: password, action: pendingAction})
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            bootstrap.Modal.getInstance(document.getElementById('passwordVerifyModal')).hide();
-            
-            // 处理特定操作
-            if (pendingAction === 'delete_message' && window.pendingDeleteId) {
-                doDeleteMessage(window.pendingDeleteId);
-            }
-            
-            // 如果有待重试的请求，使用密码重试
-            if (pendingRequest) {
-                const req = pendingRequest;
-                pendingRequest = null;
-                // 将密码添加到请求中重试
-                fetchWithPassword(req.url, req.options, password);
-            }
-            
-            pendingAction = null;
-        } else {
-            errorEl.textContent = data.message || '密码错误';
-            errorEl.style.display = 'block';
-        }
-    })
-    .catch(err => {
-        errorEl.textContent = '验证失败: ' + err.message;
-        errorEl.style.display = 'block';
-    });
+    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/family-access?next=${nextUrl}`;
 }
 
 // 带密码验证的 fetch 包装函数
 function fetchWithPassword(url, options = {}, password = null) {
-    // 如果提供了密码，直接添加到请求头中
-    if (password) {
-        if (options.headers) {
-            options.headers['X-Admin-Password'] = password;
-        } else {
-            options.headers = {'X-Admin-Password': password};
-        }
-    }
-    
     return fetch(url, options)
         .then(async r => {
             // 尝试解析 JSON
@@ -3742,12 +3701,11 @@ function fetchWithPassword(url, options = {}, password = null) {
             }
         })
         .then(data => {
-            // 检查是否需要密码验证
-            if (data.require_password) {
-                // 保存请求以便验证成功后重试
-                pendingRequest = {url, options};
-                showPasswordVerify('api_request');
-                return Promise.reject('require_password');
+            // 统一家庭码验证拦截
+            if (data.require_family_code) {
+                const redirectUrl = data.redirect_url || '/family-access?next=' + encodeURIComponent(window.location.pathname + window.location.search);
+                window.location.href = redirectUrl;
+                return Promise.reject('require_family_code');
             }
             return data;
         });
@@ -4018,7 +3976,7 @@ function submitAIQuestion() {
         }
     })
     .catch(function(err) {
-        if (err !== 'require_password') {
+        if (err !== 'require_password' && err !== 'require_family_code') {
             showNotification('请求失败: ' + err.message, 'error');
         }
     })
@@ -4041,7 +3999,7 @@ function feedbackAnswer(isCorrect) {
                 photo_filename: currentAIPhoto
             })
         }).catch(err => {
-            if (err !== 'require_password') {
+            if (err !== 'require_password' && err !== 'require_family_code') {
                 console.error('提交反馈失败:', err);
             }
         });
@@ -4682,7 +4640,7 @@ function markCardShared(cardId) {
         }
     })
     .catch(err => {
-        if (err !== 'require_password') {
+        if (err !== 'require_password' && err !== 'require_family_code') {
             console.error('[Card] 标记分享失败:', err);
         }
     });

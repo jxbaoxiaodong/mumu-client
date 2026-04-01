@@ -157,6 +157,37 @@
         <!-- API 配额设置卡片 -->
         <div class="card">
             <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shield-check"></i> 安全设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="securitySettingsForm" onsubmit="saveSecuritySettings(event)">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               id="enable_signature_verification"
+                               {% if security_config.get('enable_signature_verification', True) %}checked{% endif %}>
+                        <label class="form-check-label" for="enable_signature_verification">
+                            启用 API 签名验证（推荐开启）
+                        </label>
+                    </div>
+                    <small class="text-muted d-block mb-3">
+                        关闭后，客户端请求将不再校验 HMAC 签名。仅建议在排查兼容性问题时临时关闭。
+                    </small>
+
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <strong>风险提示：</strong>关闭签名验证会降低接口安全性，建议排查结束后立即重新开启。
+                    </div>
+
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存安全设置
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- API 配额设置卡片 -->
+        <div class="card">
+            <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-graph-up"></i> Token 配额设置</h5>
             </div>
             <div class="card-body">
@@ -452,6 +483,36 @@
                     alert('域名已更新: ' + data.server_domain);
                     document.getElementById('server_domain').value = data.server_domain;
                     document.getElementById('currentUrl').textContent = data.server_url;
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+
+        // 保存安全设置
+        function saveSecuritySettings(event) {
+            event.preventDefault();
+
+            const enabled = document.getElementById('enable_signature_verification').checked;
+            const actionText = enabled ? '开启' : '关闭';
+            if (!confirm(`确定要${actionText}签名验证吗？`)) {
+                return;
+            }
+
+            fetch('/admin/settings/security', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    enable_signature_verification: enabled
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(`安全设置已保存：签名验证已${enabled ? '开启' : '关闭'}`);
                 } else {
                     alert('保存失败: ' + data.message);
                 }
