@@ -202,6 +202,21 @@
     </div>
 </div>
 
+<div id="setupProgressFooter" class="setup-progress-footer">
+    <div class="setup-progress-card">
+        <div class="setup-progress-header">
+            <div>
+                <div class="setup-progress-title" id="setupProgressTitle">正在处理中...</div>
+                <div class="setup-progress-detail" id="setupProgressDetail">请稍候</div>
+            </div>
+            <div class="setup-progress-percent" id="setupProgressPercent">--</div>
+        </div>
+        <div class="progress setup-progress-bar-wrap">
+            <div id="setupProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+        </div>
+    </div>
+</div>
+
 <style>
 .card {
     border-radius: 15px;
@@ -257,9 +272,69 @@
 .avatar-upload:hover .avatar-overlay {
     opacity: 1;
 }
+
+.setup-progress-footer {
+    position: fixed;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    z-index: 9998;
+    display: none;
+}
+
+.setup-progress-card {
+    max-width: 720px;
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(10px);
+    border-radius: 18px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    padding: 16px 18px;
+    border: 1px solid rgba(102, 126, 234, 0.12);
+}
+
+.setup-progress-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.setup-progress-title {
+    font-weight: 700;
+    color: #2d3748;
+}
+
+.setup-progress-detail {
+    color: #718096;
+    font-size: 0.92rem;
+    margin-top: 2px;
+}
+
+.setup-progress-percent {
+    min-width: 52px;
+    text-align: right;
+    color: #667eea;
+    font-weight: 700;
+}
+
+.setup-progress-bar-wrap {
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #edf2f7;
+}
+
+.setup-progress-bar-wrap .progress-bar {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
 </style>
 
 <script>
+let setupSubmitting = false;
+let setupIndexPollTimer = null;
+
 // 头像预览
 function previewAvatar(input) {
     if (!input.files || input.files.length === 0) return;
@@ -340,6 +415,10 @@ document.addEventListener('DOMContentLoaded', function() {
 document.getElementById('setupForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 
+    if (setupSubmitting) {
+        return;
+    }
+
     const babyName = document.getElementById('babyName').value.trim();
     const babyGender = document.getElementById('babyGender').value.trim();
     const babyBirthday = document.getElementById('babyBirthday').value.trim();
@@ -400,13 +479,22 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
     // 禁用按钮并显示加载状态
     const submitBtn = document.getElementById('submitBtn');
     const originalBtnText = submitBtn.innerHTML;
+    setupSubmitting = true;
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在调整，请稍候...';
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在保存设置...';
+    updateSetupProgress({
+        title: '正在保存设置',
+        detail: '正在连接服务并准备初始化，请稍候...',
+        percentText: '--',
+        progress: null
+    });
     
     const setLoadingError = (msg) => {
+        setupSubmitting = false;
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
         showNotification(msg, 'error');
+        hideSetupProgress();
     };
     
     if (avatarFile) {
@@ -450,19 +538,20 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
             submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>设置完成！';
             showNotification('设置完成！', 'success');
             
-            // 检查是否需要首次建立索引
             if (data.index_info && data.index_info.first_time) {
                 const indexInfo = data.index_info;
-                const estimatedFiles = indexInfo.estimated_files || 0;
-                const estimatedMinutes = indexInfo.estimated_minutes || 1;
-                
-                // 显示索引建立提示
-                showIndexBuildPrompt(estimatedFiles, estimatedMinutes);
+                startInitialIndexBuild(indexInfo);
             } else {
-                // 直接跳转
+                updateSetupProgress({
+                    title: '设置完成',
+                    detail: '正在进入主页...',
+                    percentText: '100%',
+                    progress: 100,
+                    animated: false
+                });
                 setTimeout(() => {
                     window.location.href = '/';
-                }, 1500);
+                }, 1200);
             }
         } else {
             setLoadingError('设置失败：' + data.message);
@@ -544,87 +633,142 @@ function showNotification(message, type) {
     }, 5000);
 }
 
-// 显示索引建立提示
-function showIndexBuildPrompt(estimatedFiles, estimatedMinutes) {
-    const timeText = estimatedMinutes < 1 ? '不到1分钟' : `约 ${estimatedMinutes} 分钟`;
-    const message = `📸 检测到 ${estimatedFiles} 个素材文件，索引建立需要 ${timeText}。建立期间素材可能显示不全，请耐心等待。`;
-    
-    // 显示通知
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-info alert-dismissible fade show position-fixed';
-    notification.style.cssText = `
-        top: 20px;
-        right: 20px;
-        z-index: 9999;
-        min-width: 350px;
-        max-width: 450px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    `;
-    
-    notification.innerHTML = `
-        <div class="d-flex align-items-start">
-            <div class="spinner-border spinner-border-sm text-primary me-2 mt-1" role="status" id="indexSpinner">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-            <div>
-                <strong>正在建立素材索引...</strong>
-                <p class="mb-0 mt-1 small">${message}</p>
-            </div>
-        </div>
-    `;
-    
-    document.body.appendChild(notification);
-    
-    // 调用建立索引 API
+function updateSetupProgress({ title, detail, percentText = '--', progress = null, animated = true }) {
+    const footer = document.getElementById('setupProgressFooter');
+    const titleEl = document.getElementById('setupProgressTitle');
+    const detailEl = document.getElementById('setupProgressDetail');
+    const percentEl = document.getElementById('setupProgressPercent');
+    const barEl = document.getElementById('setupProgressBar');
+
+    footer.style.display = 'block';
+    titleEl.textContent = title;
+    detailEl.textContent = detail;
+    percentEl.textContent = percentText;
+
+    if (progress === null || Number.isNaN(progress)) {
+        barEl.style.width = '100%';
+        barEl.classList.add('progress-bar-striped', 'progress-bar-animated');
+    } else {
+        barEl.style.width = `${Math.max(0, Math.min(100, progress))}%`;
+        if (animated) {
+            barEl.classList.add('progress-bar-striped', 'progress-bar-animated');
+        } else {
+            barEl.classList.remove('progress-bar-animated');
+        }
+    }
+}
+
+function hideSetupProgress() {
+    const footer = document.getElementById('setupProgressFooter');
+    if (setupIndexPollTimer) {
+        clearTimeout(setupIndexPollTimer);
+        setupIndexPollTimer = null;
+    }
+    footer.style.display = 'none';
+}
+
+function startInitialIndexBuild(indexInfo) {
+    const estimatedFiles = indexInfo.estimated_files || 0;
+    const estimatedMinutes = indexInfo.estimated_minutes || 0;
+    const timeText = estimatedMinutes > 0 ? `预计约 ${estimatedMinutes} 分钟` : '预计很快完成';
+    updateSetupProgress({
+        title: '正在创建素材索引',
+        detail: `已检测到约 ${estimatedFiles} 个素材文件，${timeText}。`,
+        percentText: '--',
+        progress: null
+    });
+
     fetch('/api/photo-index/build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
     })
     .then(response => response.json())
     .then(data => {
-        if (data.success) {
-            notification.className = 'alert alert-success alert-dismissible fade show position-fixed';
-            notification.innerHTML = `
-                <i class="fas fa-check-circle me-2"></i>
-                <strong>索引建立完成！</strong>
-                <p class="mb-0 mt-1 small">共索引 ${data.result && data.result.total || 0} 个文件</p>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            
-            // 3秒后跳转
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 3000);
-        } else {
-            notification.className = 'alert alert-warning alert-dismissible fade show position-fixed';
-            notification.innerHTML = `
-                <i class="fas fa-exclamation-triangle me-2"></i>
-                <strong>索引建立遇到问题</strong>
-                <p class="mb-0 mt-1 small">${data.error || '请稍后手动重建索引'}</p>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            
-            // 5秒后跳转
-            setTimeout(() => {
-                window.location.href = '/';
-            }, 5000);
+        if (!data.success) {
+            throw new Error(data.error || data.message || '索引建立启动失败');
         }
+        pollInitialIndexProgress();
     })
     .catch(error => {
         console.error('索引建立失败:', error);
-        notification.className = 'alert alert-warning alert-dismissible fade show position-fixed';
-        notification.innerHTML = `
-            <i class="fas fa-exclamation-triangle me-2"></i>
-            <strong>索引建立失败</strong>
-            <p class="mb-0 mt-1 small">请稍后在设置中手动重建索引</p>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        
-        // 5秒后跳转
+        setupSubmitting = false;
+        updateSetupProgress({
+            title: '索引建立失败',
+            detail: error.message || '请稍后在设置中手动重建索引',
+            percentText: '--',
+            progress: 100,
+            animated: false
+        });
         setTimeout(() => {
             window.location.href = '/';
-        }, 5000);
+        }, 3000);
     });
+}
+
+function pollInitialIndexProgress() {
+    fetch('/api/photo-index/progress')
+        .then(response => response.json())
+        .then(status => {
+            const total = Number(status.total || 0);
+            const current = Number(status.current || 0);
+            const hasProgress = total > 0;
+            const progress = hasProgress ? Math.round((current / total) * 100) : null;
+            const percentText = hasProgress ? `${progress}%` : '--';
+            const detail = status.message || '正在创建索引...';
+
+            updateSetupProgress({
+                title: status.running ? '正在创建素材索引' : '素材索引处理完成',
+                detail: hasProgress ? `${detail}（${current}/${total}）` : detail,
+                percentText,
+                progress,
+                animated: status.running
+            });
+
+            if (status.running) {
+                setupIndexPollTimer = setTimeout(pollInitialIndexProgress, 1000);
+                return;
+            }
+
+            setupSubmitting = false;
+            if (status.result && !status.result.error) {
+                const totalFiles = status.result.total || 0;
+                updateSetupProgress({
+                    title: '素材索引创建完成',
+                    detail: `共索引 ${totalFiles} 个文件，正在进入主页...`,
+                    percentText: '100%',
+                    progress: 100,
+                    animated: false
+                });
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1200);
+            } else {
+                updateSetupProgress({
+                    title: '索引建立遇到问题',
+                    detail: (status.result && status.result.error) || status.message || '请稍后手动重建索引',
+                    percentText: '--',
+                    progress: 100,
+                    animated: false
+                });
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 3000);
+            }
+        })
+        .catch(error => {
+            console.error('获取索引进度失败:', error);
+            setupSubmitting = false;
+            updateSetupProgress({
+                title: '索引进度获取失败',
+                detail: '请稍后在设置中手动重建索引',
+                percentText: '--',
+                progress: 100,
+                animated: false
+            });
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 3000);
+        });
 }
 </script>
 {% endblock %}

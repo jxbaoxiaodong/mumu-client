@@ -13,6 +13,162 @@ fi
 
 TAG=${1:-v32}
 COMMIT_MSG=${2:-"release: 新版本发布"}
+MUMU_DIR="/home/bob/projects/mumu"
+CLIENT_DIR="/home/bob/projects/mumu-client"
+DOWNLOAD_DIR="$MUMU_DIR/landing_page/download"
+LANDING_INDEX_FILE="$MUMU_DIR/landing_page/index.html"
+LANDING_DOWNLOAD_BASE_URL="${LANDING_DOWNLOAD_BASE_URL:-https://mumu.ftir.fun/download}"
+REQUIRED_ASSETS=("mumu-windows.exe" "mumu-linux" "mumu-macos")
+
+public_asset_name() {
+    local name="$1"
+    local tag="${2:-$TAG}"
+    case "$name" in
+        *.exe)
+            printf '%s-%s.exe' "${name%.exe}" "$tag"
+            ;;
+        *)
+            printf '%s-%s' "$name" "$tag"
+            ;;
+    esac
+}
+
+landing_cache_token() {
+    python3 - "$DOWNLOAD_DIR" "${REQUIRED_ASSETS[@]}" <<'PY'
+from datetime import datetime
+from pathlib import Path
+import sys
+
+download_dir = Path(sys.argv[1])
+timestamps = []
+for name in sys.argv[2:]:
+    asset_path = download_dir / name
+    if asset_path.exists():
+        timestamps.append(asset_path.stat().st_mtime)
+
+if not timestamps:
+    print("", end="")
+    raise SystemExit(0)
+
+print(datetime.fromtimestamp(max(timestamps)).strftime("%Y%m%d%H%M%S"), end="")
+PY
+}
+
+sync_landing_public_assets() {
+    mkdir -p "$DOWNLOAD_DIR"
+    local name source_file public_name public_path
+    for name in "${REQUIRED_ASSETS[@]}"; do
+        source_file="$DOWNLOAD_DIR/$name"
+        [[ -f "$source_file" ]] || continue
+        public_name="$(public_asset_name "$name")"
+        public_path="$DOWNLOAD_DIR/$public_name"
+        ln -sfn "$name" "$public_path"
+    done
+}
+
+render_local_download_buttons() {
+    local cache_token="${1:-$TAG}"
+    python3 - "$DOWNLOAD_DIR" "$TAG" "$cache_token" "${REQUIRED_ASSETS[@]}" <<'PY'
+from pathlib import Path
+import sys
+
+download_dir = Path(sys.argv[1])
+tag = sys.argv[2]
+cache_token = sys.argv[3]
+assets = sys.argv[4:]
+
+meta = {
+    "mumu-windows.exe": (
+        "Windows 版下载",
+        "本站镜像，优先推荐，支持 Windows 10/11 64位系统",
+    ),
+    "mumu-linux": (
+        "Linux 版下载",
+        "本站镜像，优先推荐，支持 Ubuntu、Debian、CentOS 等主流发行版",
+    ),
+    "mumu-macos": (
+        "macOS 版下载",
+        "本站镜像，优先推荐，支持 macOS 10.15 及以上版本",
+    ),
+}
+
+lines = []
+for name in assets:
+    if not (download_dir / name).is_file():
+        continue
+
+    if name.endswith(".exe"):
+        public_name = f"{name[:-4]}-{tag}.exe"
+    else:
+        public_name = f"{name}-{tag}"
+
+    title, desc = meta.get(name, (name, "本站镜像，优先推荐"))
+    lines.extend(
+        [
+            f'                    <a href="/download/{public_name}?v={cache_token}" class="btn btn-local">',
+            f"                        {title}",
+            f"                        <span>{desc}</span>",
+            "                    </a>",
+        ]
+    )
+
+if not lines:
+    lines = [
+        '                    <div class="download-unavailable">',
+        "                        当前本站镜像暂未就绪，请先使用下方备选下载入口。",
+        "                    </div>",
+    ]
+
+print("\n".join(lines), end="")
+PY
+}
+
+sync_landing_download_page() {
+    [[ -f "$LANDING_INDEX_FILE" ]] || return 0
+
+    local cache_token local_buttons_file
+    cache_token="$(landing_cache_token)"
+    if [ -z "$cache_token" ]; then
+        cache_token="$(date '+%Y%m%d%H%M%S')"
+    fi
+
+    local_buttons_file="$(mktemp)"
+    render_local_download_buttons "$cache_token" > "$local_buttons_file"
+
+    python3 - "$LANDING_INDEX_FILE" "$TAG" "$local_buttons_file" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+index_file = Path(sys.argv[1])
+tag = sys.argv[2]
+local_buttons_file = Path(sys.argv[3])
+text = index_file.read_text(encoding="utf-8")
+local_buttons = local_buttons_file.read_text(encoding="utf-8").rstrip()
+
+start_marker = "<!-- LOCAL_DOWNLOAD_BUTTONS_START -->"
+end_marker = "<!-- LOCAL_DOWNLOAD_BUTTONS_END -->"
+if start_marker not in text or end_marker not in text:
+    raise SystemExit("landing page markers are missing")
+
+before, remainder = text.split(start_marker, 1)
+_, after = remainder.split(end_marker, 1)
+updated = before + start_marker + "\n" + local_buttons + "\n                    " + end_marker + after
+updated, count = re.subn(
+    r"<span>当前版本:\s*[^<]+</span>",
+    f"<span>当前版本: {tag}</span>",
+    updated,
+    count=1,
+)
+if count != 1:
+    raise SystemExit("failed to update landing version label")
+
+if updated != text:
+    index_file.write_text(updated, encoding="utf-8")
+PY
+
+    rm -f "$local_buttons_file"
+}
 
 # 检查必需的 Token
 if [ -z "$GITHUB_TOKEN" ]; then
@@ -26,7 +182,13 @@ if [ -z "$GITEE_TOKEN" ]; then
     echo "如需同步到 Gitee，请先设置: export GITEE_TOKEN=your_token"
 fi
 
-cd /home/bob/projects/mumu-client
+if [ -x "$MUMU_DIR/sync_to_client.sh" ]; then
+    echo "=== 0. 同步最新代码从 mumu 主项目 ==="
+    "$MUMU_DIR/sync_to_client.sh"
+    echo ""
+fi
+
+cd "$CLIENT_DIR"
 
 echo "=== 1. 提交代码并推送到 GitHub ==="
 git add -A
@@ -68,7 +230,6 @@ fi
 
 echo ""
 echo "=== 3. 下载安装包到本地 ==="
-DOWNLOAD_DIR=/home/bob/projects/mumu/landing_page/download
 mkdir -p $DOWNLOAD_DIR
 
 cd $DOWNLOAD_DIR
@@ -91,6 +252,9 @@ echo "📥 下载 macOS..."
 curl -L -o mumu-macos "https://github.com/jxbaoxiaodong/mumu-client/releases/download/$TAG/mumu-macos"
 echo "✅ macOS 下载完成 ($(du -h mumu-macos | cut -f1))"
 
+sync_landing_public_assets
+sync_landing_download_page
+
 echo ""
 echo "=== 4. 推送到 Gitee ==="
 
@@ -107,7 +271,7 @@ if [ "$GITEE_CURRENT_URL" != "$GITEE_EXPECTED_URL" ] && [ -n "$GITEE_TOKEN" ]; t
     git remote set-url gitee "https://${GITEE_TOKEN}@gitee.com/${GITEE_OWNER}/${GITEE_REPO}.git"
 fi
 
-cd /home/bob/projects/mumu-client
+cd "$CLIENT_DIR"
 git push gitee main || echo "⚠️ Gitee main 推送失败"
 git push gitee $TAG || echo "⚠️ Gitee tag 推送失败"
 

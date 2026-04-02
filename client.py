@@ -413,7 +413,7 @@ class PublicClient:
         )
 
         if auto_connect and not self.is_first_run():
-            self.connect_to_public_server()
+            self.connect_to_public_server(background_subdomain=True)
 
     def is_first_run(self) -> bool:
         """检查是否首次运行
@@ -1419,7 +1419,35 @@ class PublicClient:
             print(f"⚠ 读取本地子域名失败: {e}")
             return None
 
-    def connect_to_public_server(self):
+    def _is_local_server_ready(self):
+        """检查本地 Flask 服务是否已监听端口"""
+        port = getattr(self, "client_port", None)
+        if not port:
+            return False
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.5)
+                return sock.connect_ex(("127.0.0.1", int(port))) == 0
+        except Exception:
+            return False
+
+    def _start_pending_tunnel_if_ready(self):
+        """如果本地服务已就绪，立即启动待启动的 Tunnel"""
+        if (
+            self.tunnel_active
+            or not self._pending_tunnel_credentials
+            or not self.subdomain
+            or not self._is_local_server_ready()
+        ):
+            return False
+
+        credentials = self._pending_tunnel_credentials
+        self._pending_tunnel_credentials = None
+        self.start_cloudflare_tunnel(credentials)
+        return True
+
+    def connect_to_public_server(self, background_subdomain=False, auto_build_index=True):
         """强制连接到公网服务端"""
         print(f"🌐 强制连接到公网服务端: {self.server_url}")
         print(f"📡 注册地址: {self.server_url}/czrz/register")
@@ -1470,7 +1498,10 @@ class PublicClient:
                         # 心跳失败，需要重新注册
                         print("🔄 客户端未注册或已失效，需要重新注册...")
                         logger.warning("心跳失败，需要重新注册")
-                        self.register_client()
+                        self.register_client(
+                            background_subdomain=background_subdomain,
+                            auto_build_index=auto_build_index,
+                        )
                     else:
                         # 心跳成功，检查是否需要获取子域名和凭证并启动 tunnel
                         if self.subdomain and self.public_url:
@@ -1478,23 +1509,33 @@ class PublicClient:
                             # 即使有公网地址，也需要确保 tunnel 正在运行
                             if not self.tunnel_active:
                                 print("🔄 Tunnel 未运行，正在启动...")
-                                self.fetch_subdomain()
+                                self.fetch_subdomain(
+                                    background=background_subdomain,
+                                    timeout=20 if background_subdomain else 60,
+                                )
                         else:
                             print("💓 心跳成功，获取子域名和凭证...")
-                            self.fetch_subdomain()
-                        # 初始化照片索引
-                        index_info = self.init_photo_index()
-                        if index_info and index_info.get("first_time"):
-                            # 首次建立索引，后台执行
-                            import threading
+                            self.fetch_subdomain(
+                                background=background_subdomain,
+                                timeout=20 if background_subdomain else 60,
+                            )
+                        if auto_build_index:
+                            # 初始化照片索引
+                            index_info = self.init_photo_index()
+                            if index_info and index_info.get("first_time"):
+                                # 首次建立索引，后台执行
+                                import threading
 
-                            def async_build():
-                                self.build_photo_index()
+                                def async_build():
+                                    self.build_photo_index()
 
-                            threading.Thread(target=async_build, daemon=True).start()
+                                threading.Thread(target=async_build, daemon=True).start()
                 else:
                     # 注册新客户端
-                    self.register_client()
+                    self.register_client(
+                        background_subdomain=background_subdomain,
+                        auto_build_index=auto_build_index,
+                    )
             else:
                 print(f"⚠ 服务端响应异常: {response.status_code}")
                 logger.warning(f"服务端响应异常: {response.status_code}")
@@ -1561,7 +1602,7 @@ class PublicClient:
         global LOCAL_MODE
         LOCAL_MODE = True
 
-    def register_client(self):
+    def register_client(self, background_subdomain=False, auto_build_index=True):
         """注册客户端"""
         print("📝 注册新客户端到公网服务端...")
 
@@ -1605,18 +1646,22 @@ class PublicClient:
                         f"注册成功: client_id={self.client_id}, is_paid={self.is_paid}"
                     )
 
-                    self.fetch_subdomain()
                     self.save_config()
-                    # 初始化照片索引
-                    index_info = self.init_photo_index()
-                    if index_info and index_info.get("first_time"):
-                        # 首次建立索引，后台执行
-                        import threading
+                    self.fetch_subdomain(
+                        background=background_subdomain,
+                        timeout=20 if background_subdomain else 60,
+                    )
+                    if auto_build_index:
+                        # 初始化照片索引
+                        index_info = self.init_photo_index()
+                        if index_info and index_info.get("first_time"):
+                            # 首次建立索引，后台执行
+                            import threading
 
-                        def async_build():
-                            self.build_photo_index()
+                            def async_build():
+                                self.build_photo_index()
 
-                        threading.Thread(target=async_build, daemon=True).start()
+                            threading.Thread(target=async_build, daemon=True).start()
                 else:
                     print(f"❌ 注册失败: {data.get('message')}")
                     logger.error(f"注册失败: {data.get('message')}")
@@ -1629,7 +1674,7 @@ class PublicClient:
             logger.error(f"注册错误: {e}")
             self._enter_local_mode(f"注册失败: {e}")
 
-    def fetch_subdomain(self):
+    def fetch_subdomain(self, background=False, timeout=60):
         """获取子域名并启动 Cloudflare Tunnel"""
         if not self.client_id:
             return
@@ -1644,7 +1689,7 @@ class PublicClient:
                     "POST",
                     f"{self.server_url}/czrz/cloudflare/credentials",
                     json={"client_id": self.client_id},
-                    timeout=60,
+                    timeout=timeout,
                 )
 
                 if response.status_code == 200:
@@ -1663,7 +1708,9 @@ class PublicClient:
                         credentials = data.get("credentials", {})
                         if credentials:
                             self.save_credentials(credentials, self.subdomain)
-                            self.start_cloudflare_tunnel(credentials)
+                            self._pending_tunnel_credentials = credentials
+                            if not self._start_pending_tunnel_if_ready():
+                                print("⏳ Tunnel 将在本地服务就绪后自动启动...")
                         return True
                     else:
                         print(f"⚠ 获取子域名失败: {data.get('message')}")
@@ -1677,6 +1724,14 @@ class PublicClient:
                 logger.error(f"获取子域名错误: {e}")
 
             return False
+
+        if background:
+            thread = threading.Thread(
+                target=lambda: self.fetch_subdomain(background=False, timeout=timeout),
+                daemon=True,
+            )
+            thread.start()
+            return
 
         # 先尝试一次
         if do_fetch():
@@ -1698,7 +1753,7 @@ class PublicClient:
         thread = threading.Thread(target=retry_task, daemon=True)
         thread.start()
 
-    def fetch_subdomain_only(self):
+    def fetch_subdomain_only(self, background=False, timeout=60):
         """获取子域名信息但不启动 Tunnel（Tunnel 在 Flask 启动后启动）
 
         优先级：
@@ -1724,51 +1779,61 @@ class PublicClient:
                 print(f"✅ 使用本地凭证启动 Tunnel")
                 print(f"🌐 子域名: {self.subdomain}")
                 logger.info(f"使用本地凭证: {tunnel_id[:8]}...")
+                self._start_pending_tunnel_if_ready()
                 return
 
-        # 2. 本地凭证不存在，从服务端获取
-        print("🔑 获取子域名...")
-        logger.info("获取子域名...")
+        def do_fetch():
+            # 2. 本地凭证不存在，从服务端获取
+            print("🔑 获取子域名...")
+            logger.info("获取子域名...")
 
-        try:
-            response = self.signed_request(
-                "POST",
-                f"{self.server_url}/czrz/cloudflare/credentials",
-                json={"client_id": self.client_id},
-                timeout=60,
-            )
+            try:
+                response = self.signed_request(
+                    "POST",
+                    f"{self.server_url}/czrz/cloudflare/credentials",
+                    json={"client_id": self.client_id},
+                    timeout=timeout,
+                )
 
-            if response.status_code == 200:
-                data = response.json()
-                if data.get("success"):
-                    client_info = data.get("client_info", {})
-                    self.subdomain = client_info.get("subdomain") or ""
-                    self.public_url = client_info.get("public_url") or ""
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get("success"):
+                        client_info = data.get("client_info", {})
+                        self.subdomain = client_info.get("subdomain") or ""
+                        self.public_url = client_info.get("public_url") or ""
 
-                    print(f"🎉 子域名获取成功!")
-                    print(f"🌐 您的子域名: {self.subdomain}")
-                    logger.info(f"子域名获取成功: {self.subdomain}")
+                        print(f"🎉 子域名获取成功!")
+                        print(f"🌐 您的子域名: {self.subdomain}")
+                        logger.info(f"子域名获取成功: {self.subdomain}")
 
-                    # 保存凭证到本地
-                    credentials = data.get("credentials", {})
-                    if credentials:
-                        # 保存凭证和子域名到本地
-                        self.save_credentials(credentials, self.subdomain)
-                        self._pending_tunnel_credentials = credentials
-                        print("⏳ Tunnel 将在服务启动后自动启动...")
+                        # 保存凭证到本地
+                        credentials = data.get("credentials", {})
+                        if credentials:
+                            # 保存凭证和子域名到本地
+                            self.save_credentials(credentials, self.subdomain)
+                            self._pending_tunnel_credentials = credentials
+                            if not self._start_pending_tunnel_if_ready():
+                                print("⏳ Tunnel 将在服务启动后自动启动...")
+                    else:
+                        print(f"⚠ 获取子域名失败: {data.get('message')}")
+                        logger.warning(f"获取子域名失败: {data.get('message')}")
                 else:
-                    print(f"⚠ 获取子域名失败: {data.get('message')}")
-                    logger.warning(f"获取子域名失败: {data.get('message')}")
-            else:
-                print(f"⚠ 子域名请求失败: {response.status_code}")
-                logger.warning(f"子域名请求失败: {response.status_code}")
-                # 如果是 5xx 错误，可能是服务端 tunnel 还没就绪，稍后重试
-                if response.status_code >= 500:
-                    self._retry_fetch_subdomain()
+                    print(f"⚠ 子域名请求失败: {response.status_code}")
+                    logger.warning(f"子域名请求失败: {response.status_code}")
+                    # 如果是 5xx 错误，可能是服务端 tunnel 还没就绪，稍后重试
+                    if response.status_code >= 500:
+                        self._retry_fetch_subdomain()
 
-        except Exception as e:
-            print(f"⚠ 获取子域名错误: {e}")
-            logger.error(f"获取子域名错误: {e}")
+            except Exception as e:
+                print(f"⚠ 获取子域名错误: {e}")
+                logger.error(f"获取子域名错误: {e}")
+
+        if background:
+            thread = threading.Thread(target=do_fetch, daemon=True)
+            thread.start()
+            return
+
+        do_fetch()
 
     def _retry_fetch_subdomain(self):
         """在后台线程中延迟重试获取子域名"""
@@ -2932,7 +2997,10 @@ def api_setup():
         is_first_registration = not public_client.client_id
         if is_first_registration:
             print("🚀 首次设置完成，正在注册到服务端...")
-            public_client.connect_to_public_server()
+            public_client.connect_to_public_server(
+                background_subdomain=True,
+                auto_build_index=False,
+            )
 
         # 检查索引状态
         index_info = public_client.init_photo_index()
@@ -2955,12 +3023,56 @@ def api_setup():
 @app.route("/api/photo-index/build", methods=["POST"])
 @require_local_or_password
 def build_photo_index_api():
-    """执行照片索引建立（首次）"""
+    """执行照片索引建立（首次，后台执行）"""
     try:
-        result = public_client.build_photo_index()
-        return jsonify(result)
+        global scan_progress
+
+        if scan_progress["running"]:
+            return jsonify(
+                {
+                    "success": True,
+                    "started": False,
+                    "message": "索引建立已在进行中",
+                }
+            )
+
+        media_folders = getattr(public_client, "media_folders", [])
+        if not media_folders:
+            return jsonify({"success": False, "error": "未配置媒体文件夹"})
+
+        start_date = getattr(public_client, "index_after_date", "") or None
+        scan_progress = {
+            "running": True,
+            "current": 0,
+            "total": 0,
+            "message": "正在准备创建索引...",
+            "result": None,
+        }
+
+        thread = threading.Thread(
+            target=run_scan_in_background,
+            args=(media_folders, public_client.data_dir, start_date, None),
+            daemon=True,
+        )
+        thread.start()
+
+        return jsonify(
+            {
+                "success": True,
+                "started": True,
+                "message": "索引建立已开始",
+            }
+        )
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
+
+
+@app.route("/api/photo-index/progress", methods=["GET"])
+@require_local_or_password
+def get_photo_index_progress():
+    """获取首次索引建立进度"""
+    global scan_progress
+    return jsonify(scan_progress)
 
 
 @app.route("/api/settings/verify", methods=["POST"])
@@ -3040,6 +3152,55 @@ def get_family_share_text():
                 "text": text,
                 "url": share_url,
                 "family_code": family_code,
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/settings/restart", methods=["POST"])
+@require_local_or_password
+def restart_client_service_api():
+    """后台触发客户端重启：仅重启当前客户端与其 tunnel，不影响服务端"""
+    try:
+        base_dir = Path(__file__).resolve().parent
+        restart_log = base_dir / "restart_client_from_web.log"
+
+        import subprocess
+
+        # 只处理客户端：清理旧客户端进程与客户端 cloudflared，然后拉起新客户端进程。
+        # 延迟1秒启动，确保当前请求先返回给前端。
+        cmd = (
+            f"sleep 1; "
+            f"cd '{base_dir}' && "
+            f"echo \"[$(date '+%F %T')] web restart requested\" >> '{restart_log}'; "
+            f"pkill -9 -f 'python.*client_public_final.py' 2>/dev/null || true; "
+            "for pid in $(pgrep -u \"$(id -u)\" cloudflared 2>/dev/null || true); do "
+            "  CMDLINE=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\\0' ' ' || true); "
+            "  if echo \"$CMDLINE\" | grep -qE 'cloudflared_combined|cloudflared_lab|cloudflared_config|xiaohexia|tunnel_config'; then "
+            "    continue; "
+            "  fi; "
+            "  kill -9 $pid 2>/dev/null || true; "
+            "done; "
+            "for port in {3000..3010}; do "
+            "  PIDS=$(lsof -ti :$port 2>/dev/null || true); "
+            "  if [ -n \"$PIDS\" ]; then echo \"$PIDS\" | xargs kill -9 2>/dev/null || true; fi; "
+            "done; "
+            "if [ -d venv ]; then source venv/bin/activate || true; fi; "
+            "nohup python client_public_final.py > client_service.log 2>&1 &"
+        )
+        subprocess.Popen(
+            ["bash", "-lc", cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "客户端重启任务已启动（仅当前客户端）",
+                "log_file": str(restart_log),
             }
         )
     except Exception as e:
@@ -9560,7 +9721,7 @@ if __name__ == "__main__":
         if not public_client.is_first_run():
             # 获取子域名但不启动 tunnel（tunnel 在 Flask 启动后启动）
             if public_client.client_id:
-                public_client.fetch_subdomain_only()
+                public_client.fetch_subdomain_only(background=True, timeout=20)
 
         if public_client.public_url:
             print(f"🔗 公网访问: {public_client.public_url}")
@@ -9637,15 +9798,13 @@ if __name__ == "__main__":
                     pass
                 time.sleep(0.1)
 
-            # 启动 Tunnel
-            if public_client._pending_tunnel_credentials:
-                time.sleep(0.5)  # 再等一下确保 Flask 完全就绪
-                public_client.start_cloudflare_tunnel(
-                    public_client._pending_tunnel_credentials
-                )
-                public_client._pending_tunnel_credentials = None
+            # 等待凭证到位后再启动 Tunnel（兼容后台异步获取凭证）
+            for _ in range(120):  # 最多再等 60 秒
+                if public_client._start_pending_tunnel_if_ready():
+                    return
+                time.sleep(0.5)
 
-        if public_client._pending_tunnel_credentials:
+        if public_client.client_id:
             tunnel_thread = threading.Thread(
                 target=start_tunnel_after_flask, daemon=True
             )

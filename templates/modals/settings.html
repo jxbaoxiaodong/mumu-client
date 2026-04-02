@@ -419,7 +419,7 @@
                         <button class="btn btn-warning" id="restartClientBtn" onclick="restartClient()">
                             <i class="fas fa-redo me-2"></i>重启客户端
                         </button>
-                        <small class="text-muted text-center mt-1">停止并重新启动客户端和Tunnel服务</small>
+                        <small class="text-muted text-center mt-1">仅重启本机客户端和Tunnel，不影响服务端</small>
                     </div>
 
                     <!-- 保存按钮 -->
@@ -1042,7 +1042,7 @@ function pollScanProgress() {
 
 // 重启客户端
 function restartClient() {
-    if (!confirm('确定要重启客户端服务吗？这将停止当前进程并重新启动。')) {
+    if (!confirm('确定要重启当前客户端吗？不会重启服务端。')) {
         return;
     }
     
