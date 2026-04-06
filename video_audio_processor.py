@@ -3,8 +3,6 @@
 从视频中提取语音，进行语音识别，用于分析宝宝语言能力
 """
 
-import os
-import io
 import json
 import base64
 import hashlib
@@ -13,11 +11,62 @@ import time
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Any
 
 import requests
 
 requests.Session.trust_env = False
+
+
+def _safe_json_response(resp, context: str) -> Dict[str, Any]:
+    try:
+        return resp.json()
+    except ValueError:
+        snippet = (resp.text or "").strip().replace("\n", " ")[:160]
+        if resp.status_code >= 500:
+            raise Exception(f"{context}服务端错误: HTTP {resp.status_code}")
+        raise Exception(
+            f"{context}返回非JSON响应: HTTP {resp.status_code}"
+            + (f" {snippet}" if snippet else "")
+        )
+
+
+def _post_proxy_json(
+    url: str,
+    body_str: str,
+    headers: Dict[str, str],
+    *,
+    timeout: int,
+    context: str,
+    retries: int = 2,
+) -> Dict[str, Any]:
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(
+                url,
+                data=body_str.encode("utf-8"),
+                headers=headers,
+                timeout=timeout,
+                verify=False,
+            )
+        except requests.exceptions.RequestException as e:
+            last_error = f"{context}请求失败: {e}"
+            if attempt < retries:
+                time.sleep(1 + attempt)
+                continue
+            raise Exception(last_error)
+
+        if resp.status_code in {502, 503, 504}:
+            last_error = f"{context}服务端错误: HTTP {resp.status_code}"
+            if attempt < retries:
+                time.sleep(1 + attempt)
+                continue
+            raise Exception(last_error)
+
+        return _safe_json_response(resp, context)
+
+    raise Exception(last_error or f"{context}请求失败")
 
 
 def create_signature(secret_key, method, path, timestamp, body=""):
@@ -79,7 +128,11 @@ def transcribe_via_proxy(
             "audio_base64": audio_base64,
             "operation": "speech_recognition",
         }
-        body_str = json.dumps(request_body)
+        body_str = json.dumps(
+            request_body,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         headers = {"Content-Type": "application/json", "User-Agent": "CZRZ-Client/2.0"}
         path = "/czrz/ai/proxy/speech"
 
@@ -88,18 +141,13 @@ def transcribe_via_proxy(
                 headers, client_id, secret_key, "POST", path, body_str
             )
 
-        resp = requests.post(
+        return _post_proxy_json(
             f"{server_url}/czrz/ai/proxy/speech",
-            json=request_body,
-            headers=headers,
+            body_str,
+            headers,
             timeout=300,
-            verify=False,
+            context="语音代理",
         )
-
-        if resp.status_code == 200:
-            return resp.json()
-        else:
-            return {"success": False, "error": f"服务端错误: {resp.status_code}"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -166,7 +214,11 @@ def analyze_language_via_proxy(
             "max_tokens": 500,
             "operation": "language_analysis",
         }
-        body_str = json.dumps(request_body)
+        body_str = json.dumps(
+            request_body,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         headers = {"Content-Type": "application/json", "User-Agent": "CZRZ-Client/2.0"}
         path = "/czrz/ai/proxy/text"
 
@@ -175,44 +227,32 @@ def analyze_language_via_proxy(
                 headers, client_id, secret_key, "POST", path, body_str
             )
 
-        resp = requests.post(
+        data = _post_proxy_json(
             f"{server_url}/czrz/ai/proxy/text",
-            json=request_body,
-            headers=headers,
+            body_str,
+            headers,
             timeout=180,
-            verify=False,
+            context="文本代理",
         )
+        if data.get("success"):
+            content = data.get("result", {}).get("content", "")
+            try:
+                analysis = json.loads(content)
+            except json.JSONDecodeError:
+                import re
 
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success"):
-                content = data.get("result", {}).get("content", "")
-                try:
-                    analysis = json.loads(content)
-                except json.JSONDecodeError:
-                    import re
-
-                    match = re.search(r"\{[\s\S]*\}", content)
-                    if match:
-                        analysis = json.loads(match.group())
-                    else:
-                        analysis = {
-                            "vocabulary_level": "解析失败",
-                            "sentence_complexity": "解析失败",
-                            "pronunciation": "解析失败",
-                            "expression": "解析失败",
-                            "tags": [],
-                        }
-                return analysis
-            else:
-                return {
-                    "vocabulary_level": "分析失败",
-                    "sentence_complexity": "分析失败",
-                    "pronunciation": "分析失败",
-                    "expression": "分析失败",
-                    "tags": [],
-                    "error": data.get("error", "未知错误"),
-                }
+                match = re.search(r"\{[\s\S]*\}", content)
+                if match:
+                    analysis = json.loads(match.group())
+                else:
+                    analysis = {
+                        "vocabulary_level": "解析失败",
+                        "sentence_complexity": "解析失败",
+                        "pronunciation": "解析失败",
+                        "expression": "解析失败",
+                        "tags": [],
+                    }
+            return analysis
         else:
             return {
                 "vocabulary_level": "分析失败",
@@ -220,7 +260,7 @@ def analyze_language_via_proxy(
                 "pronunciation": "分析失败",
                 "expression": "分析失败",
                 "tags": [],
-                "error": f"服务端错误: {resp.status_code}",
+                "error": data.get("message") or data.get("error", "未知错误"),
             }
     except Exception as e:
         return {
@@ -332,136 +372,6 @@ def audio_to_base64(audio_path: Path) -> str:
     """将音频文件转换为 Base64 编码"""
     with open(audio_path, "rb") as f:
         return base64.b64encode(f.read()).decode()
-
-
-def transcribe_audio_realtime(
-    audio_path: Path, api_key: str, model: str = "paraformer-realtime-v2"
-) -> Dict[str, Any]:
-    """
-    调用阿里云 DashScope 实时语音识别 API（WebSocket方式）
-
-    Args:
-        audio_path: 音频文件路径
-        api_key: DashScope API 密钥
-        model: 模型名称（paraformer-realtime-v2）
-
-    Returns:
-        识别结果 {"text": str, "usage": dict}
-    """
-    import dashscope
-    from dashscope.audio.asr import Recognition, RecognitionCallback, RecognitionResult
-
-    dashscope.api_key = api_key
-
-    result_text = []
-    result_usage = {}
-    error_msg = None
-
-    class Callback(RecognitionCallback):
-        def on_event(self, result: RecognitionResult) -> None:
-            sentence = result.get_sentence()
-            if "text" in sentence:
-                result_text.append(sentence["text"])
-            if result.is_sentence_end():
-                usage = result.get_usage(sentence)
-                if usage:
-                    result_usage.update(usage)
-
-        def on_complete(self) -> None:
-            pass
-
-        def on_error(self, result) -> None:
-            nonlocal error_msg
-            error_msg = result.message if hasattr(result, "message") else str(result)
-
-    callback = Callback()
-
-    recognition = Recognition(
-        model=model,
-        format="wav",
-        sample_rate=48000,
-        callback=callback,
-    )
-
-    try:
-        recognition.start()
-
-        # 等待 WebSocket 连接建立
-        import time
-
-        time.sleep(0.5)
-
-        with open(audio_path, "rb") as f:
-            audio_data = f.read()
-
-        # 跳过 WAV 文件头（44字节）
-        header_size = 44
-        if len(audio_data) > header_size and audio_data[:4] == b"RIFF":
-            audio_data = audio_data[header_size:]
-
-        chunk_size = 3200
-        offset = 0
-        while offset < len(audio_data):
-            chunk = audio_data[offset : offset + chunk_size]
-            try:
-                recognition.send_audio_frame(chunk)
-            except Exception as send_err:
-                # 发送失败可能是连接断开
-                if "stopped" in str(send_err).lower():
-                    break
-                raise
-            offset += chunk_size
-            time.sleep(0.01)
-
-        recognition.stop()
-
-    except Exception as e:
-        raise Exception(f"实时语音识别失败: {e}")
-
-    if error_msg:
-        raise Exception(f"语音识别错误: {error_msg}")
-
-    return {
-        "text": "".join(result_text),
-        "usage": result_usage,
-    }
-
-
-def transcribe_audio_dashscope(
-    audio_path: Path, api_key: str, model: str = "paraformer-realtime-v2"
-) -> Dict[str, Any]:
-    """
-    调用阿里云 DashScope 实时语音识别 API
-
-    Args:
-        audio_path: 音频文件路径
-        api_key: DashScope API 密钥
-        model: 模型名称（paraformer-realtime-v2）
-
-    Returns:
-        识别结果
-    """
-    return transcribe_audio_realtime(audio_path, api_key, model)
-
-
-def transcribe_audio(
-    audio_path: Path, api_key: str, base_url: str, model: str
-) -> Dict[str, Any]:
-    """
-    调用语音识别 API（默认使用 DashScope 实时语音识别）
-
-    Args:
-        audio_path: 音频文件路径
-        api_key: API 密钥
-        base_url: API 基础地址（未使用）
-        model: 模型名称
-
-    Returns:
-        识别结果
-    """
-    return transcribe_audio_realtime(
-        audio_path, api_key, model or "paraformer-realtime-v2"
-    )
 
 
 def process_video_speech(video_path: Path, max_duration: int = 60) -> Dict[str, Any]:

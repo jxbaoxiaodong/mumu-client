@@ -5,13 +5,8 @@
 """
 
 import sys
-import os
 from pathlib import Path
 
-# 添加当前目录到路径
-sys.path.insert(0, str(Path(__file__).parent))
-
-from server_public import get_weather, load_api_config, load_clients
 from database import list_news
 from datetime import datetime
 import requests as req
@@ -19,11 +14,8 @@ import uuid
 
 
 def get_data_dir():
-    """获取数据目录（兼容 PyInstaller 和普通运行）"""
-    if hasattr(sys, "_MEIPASS"):
-        data_dir = Path.home() / "Documents" / "CZRZ" / "data"
-    else:
-        data_dir = Path(__file__).parent / "data"
+    """获取数据目录（服务端固定使用项目 data 目录）"""
+    data_dir = Path(__file__).parent / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir
 
@@ -91,14 +83,6 @@ def select_warm_news(news_list, count=2):
     return warm_news[:count]
 
 
-def generate_baby_log(city="北京", baby_name="宝宝") -> str:
-    """
-    生成宝宝成长日志（基础版）
-    结合日期、天气、新闻，调用AI生成温馨内容
-    """
-    return generate_baby_log_enhanced(city, baby_name, True, None, None)
-
-
 def generate_baby_log_enhanced(
     city: str = "北京",
     baby_name: str = "宝宝",
@@ -120,7 +104,7 @@ def generate_baby_log_enhanced(
         log_style: 日志风格（简练/诗意/东北腔/详细/童趣/深情/IT男风格）
     """
     style_instructions = {
-        "简练": "用简洁明了的语言，像日常记录，100字左右",
+        "简练": "用温馨平淡、像真人随手记下生活的口吻来写，克制自然，不堆砌辞藻，少用感叹词和语气词，120字左右",
         "诗意": "用文艺清新的语言，可以加入诗意的比喻，150字左右",
         "东北腔": "用东北话的口吻写，幽默风趣，可以说'这孩子咋这么招人稀罕'、'杠杠的'等，100字左右",
         "详细": "详细记录当天的活动细节，时间、地点、做了什么，200字左右",
@@ -195,15 +179,17 @@ def generate_baby_log_enhanced(
         prompt_parts.append("3. 融入家长的记录")
     if include_news:
         prompt_parts.append("4. 可以简单提及一件温暖的新闻")
-    prompt_parts.append("5. 用温暖、充满爱意的语气")
-    prompt_parts.append("6. 结尾给宝宝一句祝福")
+    prompt_parts.append("5. 语气温和、平实，像家长晚上写下的一段真实日常")
+    prompt_parts.append("6. 少用或不用感叹词、语气助词、夸张赞美")
+    prompt_parts.append("7. 不要写成模板化鸡汤，也不要像作文或营销文案")
+    prompt_parts.append("8. 结尾自然收住，不必强行升华或刻意祝福")
 
     prompt = "\n".join(prompt_parts)
 
     # 5. 调用AI生成
-    from model_config import get_text_model_config
+    from model_manager import model_manager
 
-    text_config = get_text_model_config()
+    text_config = model_manager.get_text_config()
     ai_token = text_config.get("api_token", "")
     ai_url = text_config.get("api_url", "")
     ai_model = text_config.get("model_name", "")
@@ -286,23 +272,6 @@ def get_weather_sync(city="北京"):
     }
 
 
-def save_baby_log(client_id: str, baby_name: str, log_content: str):
-    """保存宝宝日志到文件（按客户端分离）"""
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = DATA_DIR / "baby_logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # 按客户端ID保存
-    log_file = log_dir / f"{today}_{client_id}.txt"
-    with open(log_file, "w", encoding="utf-8") as f:
-        f.write(f"# {baby_name}的成长日志\n")
-        f.write(f"# 生成时间: {datetime.now().isoformat()}\n")
-        f.write("-" * 50 + "\n\n")
-        f.write(log_content)
-
-    return str(log_file)
-
-
 def add_notification(
     client_id: str, title: str, message: str, notification_type: str = "info"
 ):
@@ -340,179 +309,3 @@ def add_notification(
         json.dump(all_notifications, f, indent=2, ensure_ascii=False)
 
     return notification
-
-
-def has_today_log(client_id: str) -> bool:
-    """检查今天是否已经生成过日志（按客户端）"""
-    today = datetime.now().strftime("%Y-%m-%d")
-    log_dir = DATA_DIR / "baby_logs"
-    log_file = log_dir / f"{today}_{client_id}.txt"
-    manual_marker = log_dir / f"{today}_{client_id}.manual"
-
-    # 检查是否有日志文件，或者手动生成的标记
-    has_auto = log_file.exists() and log_file.stat().st_size > 10
-    has_manual = manual_marker.exists()
-
-    return has_auto or has_manual
-
-
-def generate_log_for_client(client_id: str, client_info: dict, force: bool = False):
-    """为单个客户端生成日志"""
-    baby_name = client_info.get("baby_name", "宝宝")
-    user_city = client_info.get("user_city")
-
-    # 检查今天是否已生成
-    if not force and has_today_log(client_id):
-        print(f"  ⏭️ {baby_name}: 今日日志已存在，跳过")
-        return True
-
-    # 确定城市：优先使用用户选择的，否则用IP定位
-    city = user_city if user_city else "北京"
-
-    print(f"  📝 为 {baby_name} 生成日志（城市: {city}）...")
-
-    try:
-        # 尝试获取今日照片（使用AI智能选择和内容分析）
-        photo_description = None
-        try:
-            from photo_manager import PhotoManager
-            from select_best_photo import select_best_from_list, analyze_photo_content
-
-            # 获取客户端媒体文件夹
-            media_folders = client_info.get("media_folders", [])
-            if media_folders:
-                pm = PhotoManager(media_folders)
-                today = datetime.now().strftime("%Y-%m-%d")
-                today_photos = pm.get_photos_by_date(today)
-
-                if today_photos:
-                    print(f"    📸 今日共有 {len(today_photos)} 张照片")
-
-                    # 获取照片完整路径
-                    photo_paths = [p.get("path") for p in today_photos if p.get("path")]
-
-                    if photo_paths:
-                        # 使用AI选择最佳照片
-                        print(f"    🤖 AI正在选择最佳照片...")
-                        best_photos = select_best_from_list(photo_paths, select_n=1)
-
-                        if best_photos:
-                            best_photo_path = best_photos[0]
-                            photo_filename = os.path.basename(best_photo_path)
-                            print(f"    ✅ 选中照片: {photo_filename}")
-
-                            # 使用AI分析照片内容
-                            print(f"    🔍 AI正在分析照片内容...")
-                            ai_description = analyze_photo_content(best_photo_path)
-
-                            if ai_description:
-                                photo_description = (
-                                    f"今天拍了一张照片：{ai_description}"
-                                )
-                                print(f"    📝 照片描述: {ai_description[:50]}...")
-                            else:
-                                # AI分析失败，使用基础描述
-                                try:
-                                    time_part = (
-                                        photo_filename.split("_")[1]
-                                        if "_" in photo_filename
-                                        else ""
-                                    )
-                                    if len(time_part) >= 4:
-                                        photo_time = f"{time_part[:2]}:{time_part[2:4]}"
-                                        photo_description = (
-                                            f"今天{photo_time}拍了一张可爱的照片"
-                                        )
-                                    else:
-                                        photo_description = "今天拍了一张可爱的照片"
-                                except:
-                                    photo_description = "今天拍了一张可爱的照片"
-                        else:
-                            print(f"    ⚠️ 照片选择失败，使用第一张")
-                            photo_filename = today_photos[0].get("filename", "")
-                            photo_description = "今天拍了一张可爱的照片"
-        except Exception as e:
-            print(f"    ⚠️ 获取/分析照片失败: {e}")
-
-        # 生成日志（使用增强版）
-        log_content = generate_baby_log_enhanced(
-            city=city,
-            baby_name=baby_name,
-            include_news=True,
-            user_note=None,
-            photo_description=photo_description,
-        )
-
-        log_file = save_baby_log(client_id, baby_name, log_content)
-
-        # 添加推送通知
-        weather_info = get_weather_sync(city)
-        weather_text = f"{city}天气{weather_info['weather']}，" if weather_info else ""
-        add_notification(
-            client_id=client_id,
-            title=f"{baby_name}的今日成长日志已生成",
-            message=f"今天是{datetime.now().strftime('%Y年%m月%d日')}，{weather_text}点击查看{baby_name}的今日成长记录！",
-            notification_type="log",
-        )
-
-        print(f"  ✅ {baby_name}: 日志已保存并推送通知")
-        return True
-    except Exception as e:
-        print(f"  ❌ {baby_name}: 生成失败 - {e}")
-        return False
-
-
-def main(force: bool = False):
-    """
-    主函数 - 为所有客户端生成个性化日志
-
-    Args:
-        force: 是否强制重新生成（即使今天已生成过）
-    """
-    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 开始生成宝宝成长日志...")
-    print("=" * 60)
-
-    # 加载所有客户端
-    clients = load_clients()
-
-    if not clients:
-        print("⚠️ 没有注册的客户端")
-        return True
-
-    print(f"📊 共 {len(clients)} 个客户端需要生成日志\n")
-
-    success_count = 0
-    skip_count = 0
-    fail_count = 0
-
-    for client_id, client_info in clients.items():
-        if not client_info.get("enabled", True):
-            print(f"  ⏭️ 客户端 {client_id[:8]}...: 已禁用，跳过")
-            skip_count += 1
-            continue
-
-        result = generate_log_for_client(client_id, client_info, force)
-        if result:
-            if has_today_log(client_id) and not force:
-                skip_count += 1
-            else:
-                success_count += 1
-        else:
-            fail_count += 1
-
-    print("\n" + "=" * 60)
-    print(f"✅ 成功: {success_count} | ⏭️ 跳过: {skip_count} | ❌ 失败: {fail_count}")
-    print("=" * 60 + "\n")
-
-    return fail_count == 0
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--force", action="store_true", help="强制重新生成")
-    args = parser.parse_args()
-
-    success = main(force=args.force)
-    sys.exit(0 if success else 1)

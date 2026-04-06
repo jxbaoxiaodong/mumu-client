@@ -30,7 +30,7 @@
                             <div class="d-flex align-items-center">
                                 <div class="me-4">
                                     <div class="avatar-upload" onclick="document.getElementById('avatarInput').click()">
-                                        <img id="avatarPreview" src="/static/images/default-avatar.png" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                        <img id="avatarPreview" src="/api/default-avatar" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
                                         <div class="avatar-overlay">
                                             <i class="fas fa-camera"></i>
                                         </div>
@@ -162,23 +162,23 @@
                             </div>
                         </div>
                         
-                        <!-- 管理密码（家庭码） -->
+                        <!-- 家庭码 -->
                         <div class="mb-4">
                             <label class="form-label fw-bold">
-                                <i class="fas fa-lock me-2 text-primary"></i>管理密码（家庭码）*
+                                <i class="fas fa-lock me-2 text-primary"></i>家庭码 *
                             </label>
                             <input type="password" class="form-control" id="adminPassword" 
                                    placeholder="设置家庭码" required>
                             <div class="form-text">远程访问首次需要输入一次家庭码，之后会自动记住</div>
                         </div>
                         
-                        <!-- 确认密码 -->
+                        <!-- 确认家庭码 -->
                         <div class="mb-4">
                             <label class="form-label fw-bold">
-                                <i class="fas fa-lock me-2 text-primary"></i>确认密码 *
+                                <i class="fas fa-lock me-2 text-primary"></i>确认家庭码 *
                             </label>
-                            <input type="password" class="form-control" id="confirmPassword" 
-                                   placeholder="再次输入密码" required>
+                            <input type="password" class="form-control" id="confirmFamilyCode" 
+                                   placeholder="再次输入家庭码" required>
                         </div>
                         
                         <!-- 提交按钮 -->
@@ -425,7 +425,7 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
     const province = document.getElementById('province').value.trim();
     const city = document.getElementById('city').value.trim();
     const password = document.getElementById('adminPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
+    const confirmFamilyCode = document.getElementById('confirmFamilyCode').value;
     const avatarFile = document.getElementById('avatarInput').files[0];
     const networkType = (document.querySelector('input[name="networkType"]:checked') && document.querySelector('input[name="networkType"]:checked').value) || 'local';
 
@@ -467,12 +467,12 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
     }
     
     if (!password) {
-        showNotification('请设置管理密码', 'error');
+        showNotification('请设置家庭码', 'error');
         return;
     }
     
-    if (password !== confirmPassword) {
-        showNotification('两次输入的密码不一致', 'error');
+    if (password !== confirmFamilyCode) {
+        showNotification('两次输入的家庭码不一致', 'error');
         return;
     }
     
@@ -528,7 +528,7 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
             baby_birthday: babyBirthday,
             user_city: fullCity,
             media_folders: folders,
-            admin_password: password,
+            family_code: password,
             compression_settings: defaultCompression
         })
     })

@@ -19,7 +19,7 @@
 </div>
 {% endif %}
 
-<!-- 引入分享库 (本地) - 移到底部异步加载 -->
+<!-- 分享能力已改为页面内手写逻辑（navigator.share / 复制链接） -->
 <style>
 /* ===== 设计系统 ===== */
 :root {
@@ -62,6 +62,99 @@
     max-width: 720px;
     margin: 0 auto;
     width: 100%;
+}
+.story-hero-shell {
+    display: grid;
+    gap: 16px;
+}
+.story-hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(255, 214, 153, 0.92), rgba(255, 182, 193, 0.92));
+    color: #7a4a16;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+.story-hero-title {
+    font-size: 2rem;
+    line-height: 1.35;
+    color: var(--text-dark);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+.story-hero-summary {
+    color: var(--text-medium);
+    line-height: 1.9;
+    font-size: 1rem;
+}
+.story-hero-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.story-hero-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.88);
+    color: #5f6368;
+    font-size: 0.92rem;
+    font-weight: 600;
+    box-shadow: var(--shadow-soft);
+}
+.story-hero-hook {
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.82);
+    color: #495057;
+    font-weight: 600;
+    box-shadow: var(--shadow-soft);
+}
+.story-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    width: 100%;
+}
+.story-preview-card {
+    overflow: hidden;
+    border-radius: 22px;
+    background: rgba(255,255,255,0.88);
+    box-shadow: 0 18px 40px rgba(44,44,44,0.10);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+}
+.story-preview-card img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    height: auto;
+    object-fit: cover;
+    display: block;
+}
+.story-preview-copy {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px 14px;
+}
+.story-preview-label {
+    padding: 0;
+    color: #2f3142;
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
+.story-preview-caption {
+    color: #6b7280;
+    font-size: 0.82rem;
+    line-height: 1.6;
 }
 
 /* 日期头部 - 紧凑版 */
@@ -591,6 +684,137 @@
 .gallery-subtitle-uni {
     color: var(--text-light);
     font-size: 0.95rem;
+}
+
+.photo-tools {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+    flex-wrap: wrap;
+}
+
+.btn-comic-generate {
+    border: none;
+    border-radius: 999px;
+    padding: 9px 16px;
+    background: linear-gradient(135deg, #ff9a76 0%, #f86f82 100%);
+    color: white;
+    font-size: 0.92rem;
+    font-weight: 700;
+    box-shadow: 0 12px 28px rgba(248, 111, 130, 0.22);
+}
+
+.btn-comic-generate:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 30px rgba(248, 111, 130, 0.28);
+}
+
+.comic-style-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.comic-style-option {
+    width: 100%;
+    text-align: left;
+    border: 1px solid rgba(233, 215, 192, 0.9);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fffdf9 0%, #fff7ef 100%);
+    padding: 14px;
+    transition: all 0.2s ease;
+}
+
+.comic-style-option.active {
+    border-color: rgba(248, 111, 130, 0.88);
+    box-shadow: 0 12px 28px rgba(248, 111, 130, 0.14);
+    transform: translateY(-1px);
+}
+
+.comic-style-name {
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: #463c38;
+    margin-bottom: 4px;
+}
+
+.comic-style-tagline {
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: #7c6f68;
+    min-height: 2.8em;
+}
+
+.comic-style-palette {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+.comic-style-chip {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.9);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.comic-modal-note {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255, 244, 231, 0.92), rgba(255, 251, 246, 0.96));
+    color: #6e5e53;
+    font-size: 0.88rem;
+    line-height: 1.7;
+}
+
+.comic-photo-picker {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 10px;
+}
+
+.comic-photo-option {
+    position: relative;
+    border: 2px solid rgba(233, 215, 192, 0.9);
+    border-radius: 18px;
+    overflow: hidden;
+    background: #fffaf4;
+    padding: 0;
+    aspect-ratio: 1;
+    transition: all 0.2s ease;
+}
+
+.comic-photo-option.active {
+    border-color: rgba(248, 111, 130, 0.96);
+    box-shadow: 0 12px 24px rgba(248, 111, 130, 0.2);
+    transform: translateY(-1px);
+}
+
+.comic-photo-option img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.comic-photo-badge {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    padding: 4px 6px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.88);
+    color: #6a5d53;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* 照片网格 */
@@ -1386,8 +1610,7 @@
                 </button>
             </div>
             
-            {% if weather %}
-            <div class="weather-tag">
+            <div class="weather-tag" style="display: {% if weather %}inline-flex{% else %}none{% endif %};">
                 <span class="weather-icon-small">
                     {% if weather.condition and '晴' in weather.condition %}☀️
                     {% elif weather.condition and '多云' in weather.condition %}⛅
@@ -1399,12 +1622,50 @@
                 </span>
                 <span>{{ weather.city or '' }} {{ weather.temperature or '--' }}° {{ weather.condition or '' }}</span>
             </div>
-            {% endif %}
         </div>
         
         <!-- 日志内容 -->
-        <div class="journal-content-unified">
-            {% if today_log %}
+        <div class="journal-content-unified" id="journalContentUnified">
+            {% if daily_story %}
+            <div class="story-hero-shell">
+                <div class="story-hero-badge"><i class="fas fa-film"></i> 今日故事</div>
+                <div class="story-hero-title">{{ daily_story.title }}</div>
+                <div class="story-hero-summary">{{ daily_story.summary }}</div>
+                {% if daily_story.hero_archetype or daily_story.signature or daily_story.skill_progress or daily_story.gear_unlock or daily_story.fantasy_mission %}
+                <div class="story-hero-meta">
+                    {% if daily_story.hero_archetype %}
+                    <div class="story-hero-pill"><i class="fas fa-sparkles"></i>{{ daily_story.hero_archetype }}</div>
+                    {% endif %}
+                    {% if daily_story.signature %}
+                    <div class="story-hero-pill"><i class="fas fa-feather-pointed"></i>{{ daily_story.signature }}</div>
+                    {% endif %}
+                    {% if daily_story.skill_progress %}
+                    <div class="story-hero-pill"><i class="fas fa-wand-magic-sparkles"></i>{{ daily_story.skill_progress }}</div>
+                    {% endif %}
+                    {% if daily_story.gear_unlock %}
+                    <div class="story-hero-pill"><i class="fas fa-toolbox"></i>{{ daily_story.gear_unlock }}</div>
+                    {% endif %}
+                    {% if daily_story.fantasy_mission %}
+                    <div class="story-hero-pill"><i class="fas fa-compass"></i>{{ daily_story.fantasy_mission }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% if daily_story.hook %}
+                <div class="story-hero-hook">{{ daily_story.hook }}</div>
+                {% endif %}
+                <div class="journal-actions-uni">
+                    <button class="btn-action-uni btn-primary-uni" onclick="openDailyStory('{{ today }}')">
+                        <i class="fas fa-book-open"></i>看故事
+                    </button>
+                    <button class="btn-action-uni btn-secondary-uni" data-story-action-date="{{ today }}" onclick="generateDailyStory('{{ today }}', true, this)">
+                        <i class="fas fa-wand-magic-sparkles"></i>重做故事
+                    </button>
+                    <button class="btn-action-uni btn-ghost-uni" onclick="editBabyLog('{{ today }}')">
+                        <i class="fas fa-scroll"></i>原日志
+                    </button>
+                </div>
+            </div>
+            {% elif today_log %}
             <div class="journal-body-uni">
                 {{ today_log.content | replace('\n', '<br>') | e }}
             </div>
@@ -1465,7 +1726,7 @@
                     </div>
                 </div>
                 <h3 class="empty-title-uni">今天还没写日记呢</h3>
-                <p class="empty-desc-uni">让 AI 帮{{ baby_name }}写一段今天的记录吧</p>
+                <p class="empty-desc-uni">先补一条今天的记录，系统会继续从照片里挑出更适合分享的瞬间，整理进时光相册和卡片里。</p>
                 <div style="display:flex;gap:12px;justify-content:center;">
                     <button class="btn-create-uni" data-bs-toggle="modal" data-bs-target="#aiModal">
                         <i class="fas fa-wand-magic-sparkles me-2"></i>生成日记
@@ -1481,9 +1742,22 @@
     
     <!-- 右侧：相框照片 -->
     <div class="hero-right-frame">
-        <div class="today-badge" id="todayBadge" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">Today</div>
+        <div class="story-preview-grid" id="storyPreviewHero" style="display:{% if daily_story and daily_story.panels %}grid{% else %}none{% endif %};">
+            {% if daily_story and daily_story.panels %}
+            {% for panel in daily_story.panels[:4] %}
+            <div class="story-preview-card" onclick="openDailyStory('{{ today }}')">
+                <img src="{{ panel.image_url }}" alt="第{{ panel.index }}格">
+                <div class="story-preview-copy">
+                    <div class="story-preview-label">第{{ panel.index }}格 · {{ panel.title }}</div>
+                    <div class="story-preview-caption">{{ panel.caption }}</div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+        <div class="today-badge" id="todayBadge" style="display: {% if daily_story and daily_story.panels %}none{% elif today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">Today</div>
         
-        <div class="photo-frame-container">
+        <div class="photo-frame-container" id="featuredPhotoFrame" style="display:{% if daily_story and daily_story.panels %}none{% else %}block{% endif %};">
             <div class="photo-frame-inner" id="photoFrameInner" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
                 <div class="frame-photo-wrapper" id="featuredPhotoWrapper">
                     {% if featured_photo_hash %}
@@ -1492,7 +1766,7 @@
                     <img src="{{ url_for('get_photo', filename=featured_photo) }}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">
                     {% elif default_photo %}
                         {% if default_is_video %}
-                        <img src="{{ url_for('get_video_thumb', filename=default_photo) }}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='{{ url_for('static', filename='images/video-thumb.jpg') }}'">
+                        <img src="{{ url_for('get_video_thumb', filename=default_photo) }}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='/api/default-video-thumb'">
                         {% else %}
                         <img src="{{ url_for('get_photo', filename=default_photo) }}" alt="今日照片" id="featuredPhoto" style="image-orientation:from-image;">
                         {% endif %}
@@ -1516,7 +1790,7 @@
         </div>
         
         <!-- 照片操作按钮 -->
-        <div class="photo-action-buttons" id="photoActionButtons" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
+        <div class="photo-action-buttons" id="photoActionButtons" style="display: {% if daily_story and daily_story.panels %}none{% elif today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
             <button class="btn btn-sm btn-outline-primary" onclick="autoSelectFeatured()" title="AI选择最佳照片">
                 <i class="fas fa-magic"></i>
             </button>
@@ -1551,6 +1825,9 @@
             
             <!-- 照片工具按钮 -->
             <div class="photo-tools mt-3">
+                <button class="btn btn-sm btn-comic-generate" onclick="openComicGenerationModal()" title="自动选取当前页代表照片生成漫画卡">
+                    <i class="fas fa-wand-magic-sparkles me-1"></i>生成漫画
+                </button>
                 <button class="btn btn-sm btn-outline-warning" onclick="cleanupPhotos()" title="清理重复和模糊照片">
                     <i class="fas fa-broom me-1"></i>清理
                 </button>
@@ -1563,7 +1840,7 @@
             {% for photo in today_photos %}
             <div class="gallery-item-uni {% if photo.is_video %}is-video{% endif %}" data-photo-id="{{ photo.filename }}" title="{{ photo.path }}" onclick="{% if photo.is_video %}playVideo('{{ photo.filename }}'){% else %}selectAsFeatured('{{ photo.filename }}'){% endif %}">
                 {% if photo.is_video %}
-                <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" onerror="this.src='{{ url_for('static', filename='images/video-thumb.jpg') }}'">
+                <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" onerror="this.src='/api/default-video-thumb'">
                 <div class="video-play-icon">
                     <i class="fas fa-play-circle"></i>
                 </div>
@@ -1691,7 +1968,7 @@
     <div class="profile-entry-card">
         <div class="profile-entry-header">
             <div class="profile-entry-avatar" id="profileEntryAvatar">
-                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像">
+                <img src="{{ avatar_url or '/api/default-avatar' }}" alt="头像">
             </div>
             <div class="profile-entry-info" style="flex: 1; min-width: 0;">
                 <h5 id="profileEntryName" class="profile-entry-title" style="margin-bottom: 0;">加载中...</h5>
@@ -1702,27 +1979,6 @@
         </div>
     </div>
 </section>
-
-<!-- 密码验证模态框 -->
-<div class="modal fade" id="passwordVerifyModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">🔐 家庭码验证</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted small">请先完成家庭码验证。</p>
-                <input type="password" class="form-control" id="verifyPassword" placeholder="输入家庭码">
-                <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="confirmPasswordVerify()">确认</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- AI分析问答模态框 -->
 <div class="modal fade" id="aiAnalysisModal" tabindex="-1" aria-hidden="true">
@@ -1804,6 +2060,53 @@
     </div>
 </div>
 
+<div class="modal fade" id="comicGenerationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">生成漫画卡片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">选择当天照片</label>
+                    <div class="comic-photo-picker" id="comicPhotoPicker"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">风格方向</label>
+                    <div class="comic-style-grid">
+                        {% for preset in comic_style_presets %}
+                        <button type="button" class="comic-style-option {% if preset.key == 'auto' %}active{% endif %}" data-style-key="{{ preset.key }}" onclick="selectComicStyle('{{ preset.key }}')">
+                            <div class="comic-style-name">{{ preset.name }}</div>
+                            <div class="comic-style-tagline">{{ preset.tagline }}</div>
+                            {% if preset.palette %}
+                            <div class="comic-style-palette">
+                                {% for color in preset.palette[:4] %}
+                                <span class="comic-style-chip" style="background: {{ color }};"></span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label fw-semibold" for="comicCustomPrompt">自定义补充</label>
+                    <textarea class="form-control" id="comicCustomPrompt" rows="3" maxlength="140" placeholder="比如：旧胶片海报感、强调宝宝眼神里的专注、把背景做得更有晨光氛围，不写字进画面。"></textarea>
+                </div>
+                <div class="comic-modal-note" id="comicGenerationHint">
+                    系统会从当前日期已索引的照片里自动挑 1 张更适合当封面的素材，生成后直接存入漫画卡片。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="comicGenerateSubmitBtn" onclick="submitComicGeneration()">
+                    <i class="fas fa-sparkles me-1"></i>开始生成
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 
 <!-- 移动端快速操作 -->
@@ -1812,7 +2115,7 @@
         <button class="btn-quick-uni btn-quick-rose" data-bs-toggle="modal" data-bs-target="#uploadModal">
             <i class="fas fa-camera"></i>
         </button>
-        <button class="btn-quick-uni btn-quick-sage" data-bs-toggle="modal" data-bs-target="#allTagsModal">
+        <button class="btn-quick-uni btn-quick-sage" onclick="window.location.href='/cards?category=tags'">
             <i class="fas fa-tags"></i>
         </button>
     </div>
@@ -1827,6 +2130,9 @@ let currentFeaturedPhoto = '{{ featured_photo if featured_photo else "" }}';
 
 // 当前客户端ID（用于AI生成日志）
 window.currentClientId = '{{ client_id or "" }}';
+window.comicStylePresets = {{ comic_style_presets | tojson }} || [];
+let currentComicStyleKey = 'auto';
+let currentComicPhotoFilename = '';
 
 // 日历切换函数（需要在HTML使用之前定义）
 function changeDate(days) {
@@ -1865,6 +2171,149 @@ if (typeof window.calendarWeekdays === 'undefined') {
 
 function formatDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+function escapeHtml(text) {
+    return String(text == null ? '' : text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function getCurrentGalleryDate() {
+    return formatDate(window.currentCalendarDate || new Date());
+}
+
+function getCurrentGalleryPhotos() {
+    var allPhotos = [];
+    if (Array.isArray(window.cachedPhotos)) {
+        allPhotos = allPhotos.concat(window.cachedPhotos);
+    }
+    if (Array.isArray(window.currentPhotos)) {
+        allPhotos = allPhotos.concat(window.currentPhotos);
+    }
+    var seen = {};
+    return allPhotos.filter(function(photo) {
+        return photo && !photo.is_video;
+    }).filter(function(photo) {
+        if (!photo.filename || seen[photo.filename]) return false;
+        seen[photo.filename] = true;
+        return true;
+    });
+}
+
+function selectComicStyle(key) {
+    currentComicStyleKey = key || 'auto';
+    document.querySelectorAll('.comic-style-option').forEach(function(button) {
+        button.classList.toggle('active', button.dataset.styleKey === currentComicStyleKey);
+    });
+}
+
+function selectComicPhoto(filename) {
+    currentComicPhotoFilename = filename || '';
+    document.querySelectorAll('.comic-photo-option').forEach(function(button) {
+        button.classList.toggle('active', button.dataset.filename === currentComicPhotoFilename);
+    });
+}
+
+function renderComicPhotoPicker() {
+    var picker = document.getElementById('comicPhotoPicker');
+    if (!picker) return;
+
+    var photos = getCurrentGalleryPhotos();
+    if (!photos.length) {
+        picker.innerHTML = '<div class="comic-modal-note" style="grid-column:1 / -1; margin-top:0;">当前日期没有可用照片。</div>';
+        currentComicPhotoFilename = '';
+        return;
+    }
+
+    var preferred = currentComicPhotoFilename;
+    if (!preferred) {
+        preferred = currentFeaturedPhoto || '';
+    }
+    if (!preferred || !photos.some(function(photo) { return photo.filename === preferred; })) {
+        preferred = photos[0].filename;
+    }
+    currentComicPhotoFilename = preferred;
+
+    picker.innerHTML = photos.map(function(photo) {
+        var activeClass = photo.filename === currentComicPhotoFilename ? ' active' : '';
+        var badge = photo.caption || photo.filename;
+        var jsFilename = JSON.stringify(photo.filename || '');
+        return '<button type="button" class="comic-photo-option' + activeClass + '" data-filename="' + escapeHtml(photo.filename) + '" onclick=\'selectComicPhoto(' + jsFilename + ')\'>' 
+            + '<img src="/photo/thumb/' + encodeURIComponent(photo.filename) + '" alt="' + escapeHtml(badge) + '" onerror="this.src=\'/photo/' + encodeURIComponent(photo.filename) + '\'">'
+            + '<span class="comic-photo-badge">' + escapeHtml(badge) + '</span>'
+            + '</button>';
+    }).join('');
+}
+
+function openComicGenerationModal() {
+    var photos = getCurrentGalleryPhotos();
+    if (!photos.length) {
+        showNotification('当前日期还没有可用于生成漫画的已索引照片', 'warning');
+        return;
+    }
+    currentComicStyleKey = 'auto';
+    selectComicStyle('auto');
+    currentComicPhotoFilename = currentFeaturedPhoto || (photos[0] && photos[0].filename) || '';
+    renderComicPhotoPicker();
+    var promptEl = document.getElementById('comicCustomPrompt');
+    var hintEl = document.getElementById('comicGenerationHint');
+    if (promptEl) promptEl.value = '';
+    if (hintEl) {
+        hintEl.textContent = '先选 ' + getCurrentGalleryDate() + ' 这一天的一张照片，再决定风格和额外要求，生成后直接存入漫画卡片。';
+    }
+    var modalEl = document.getElementById('comicGenerationModal');
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
+
+function submitComicGeneration() {
+    var photos = getCurrentGalleryPhotos();
+    if (!photos.length) {
+        showNotification('当前日期还没有可用于生成漫画的已索引照片', 'warning');
+        return;
+    }
+    if (!currentComicPhotoFilename) {
+        showNotification('先选择一张当天照片', 'warning');
+        return;
+    }
+
+    var submitBtn = document.getElementById('comicGenerateSubmitBtn');
+    var promptEl = document.getElementById('comicCustomPrompt');
+    var originalHtml = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>生成中...';
+
+    fetch('/api/cards/comic/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            date: getCurrentGalleryDate(),
+            style_key: currentComicStyleKey || 'auto',
+            custom_prompt: promptEl ? promptEl.value.trim() : '',
+            filenames: [currentComicPhotoFilename]
+        })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (!data || !data.success) {
+            throw new Error((data && data.message) || '漫画生成失败');
+        }
+        var modal = bootstrap.Modal.getInstance(document.getElementById('comicGenerationModal'));
+        if (modal) modal.hide();
+        showNotification(data.message || '漫画卡片已生成', 'success');
+    })
+    .catch(function(err) {
+        console.error('生成漫画卡片失败:', err);
+        showNotification(err.message || '生成漫画卡片失败', 'error');
+    })
+    .finally(function() {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalHtml;
+    });
 }
 
 function updateCalendarDisplay() {
@@ -1945,8 +2394,8 @@ function updatePageWithDateData(data, dateStr) {
         weekdayEl.innerHTML = html;
     }
     
-    // 5. 更新日志内容
-    updateLogContent(data.log, data.news);
+    // 5. 更新故事 / 日志内容
+    updateLogContent(data.story, data.log, data.news);
     
     // 6. 缓存照片数据并根据当前 Tab 过滤显示
     window.cachedPhotos = data.photos || [];
@@ -1964,13 +2413,15 @@ function updatePageWithDateData(data, dateStr) {
         featured_photo: data.featured_photo,
         featured_photo_hash: data.featured_photo_hash
     });
-    updateFeaturedPhoto(data.photos, data.featured_photo, data.featured_photo_hash);
+    updateFeaturedPhoto(data.story, data.photos, data.featured_photo, data.featured_photo_hash);
     
     // 8. 更新照片数量显示
     const photoCountEl = document.querySelector('.gallery-subtitle-uni');
     if (photoCountEl && data.photos) {
         photoCountEl.textContent = `${data.photos.length} 个片段记录这天`;
     }
+
+    refreshStoryGenerationState(dateStr, data.story);
     
     // 9. 加载留言 - 使用API返回的数据（如果有），否则单独请求
     if (data.messages !== undefined) {
@@ -2002,7 +2453,7 @@ function updatePageWithDateData(data, dateStr) {
             }
         }
     } else {
-        // 兼容旧版本，单独请求留言
+        // 首屏摘要未携带留言时，再单独补一次留言请求
         loadMessages(dateStr);
     }
 }
@@ -2046,11 +2497,256 @@ function loadMessages(dateStr) {
 }
 
 // 更新日志内容
-function updateLogContent(log, news) {
+function openDailyStory(dateStr) {
+    window.location.href = '/storybook?date_from=' + encodeURIComponent(dateStr) + '&date_to=' + encodeURIComponent(dateStr);
+}
+
+function openStorybook() {
+    window.location.href = '/storybook';
+}
+
+const storyGenerationState = {};
+const storyPendingJobsKey = 'pending_story_jobs';
+
+function loadPendingStoryJobs() {
+    try {
+        const raw = localStorage.getItem(storyPendingJobsKey);
+        return raw ? JSON.parse(raw) : {};
+    } catch (err) {
+        console.error('读取故事后台任务失败:', err);
+        return {};
+    }
+}
+
+function savePendingStoryJobs(jobs) {
+    try {
+        localStorage.setItem(storyPendingJobsKey, JSON.stringify(jobs || {}));
+    } catch (err) {
+        console.error('保存故事后台任务失败:', err);
+    }
+}
+
+function markPendingStoryJob(dateStr, meta = {}) {
+    const jobs = loadPendingStoryJobs();
+    jobs[dateStr] = Object.assign({
+        date: dateStr,
+        updatedAt: new Date().toISOString()
+    }, jobs[dateStr] || {}, meta || {});
+    savePendingStoryJobs(jobs);
+}
+
+function clearPendingStoryJob(dateStr) {
+    const jobs = loadPendingStoryJobs();
+    if (!jobs[dateStr]) return;
+    delete jobs[dateStr];
+    savePendingStoryJobs(jobs);
+}
+
+function hasPendingStoryJob(dateStr) {
+    const jobs = loadPendingStoryJobs();
+    return Boolean(jobs[dateStr]);
+}
+
+function getStoryActionButtons(dateStr) {
+    return Array.from(document.querySelectorAll(`[data-story-action-date="${dateStr}"]`));
+}
+
+function setStoryButtonsBusy(dateStr, busyText) {
+    getStoryActionButtons(dateStr).forEach(function(button) {
+        if (!button.dataset.originalHtml) {
+            button.dataset.originalHtml = button.innerHTML;
+        }
+        button.disabled = true;
+        button.classList.add('disabled');
+        button.innerHTML = `<i class="fas fa-spinner fa-spin"></i>${busyText}`;
+    });
+}
+
+function restoreStoryButtons(dateStr) {
+    getStoryActionButtons(dateStr).forEach(function(button) {
+        button.disabled = false;
+        button.classList.remove('disabled');
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+        }
+    });
+}
+
+function storyStageLabel(job, fallbackText) {
+    if (!job) return fallbackText;
+    if (job.message) return job.message;
+    const stage = job.stage || '';
+    if (stage.startsWith('panel_')) return '正在绘制漫画...';
+    if (stage === 'script') return '正在编写故事...';
+    if (stage === 'materials') return '正在整理素材...';
+    return fallbackText;
+}
+
+function stopStoryPolling(dateStr) {
+    const state = storyGenerationState[dateStr];
+    if (state && state.timer) {
+        window.clearInterval(state.timer);
+    }
+    delete storyGenerationState[dateStr];
+}
+
+function pollStoryGeneration(dateStr, options = {}) {
+    const existing = storyGenerationState[dateStr] || {};
+    const preferredBusyText = options.busyText || existing.busyText || '生成中...';
+    storyGenerationState[dateStr] = Object.assign(existing, {
+        busyText: preferredBusyText
+    });
+
+    const tick = function() {
+        fetch(`/api/story/status/${dateStr}`)
+            .then(r => r.json())
+            .then(data => {
+                const job = data.job || {};
+                if (job.status === 'queued' || job.status === 'running') {
+                    markPendingStoryJob(dateStr, {
+                        status: job.status,
+                        stage: job.stage || ''
+                    });
+                    setStoryButtonsBusy(dateStr, storyStageLabel(job, preferredBusyText));
+                    return;
+                }
+                if (job.status === 'success' && data.story) {
+                    stopStoryPolling(dateStr);
+                    clearPendingStoryJob(dateStr);
+                    restoreStoryButtons(dateStr);
+                    showNotification('今日故事已生成', 'success');
+                    loadDateData(dateStr);
+                    return;
+                }
+                if (job.status === 'error') {
+                    stopStoryPolling(dateStr);
+                    clearPendingStoryJob(dateStr);
+                    restoreStoryButtons(dateStr);
+                    showNotification(job.message || '故事生成失败', 'error');
+                    return;
+                }
+                if (data.story) {
+                    stopStoryPolling(dateStr);
+                    clearPendingStoryJob(dateStr);
+                    restoreStoryButtons(dateStr);
+                    loadDateData(dateStr);
+                    return;
+                }
+                clearPendingStoryJob(dateStr);
+                restoreStoryButtons(dateStr);
+            })
+            .catch(function(err) {
+                console.error('轮询故事状态失败:', err);
+            });
+    };
+
+    tick();
+    if (!storyGenerationState[dateStr].timer) {
+        storyGenerationState[dateStr].timer = window.setInterval(tick, 3000);
+    }
+}
+
+function refreshStoryGenerationState(dateStr, story) {
+    fetch(`/api/story/status/${dateStr}`)
+        .then(r => r.json())
+        .then(data => {
+            const job = data.job || {};
+            if (job.status === 'queued' || job.status === 'running') {
+                markPendingStoryJob(dateStr, {
+                    status: job.status,
+                    stage: job.stage || ''
+                });
+                pollStoryGeneration(dateStr, {
+                    busyText: storyStageLabel(job, '生成中...')
+                });
+            } else if (job.status === 'error') {
+                clearPendingStoryJob(dateStr);
+                restoreStoryButtons(dateStr);
+            } else if (story && story.panels && story.panels.length) {
+                clearPendingStoryJob(dateStr);
+                stopStoryPolling(dateStr);
+                restoreStoryButtons(dateStr);
+            } else {
+                clearPendingStoryJob(dateStr);
+            }
+        })
+        .catch(function(err) {
+            console.error('获取故事状态失败:', err);
+        });
+}
+
+function currentStoryDateString() {
+    const params = new URLSearchParams(window.location.search || '');
+    const fromQuery = params.get('date');
+    if (fromQuery) return fromQuery;
+    if (window.currentCalendarDate && typeof formatDate === 'function') {
+        return formatDate(window.currentCalendarDate);
+    }
+    return null;
+}
+
+function bootstrapStoryGenerationState() {
+    const dateStr = currentStoryDateString();
+    if (!dateStr) return;
+    if (hasPendingStoryJob(dateStr)) {
+        setStoryButtonsBusy(dateStr, '后台生成中...');
+    }
+    refreshStoryGenerationState(dateStr, null);
+}
+
+function generateDailyStory(dateStr, regenerate = false, triggerEl = null) {
+    showNotification('四格故事已下线，请改用时光相册和漫画卡片。', 'info');
+    window.setTimeout(function() {
+        openStorybook();
+    }, 240);
+}
+
+function buildStoryContentHtml(story, dateStr) {
+    var html = '<div class="story-hero-shell">';
+    html += '<div class="story-hero-badge"><i class="fas fa-film"></i> 今日故事</div>';
+    html += '<div class="story-hero-title">' + escapeHtml(story.title || '今日故事') + '</div>';
+    html += '<div class="story-hero-summary">' + escapeHtml(story.summary || '') + '</div>';
+    if (story.hero_archetype || story.signature || story.skill_progress || story.gear_unlock || story.fantasy_mission) {
+        html += '<div class="story-hero-meta">';
+        if (story.hero_archetype) {
+            html += '<div class="story-hero-pill"><i class="fas fa-sparkles"></i>' + escapeHtml(story.hero_archetype) + '</div>';
+        }
+        if (story.signature) {
+            html += '<div class="story-hero-pill"><i class="fas fa-feather-pointed"></i>' + escapeHtml(story.signature) + '</div>';
+        }
+        if (story.skill_progress) {
+            html += '<div class="story-hero-pill"><i class="fas fa-wand-magic-sparkles"></i>' + escapeHtml(story.skill_progress) + '</div>';
+        }
+        if (story.gear_unlock) {
+            html += '<div class="story-hero-pill"><i class="fas fa-toolbox"></i>' + escapeHtml(story.gear_unlock) + '</div>';
+        }
+        if (story.fantasy_mission) {
+            html += '<div class="story-hero-pill"><i class="fas fa-compass"></i>' + escapeHtml(story.fantasy_mission) + '</div>';
+        }
+        html += '</div>';
+    }
+    if (story.hook) {
+        html += '<div class="story-hero-hook">' + escapeHtml(story.hook) + '</div>';
+    }
+    html += '<div class="journal-actions-uni">';
+    html += '<button class="btn-action-uni btn-primary-uni" onclick="openDailyStory(\'' + dateStr + '\')"><i class="fas fa-book-open"></i>看故事</button>';
+    html += '<button class="btn-action-uni btn-secondary-uni" data-story-action-date="' + escapeHtml(dateStr) + '" onclick="generateDailyStory(\'' + dateStr + '\', true, this)"><i class="fas fa-wand-magic-sparkles"></i>重做故事</button>';
+    html += '<button class="btn-action-uni btn-ghost-uni" onclick="editBabyLog(\'' + dateStr + '\')"><i class="fas fa-scroll"></i>原日志</button>';
+    html += '</div></div>';
+    return html;
+}
+
+// 更新日志内容
+function updateLogContent(story, log, news) {
     const logContainer = document.querySelector('.journal-content-unified');
     if (!logContainer) return;
     
     const dateStr = formatDate(window.currentCalendarDate);
+
+    if (story && story.panels && story.panels.length) {
+        logContainer.innerHTML = buildStoryContentHtml(story, dateStr);
+        return;
+    }
     
     if (log && log.content) {
         // 有日志内容
@@ -2129,7 +2825,7 @@ function updateLogContent(log, news) {
                     </div>
                 </div>
                 <h3 class="empty-title-uni">这天还没写日记呢</h3>
-                <p class="empty-desc-uni">让 AI 帮{{ baby_name }}写一段记录吧</p>
+                <p class="empty-desc-uni">先补一条当天记录，系统会继续从照片里筛出更适合分享的节点，整理成时光相册和卡片。</p>
                 <div style="display:flex;gap:12px;justify-content:center;">
                     <button class="btn-create-uni" onclick="regenerateLog('${formatDate(window.currentCalendarDate)}')">
                         <i class="fas fa-wand-magic-sparkles me-2"></i>生成日记
@@ -2244,7 +2940,7 @@ function updatePhotoGallery(photos, dateStr) {
         galleryGrid.innerHTML = photos.map(photo => `
             <div class="gallery-item-uni ${photo.is_video ? 'is-video' : ''}" data-photo-id="${photo.filename}" title="${photo.path || photo.filename}" onclick="${photo.is_video ? `playVideo('${photo.filename}')` : `selectAsFeatured('${photo.filename}')`}">
                 ${photo.is_video ? `
-                    <img src="/video/thumb/${photo.filename}" alt="视频" onerror="this.src='/static/images/video-thumb.jpg'">
+                    <img src="/video/thumb/${photo.filename}" alt="视频" onerror="this.src='/api/default-video-thumb'">
                     <div class="video-play-icon">
                         <i class="fas fa-play-circle"></i>
                     </div>
@@ -2293,20 +2989,48 @@ function updatePhotoGallery(photos, dateStr) {
     }
 }
 
-// 更新代表照片（大照片框）
-function updateFeaturedPhoto(photos, featuredPhoto, featuredPhotoHash) {
+// 更新主视觉（优先显示今日故事，其次是精选照片）
+function updateFeaturedPhoto(story, photos, featuredPhoto, featuredPhotoHash) {
     const featuredWrapper = document.getElementById('featuredPhotoWrapper');
     const todayBadge = document.getElementById('todayBadge');
     const photoFrameInner = document.getElementById('photoFrameInner');
     const frameEmptyState = document.getElementById('frameEmptyState');
     const photoActionButtons = document.getElementById('photoActionButtons');
+    const storyPreviewHero = document.getElementById('storyPreviewHero');
+    const featuredPhotoFrame = document.getElementById('featuredPhotoFrame');
     
     console.log('[FeaturedPhoto] updateFeaturedPhoto called:', {
         photosCount: photos && photos.length,
         featuredPhoto: featuredPhoto,
         featuredPhotoHash: featuredPhotoHash,
-        hasFeatured: !!(featuredPhotoHash || featuredPhoto)
+        hasFeatured: !!(featuredPhotoHash || featuredPhoto),
+        hasStory: !!(story && story.panels && story.panels.length)
     });
+
+    if (story && story.panels && story.panels.length) {
+        if (storyPreviewHero) {
+            storyPreviewHero.innerHTML = story.panels.slice(0, 4).map(function(panel) {
+                return '<div class="story-preview-card" onclick="openDailyStory(\'' + escapeHtml(story.date || formatDate(window.currentCalendarDate)) + '\')">'
+                    + '<img src="' + escapeHtml(panel.image_url || '') + '" alt="第' + escapeHtml(String(panel.index || '')) + '格">'
+                    + '<div class="story-preview-copy">'
+                    + '<div class="story-preview-label">第' + escapeHtml(String(panel.index || '')) + '格 · ' + escapeHtml(panel.title || '') + '</div>'
+                    + '<div class="story-preview-caption">' + escapeHtml(panel.caption || '') + '</div>'
+                    + '</div>'
+                    + '</div>';
+            }).join('');
+            storyPreviewHero.style.display = 'grid';
+        }
+        if (featuredPhotoFrame) featuredPhotoFrame.style.display = 'none';
+        if (photoActionButtons) photoActionButtons.style.display = 'none';
+        if (todayBadge) todayBadge.style.display = 'none';
+        return;
+    }
+
+    if (storyPreviewHero) {
+        storyPreviewHero.style.display = 'none';
+        storyPreviewHero.innerHTML = '';
+    }
+    if (featuredPhotoFrame) featuredPhotoFrame.style.display = 'block';
     
     // 更新 Today 徽章显示状态
     const today = new Date();
@@ -2401,7 +3125,7 @@ function updateFeaturedPhoto(photos, featuredPhoto, featuredPhotoHash) {
     if (featuredWrapper && displayPhoto) {
         const photoHash = displayPhoto.hash;
         if (isVideo) {
-            featuredWrapper.innerHTML = `<img src="/video/thumb/${displayPhoto.filename}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='/static/images/video-thumb.jpg'">`;
+            featuredWrapper.innerHTML = `<img src="/video/thumb/${displayPhoto.filename}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='/api/default-video-thumb'">`;
         } else if (photoHash) {
             featuredWrapper.innerHTML = `<img src="/photo/hash/${photoHash}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">`;
         } else {
@@ -2445,7 +3169,7 @@ function autoSelectFeatured() {
 
     showNotification('AI正在选择最佳照片...', 'info');
 
-    fetchWithPassword('/api/photo/select-best', {
+    fetchWithFamilyCode('/api/photo/select-best', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -2531,7 +3255,7 @@ function clearPhotoHighlights() {
 function removePhotosFromIndex(filenames, dateStr) {
     if (!filenames || filenames.length === 0) return;
 
-    fetchWithPassword('/api/photos/remove-from-index', {
+    fetchWithFamilyCode('/api/photos/remove-from-index', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({filenames: filenames, date: dateStr})
@@ -2545,7 +3269,7 @@ function removePhotosFromIndex(filenames, dateStr) {
         }
     })
     .catch(err => {
-        if (err !== 'require_password' && err !== 'require_family_code') {
+        if (err !== 'require_family_code') {
             showNotification('移除失败: ' + err.message, 'error');
         }
     });
@@ -2644,7 +3368,7 @@ function selectAsFeatured(filename) {
         // 保存到服务端
         const clientId = window.currentClientId || '';
         const dateStr = formatDate(window.currentCalendarDate || new Date());
-        fetchWithPassword('/api/photo/featured', {
+        fetchWithFamilyCode('/api/photo/featured', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -2656,7 +3380,7 @@ function selectAsFeatured(filename) {
         }).then(data => {
             // 更换成功，不显示提示
         }).catch(err => {
-            if (err !== 'require_password' && err !== 'require_family_code') {
+            if (err !== 'require_family_code') {
                 console.error('保存精选照片失败:', err);
             }
         });
@@ -2952,7 +3676,7 @@ function submitComment() {
             formData.append('message', text);
             formData.append('type', 'voice');
 
-            fetchWithPassword('/message', {
+            fetchWithFamilyCode('/message', {
                 method: 'POST',
                 body: formData
             })
@@ -2970,7 +3694,7 @@ function submitComment() {
                 }
             })
             .catch(err => {
-                if (err !== 'require_password' && err !== 'require_family_code') {
+                if (err !== 'require_family_code') {
                     showNotification('发送失败: ' + err.message, 'error');
                 }
             });
@@ -2988,7 +3712,7 @@ function submitComment() {
     formData.append('message', text);
     formData.append('type', 'text');
 
-    fetchWithPassword('/message', {
+    fetchWithFamilyCode('/message', {
         method: 'POST',
         body: formData
     })
@@ -3004,7 +3728,7 @@ function submitComment() {
         }
     })
     .catch(err => {
-        if (err !== 'require_password' && err !== 'require_family_code') {
+        if (err !== 'require_family_code') {
             showNotification('发送失败: ' + err.message, 'error');
         }
     });
@@ -3111,7 +3835,7 @@ function saveEditedLog() {
     // 收集当前页面的元数据
     const metadata = collectCurrentMetadata();
 
-    fetchWithPassword('/api/log/save', {
+    fetchWithFamilyCode('/api/log/save', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -3130,7 +3854,7 @@ function saveEditedLog() {
         }
     })
     .catch(err => {
-        if (err !== 'require_password' && err !== 'require_family_code') {
+        if (err !== 'require_family_code') {
             console.error(err);
             showNotification('保存失败', 'error');
         }
@@ -3152,7 +3876,7 @@ function viewPhotoDetail(filename) {
 
 function deletePhoto(filename) {
     if (confirm('确定要从相册中移除这张照片吗？\n（原文件不会删除）')) {
-        fetchWithPassword('/api/photo/delete', {
+        fetchWithFamilyCode('/api/photo/delete', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({filename: filename})
@@ -3166,7 +3890,7 @@ function deletePhoto(filename) {
             }
         })
         .catch(err => {
-            if (err !== 'require_password' && err !== 'require_family_code') {
+            if (err !== 'require_family_code') {
                 showNotification('删除失败: ' + err.message, 'error');
             }
         });
@@ -3646,7 +4370,7 @@ function openPhotoTagModal(filename) {
         // 如果 photo_tags.html 还没加载，直接显示提示
         const tag = prompt('为这张照片添加标签：');
         if (tag && tag.trim()) {
-            fetchWithPassword('/api/photo/tag', {
+            fetchWithFamilyCode('/api/photo/tag', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({filename, tag: tag.trim(), note: ''})
@@ -3658,7 +4382,7 @@ function openPhotoTagModal(filename) {
                 }
             })
             .catch(err => {
-                if (err !== 'require_password' && err !== 'require_family_code') {
+                if (err !== 'require_family_code') {
                     console.error(err);
                 }
             });
@@ -3671,24 +4395,8 @@ function deleteMessage(messageId) {
     doDeleteMessage(messageId);
 }
 
-// 显示密码验证模态框
-let pendingAction = null;
-let pendingRequest = null;  // 待重试的请求
-
-function showPasswordVerify(action) {
-    pendingAction = action;
-    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/family-access?next=${nextUrl}`;
-}
-
-// 确认密码验证
-function confirmPasswordVerify() {
-    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/family-access?next=${nextUrl}`;
-}
-
-// 带密码验证的 fetch 包装函数
-function fetchWithPassword(url, options = {}, password = null) {
+// 带家庭码拦截的 fetch 包装函数
+function fetchWithFamilyCode(url, options = {}) {
     return fetch(url, options)
         .then(async r => {
             // 尝试解析 JSON
@@ -3734,10 +4442,15 @@ function doDeleteMessage(messageId) {
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(initCalendar, 100);
-    loadSavedTheme();
     createGlobalShareModal();
-    checkLogGeneratingState();
     loadProfileEntry();
+    setTimeout(bootstrapStoryGenerationState, 800);
+    setTimeout(bootstrapStoryGenerationState, 2500);
+
+    // 首屏先渲染本地内容，再异步补齐日志/天气/留言/精选照片。
+    setTimeout(function() {
+        loadDateData(formatDate(window.currentCalendarDate));
+    }, 50);
 });
 
 function loadProfileEntry() {
@@ -3746,9 +4459,20 @@ function loadProfileEntry() {
         .then(function(data) {
             if (data.success && data.profile) {
                 var profile = data.profile;
+                var llmValid = profile.llm_valid;
+                if (typeof data.llm_valid === 'boolean') {
+                    llmValid = data.llm_valid;
+                }
                 
                 var summary = (profile.guidance && profile.guidance.summary) || '';
-                if (summary && summary.indexOf('暂无足够数据') === -1) {
+                var hasValidSummary = llmValid !== false
+                    && summary
+                    && summary.indexOf('暂无足够数据') === -1
+                    && summary.indexOf('画像尚未生成') === -1
+                    && summary.indexOf('画像缓存暂时缺失') === -1
+                    && summary.indexOf('分析失败:') !== 0;
+
+                if (hasValidSummary) {
                     // 把简介放到标题位置，加双引号
                     var titleEl = document.getElementById('profileEntryName');
                     titleEl.textContent = '"' + summary + '"';
@@ -3764,63 +4488,6 @@ function loadProfileEntry() {
             // 加载失败时显示默认标题
             document.getElementById('profileEntryName').textContent = '{{ baby_name }} 的成长画像';
         });
-}
-
-function checkLogGeneratingState() {
-    const stateStr = localStorage.getItem('log_generating');
-    if (!stateStr) return;
-    try {
-        const state = JSON.parse(stateStr);
-        if (state.generating && (Date.now() - state.startTime < 120000)) {
-            let toast = document.getElementById('logGeneratingToast');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.id = 'logGeneratingToast';
-                toast.className = 'log-generating-toast';
-                toast.innerHTML = '<div class="spinner-border spinner-border-sm text-light" role="status"></div><span>正在生成日志，请稍候...</span>';
-                document.body.appendChild(toast);
-            }
-            toast.style.display = 'flex';
-            
-            fetch(`/api/ai/log-status?date=${state.date}`)
-                .then(r => r.json())
-                .then(data => {
-                    toast.style.display = 'none';
-                    localStorage.removeItem('log_generating');
-                    if (data.success && data.exists) {
-                        if (typeof showNotification === 'function') {
-                            showNotification('日志生成成功！', 'success');
-                        }
-                        setTimeout(() => location.reload(), 500);
-                    }
-                })
-                .catch(() => {
-                    setTimeout(checkLogGeneratingState, 3000);
-                });
-        } else {
-            localStorage.removeItem('log_generating');
-        }
-    } catch(e) {
-        localStorage.removeItem('log_generating');
-    }
-}
-
-// 加载保存的主题
-function loadSavedTheme() {
-    fetch('/api/theme')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.css) {
-                let styleEl = document.getElementById('dynamic-theme');
-                if (!styleEl) {
-                    styleEl = document.createElement('style');
-                    styleEl.id = 'dynamic-theme';
-                    document.head.appendChild(styleEl);
-                }
-                styleEl.textContent = data.css;
-            }
-        })
-        .catch(err => console.log('加载主题失败:', err));
 }
 
 // 创建全局分享模态框
@@ -3957,7 +4624,7 @@ function submitAIQuestion() {
     document.getElementById('aiAnswerContainer').style.display = 'none';
 
     // 调用后端AI接口
-    fetchWithPassword('/api/ai/ask', {
+    fetchWithFamilyCode('/api/ai/ask', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -3976,7 +4643,7 @@ function submitAIQuestion() {
         }
     })
     .catch(function(err) {
-        if (err !== 'require_password' && err !== 'require_family_code') {
+        if (err !== 'require_family_code') {
             showNotification('请求失败: ' + err.message, 'error');
         }
     })
@@ -3989,7 +4656,7 @@ function submitAIQuestion() {
 function feedbackAnswer(isCorrect) {
     if (isCorrect) {
         // 提交正确反馈
-        fetchWithPassword('/api/ai/feedback', {
+        fetchWithFamilyCode('/api/ai/feedback', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -3999,7 +4666,7 @@ function feedbackAnswer(isCorrect) {
                 photo_filename: currentAIPhoto
             })
         }).catch(err => {
-            if (err !== 'require_password' && err !== 'require_family_code') {
+            if (err !== 'require_family_code') {
                 console.error('提交反馈失败:', err);
             }
         });
@@ -4019,7 +4686,7 @@ function submitCorrection() {
         return;
     }
 
-    fetchWithPassword('/api/ai/feedback', {
+    fetchWithFamilyCode('/api/ai/feedback', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -4071,80 +4738,6 @@ function submitCorrection() {
     </div>
 </div>
 
-<!-- 勋章获得提示模态框（已禁用） -->
-{# 勋章功能已暂停，代码保留备用
-<div class="modal fade" id="badgeNotificationModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 20px; border: none; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
-            <div class="modal-body text-center p-4">
-                <div class="mb-3">
-                    <div class="badge-notification-icon" style="font-size: 4rem; margin-bottom: 10px;">
-                        🎉
-                    </div>
-                    <h4 class="mb-3" style="color: #2C2C2C; font-weight: 600;">🎉 获得新勋章！</h4>
-                </div>
-
-                <div id="badgeNotificationContent">
-                    <!-- 动态内容 -->
-                </div>
-
-                <button type="button" class="btn btn-primary mt-3" style="background: linear-gradient(135deg, #E8B4B8 0%, #C9A87C 100%); border: none; padding: 10px 30px; border-radius: 25px; font-weight: 600;" data-bs-dismiss="modal">
-                    好的
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 勋章墙模态框 -->
-<div class="modal fade" id="badgeWallModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content" style="border-radius: 20px; border: none;">
-            <div class="modal-header" style="background: linear-gradient(135deg, #F8F6F3 0%, #EFEBE6 100%); border-bottom: 2px solid #E8DCC4;">
-                <h5 class="modal-title" style="color: #2C2C2C; font-weight: 600;">
-                    <i class="fas fa-medal me-2"></i>我的勋章墙
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <!-- 统计信息 -->
-                <div class="row mb-4">
-                    <div class="col-md-3">
-                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
-                            <div style="font-size: 2rem; font-weight: 600; color: #E8B4B8;">{{ badge_stats.total if badge_stats else 0 }}</div>
-                            <div style="color: #8A8A8A; font-size: 0.9rem;">总勋章数</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
-                            <div style="font-size: 2rem; font-weight: 600; color: #A8B5A0;">{{ badge_stats.by_type.streak if badge_stats and badge_stats.by_type else 0 }}</div>
-                            <div style="color: #8A8A8A; font-size: 0.9rem;">连续勋章</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
-                            <div style="font-size: 2rem; font-weight: 600; color: #E07A5F;">{{ badge_stats.by_type.achievement if badge_stats and badge_stats.by_type else 0 }}</div>
-                            <div style="color: #8A8A8A; font-size: 0.9rem;">成就勋章</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="text-center p-3" style="background: #F8F6F3; border-radius: 12px;">
-                            <div style="font-size: 2rem; font-weight: 600; color: #C9A87C;">{{ badge_stats.by_type.count if badge_stats and badge_stats.by_type else 0 }}</div>
-                            <div style="color: #8A8A8A; font-size: 0.9rem;">数量勋章</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 勋章列表 -->
-                <div id="badgeWallContent">
-                    <!-- 动态加载 -->
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-#}
-
 <style>
 .share-option-btn {
     width: 65px;
@@ -4161,277 +4754,11 @@ function submitCorrection() {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
-
-/* 勋章通知样式 */
-.badge-notification-item {
-    background: linear-gradient(135deg, #F8F6F3 0%, #EFEBE6 100%);
-    border-radius: 12px;
-    padding: 15px;
-    margin-bottom: 10px;
-    border-left: 4px solid #E8B4B8;
-}
-
-.badge-notification-icon {
-    animation: badgePop 0.5s ease-out;
-}
-
-@keyframes badgePop {
-    0% { transform: scale(0.5); opacity: 0; }
-    70% { transform: scale(1.1); opacity: 1; }
-    100% { transform: scale(1); opacity: 1; }
-}
-
-/* 勋章墙样式 */
-.badge-category {
-    margin-bottom: 30px;
-}
-
-.badge-category-title {
-    font-size: 1.2rem;
-    font-weight: 600;
-    color: #2C2C2C;
-    margin-bottom: 15px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #E8DCC4;
-}
-
-.badge-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 15px;
-}
-
-.badge-card {
-    background: #F8F6F3;
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-    transition: all 0.3s;
-    border: 2px solid transparent;
-}
-
-.badge-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.1);
-    border-color: #E8DCC4;
-}
-
-.badge-card-icon {
-    font-size: 2.5rem;
-    margin-bottom: 10px;
-}
-
-.badge-card-name {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: #2C2C2C;
-    margin-bottom: 5px;
-}
-
-.badge-card-date {
-    font-size: 0.8rem;
-    color: #8A8A8A;
-}
-
-/* 勋章墙入口按钮 */
-.badge-wall-entry {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #E8B4B8 0%, #C9A87C 100%);
-    color: white;
-    border: none;
-    border-radius: 50px;
-    padding: 12px 24px;
-    box-shadow: 0 4px 12px rgba(232, 180, 184, 0.4);
-    cursor: pointer;
-    transition: all 0.3s;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.badge-wall-entry:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(232, 180, 184, 0.6);
-}
-
-.badge-wall-entry i {
-    font-size: 1.2rem;
-}
 </style>
 
-<!-- 勋章墙入口按钮（已禁用） -->
-<!-- 勋章功能已暂停，代码保留备用
-<button class="badge-wall-entry" onclick="openBadgeWall()">
-    <i class="fas fa-medal"></i>
-    <span>我的勋章</span>
-</button>
--->
-
 <script>
-// 显示勋章通知
-function showBadgeNotification(badges) {
-    const modal = document.getElementById('badgeNotificationModal');
-    const content = document.getElementById('badgeNotificationContent');
+// ========== 首页浮动卡片入口（统一跳转 /cards） ==========
 
-    let html = '';
-    badges.forEach(badge => {
-        html += `
-            <div class="badge-notification-item">
-                <div style="font-size: 2.5rem; margin-bottom: 10px;">${badge.icon}</div>
-                <div style="font-weight: 600; font-size: 1.1rem; color: #2C2C2C; margin-bottom: 5px;">${badge.name}</div>
-                <div style="font-size: 0.9rem; color: #8A8A8A;">${badge.description}</div>
-            </div>
-        `;
-    });
-
-    content.innerHTML = html;
-    const bsModal = new bootstrap.Modal(modal);
-    bsModal.show();
-}
-
-// 打开勋章墙
-function openBadgeWall() {
-    // 加载勋章数据
-    fetch('/api/badges')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                renderBadgeWall(data.badges);
-                const modal = new bootstrap.Modal(document.getElementById('badgeWallModal'));
-                modal.show();
-            } else {
-                showNotification('加载勋章失败', 'error');
-            }
-        })
-        .catch(err => {
-            console.error('加载勋章失败:', err);
-            showNotification('加载勋章失败', 'error');
-        });
-}
-
-// 渲染勋章墙
-function renderBadgeWall(badges) {
-    const content = document.getElementById('badgeWallContent');
-
-    // 按类型分组
-    const grouped = {
-        streak: [],
-        achievement: [],
-        count: []
-    };
-
-    badges.forEach(badge => {
-        const config = BADGE_CONFIG[badge.type];
-        if (config) {
-            grouped[config.type].push(badge);
-        }
-    });
-
-    let html = '';
-
-    // 连续勋章
-    if (grouped.streak.length > 0) {
-        html += `
-            <div class="badge-category">
-                <div class="badge-category-title">🏆 连续上传勋章</div>
-                <div class="badge-grid">
-        `;
-        grouped.streak.forEach(badge => {
-            html += renderBadgeCard(badge);
-        });
-        html += `</div></div>`;
-    }
-
-    // 成就勋章
-    if (grouped.achievement.length > 0) {
-        html += `
-            <div class="badge-category">
-                <div class="badge-category-title">🌟 宝宝成就勋章</div>
-                <div class="badge-grid">
-        `;
-        grouped.achievement.forEach(badge => {
-            html += renderBadgeCard(badge);
-        });
-        html += `</div></div>`;
-    }
-
-    // 数量勋章
-    if (grouped.count.length > 0) {
-        html += `
-            <div class="badge-category">
-                <div class="badge-category-title">📸 照片数量勋章</div>
-                <div class="badge-grid">
-        `;
-        grouped.count.forEach(badge => {
-            html += renderBadgeCard(badge);
-        });
-        html += `</div></div>`;
-    }
-
-    if (html === '') {
-        html = '<div class="text-center py-5"><p class="text-muted">还没有获得任何勋章，快上传照片吧！</p></div>';
-    }
-
-    content.innerHTML = html;
-}
-
-// 渲染单个勋章卡片
-function renderBadgeCard(badge) {
-    return `
-        <div class="badge-card">
-            <div class="badge-card-icon">${badge.icon}</div>
-            <div class="badge-card-name">${badge.name}</div>
-            <div class="badge-card-date">${badge.earned_date}</div>
-        </div>
-    `;
-}
-
-// 勋章配置（用于前端显示）
-const BADGE_CONFIG = {
-    bronze_care: { type: 'streak' },
-    silver_care: { type: 'streak' },
-    gold_care: { type: 'streak' },
-    diamond_care: { type: 'streak' },
-    dog_lover: { type: 'achievement' },
-    cat_lover: { type: 'achievement' },
-    climber: { type: 'achievement' },
-    swimmer: { type: 'achievement' },
-    birthday_star: { type: 'achievement' },
-    christmas_baby: { type: 'achievement' },
-    first_stand: { type: 'achievement' },
-    first_walk: { type: 'achievement' },
-    first_mom: { type: 'achievement' },
-    photo_lover: { type: 'count' },
-    photo_master: { type: 'count' },
-    photo_expert: { type: 'count' },
-    outdoor_explorer: { type: 'achievement' },
-    home_time: { type: 'achievement' },
-    foodie_baby: { type: 'achievement' },
-    sleepy_baby: { type: 'achievement' },
-    playful_baby: { type: 'achievement' },
-    bath_time: { type: 'achievement' },
-    reading_time: { type: 'achievement' },
-    music_lover: { type: 'achievement' }
-};
-
-// ========== 每日成长卡片系统（后端缓存版）==========
-
-// 卡片缓存
-let cardCache = {
-    cards: [],           // 从后端加载的卡片数组
-    milestoneCards: [],  // 今日里程碑卡片
-    shownIds: new Set(), // 本次会话已显示的卡片ID
-    loaded: false,       // 数据加载完成
-    imagesLoaded: false, // 图片预加载完成
-    loading: false,      // 是否正在加载
-    retryCount: 0,       // 重试计数器，防止无限循环
-    maxRetries: 2        // 最大重试次数
-};
-
-// 立即显示右下角卡片入口
 function showMiniCard() {
     let miniCard = document.getElementById('miniGrowthCard');
 
@@ -4452,1135 +4779,6 @@ function showMiniCard() {
     miniCard.classList.add('show');
 }
 
-// 从后端缓存加载卡片
-function loadCardsFromCache() {
-    if (cardCache.loading || cardCache.loaded) return;
-    cardCache.loading = true;
-
-    console.log('[Card] 从后端缓存加载卡片...');
-
-    fetch('/api/card/milestone/today')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.cards && data.cards.length > 0) {
-                // 有今日里程碑，保存但不自动显示
-                cardCache.milestoneCards = data.cards;
-                console.log(`[Card] 今日里程碑: ${data.cards.length} 张`);
-                cardCache.loaded = true;
-                cardCache.loading = false;
-                // 预加载里程碑卡片图片
-                preloadCardImages(data.cards, () => {
-                    showMiniCard();
-                });
-            } else {
-                // 没有里程碑，加载普通卡片
-                loadNormalCards();
-            }
-        })
-        .catch(err => {
-            console.error('[Card] 检查里程碑失败:', err);
-            loadNormalCards();
-        });
-}
-
-// 加载普通卡片
-function loadNormalCards() {
-    fetch('/api/card/cache/list')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.cards && data.cards.length > 0) {
-                // 随机打乱顺序
-                cardCache.cards = shuffleArray(data.cards);
-                cardCache.loaded = true;
-                cardCache.loading = false;
-                cardCache.retryCount = 0;  // 重置重试计数
-                console.log(`[Card] 数据加载完成，共 ${cardCache.cards.length} 张卡片`);
-
-                // 预加载所有卡片图片，完成后显示按钮
-                preloadCardImages(cardCache.cards, () => {
-                    showMiniCard();
-                });
-            } else {
-                // 缓存为空，检查重试次数
-                if (cardCache.retryCount < cardCache.maxRetries) {
-                    cardCache.retryCount++;
-                    console.log(`[Card] 缓存为空，稍后重试 (重试 ${cardCache.retryCount}/${cardCache.maxRetries})...`);
-                    setTimeout(loadCardsFromCache, 3000);
-                } else {
-                    // 超过最大重试次数，停止加载
-                    console.log('[Card] 重试次数用完，无卡片可显示');
-                    cardCache.loading = false;
-                    cardCache.loaded = true;
-                    hideMiniCard();
-                }
-            }
-        })
-        .catch(err => {
-            console.error('[Card] 加载失败:', err);
-            cardCache.loading = false;
-            // 3秒后重试
-            setTimeout(loadCardsFromCache, 3000);
-        });
-}
-
-// 预加载卡片图片（延迟执行，不阻塞页面）
-function preloadCardImages(cards, callback) {
-    cardCache.imagesLoaded = true;
-    if (callback) callback();
-    
-    setTimeout(() => {
-        if (!cards || cards.length === 0) return;
-
-        const imageUrls = new Set();
-        cards.forEach(card => {
-            if (card.photo) imageUrls.add(card.photo);
-            if (card.before_photo) imageUrls.add(card.before_photo);
-            if (card.after_photo) imageUrls.add(card.after_photo);
-        });
-
-        const urls = Array.from(imageUrls);
-        if (urls.length === 0) return;
-
-        console.log(`[Card] 后台预加载 ${urls.length} 张图片...`);
-        urls.forEach(url => {
-            const img = new Image();
-            img.src = url;
-        });
-    }, 5000);
-}
-
-// 显示加载中的迷你卡片
-function showMiniCardLoading(text) {
-    let miniCard = document.getElementById('miniGrowthCard');
-    
-    if (!miniCard) {
-        miniCard = document.createElement('div');
-        miniCard.id = 'miniGrowthCard';
-        miniCard.className = 'mini-growth-card';
-        document.body.appendChild(miniCard);
-    }
-    
-    miniCard.innerHTML = `
-        <div class="mini-card-loading"></div>
-        <div class="mini-card-text">${text}</div>
-    `;
-    miniCard.classList.add('show');
-    miniCard.onclick = null;  // 加载中不可点击
-}
-
-// 数组随机打乱
-function shuffleArray(array) {
-    var arr = array.slice();
-    for (var i = arr.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
-        var temp = arr[i];
-        arr[i] = arr[j];
-        arr[j] = temp;
-    }
-    return arr;
-}
-
-// 显示随机卡片（不重复）
-function showRandomCard() {
-    if (!cardCache.loaded || cardCache.cards.length === 0) {
-        console.log('[Card] 卡片未加载完成');
-        return;
-    }
-
-    // 找一张未显示过的卡片
-    var card = null;
-    for (var i = 0; i < cardCache.cards.length; i++) {
-        var c = cardCache.cards[i];
-        if (!cardCache.shownIds.has(c.id)) {
-            card = c;
-            break;
-        }
-    }
-
-    // 如果所有卡片都显示过了，重置
-    if (!card) {
-        console.log('[Card] 所有卡片都已显示，重置...');
-        cardCache.shownIds.clear();
-        // 重新打乱顺序
-        cardCache.cards = shuffleArray(cardCache.cards);
-        card = cardCache.cards[0];
-    }
-
-    // 标记为已显示
-    cardCache.shownIds.add(card.id);
-    currentCardData = card;
-    renderDailyGrowthCard(card);
-}
-
-// 切换到下一张卡片
-function switchToNextCard() {
-    if (!cardCache.loaded || cardCache.cards.length <= 1) {
-        return false;
-    }
-
-    showRandomCard();
-    return true;
-}
-
-// 标记卡片已分享
-function markCardShared(cardId) {
-    if (!cardId) return;
-
-    fetchWithPassword('/api/card/share', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ card_id: cardId })
-    })
-    .then(data => {
-        if (data && data.success) {
-            console.log('[Card] 已标记为已分享');
-            // 更新本地缓存中的状态
-            const card = cardCache.cards.find(c => c.id === cardId);
-            if (card) card.shared = true;
-        }
-    })
-    .catch(err => {
-        if (err !== 'require_password' && err !== 'require_family_code') {
-            console.error('[Card] 标记分享失败:', err);
-        }
-    });
-}
-
-// 兼容旧函数
-function preloadDailyCards() {
-    loadCardsFromCache();
-}
-
-function showCachedCard() {
-    // 先刷新本地缓存（获取心跳同步的新卡片）
-    refreshCardCache(() => {
-        // 优先显示里程碑卡片
-        if (cardCache.milestoneCards && cardCache.milestoneCards.length > 0) {
-            const card = cardCache.milestoneCards[0];
-            cardCache.shownIds.add(card.id);
-            renderDailyGrowthCard(card);
-            return;
-        }
-        // 否则显示普通卡片
-        showRandomCard();
-    });
-}
-
-// 刷新本地缓存（不显示加载状态，静默刷新）
-function refreshCardCache(callback) {
-    fetch('/api/card/cache/list')
-        .then(r => r.json())
-        .then(data => {
-            if (data.success && data.cards) {
-                // 合并新卡片（去重）
-                var existingIds = new Set(cardCache.cards.map(function(c) { return c.id; }));
-                var added = 0;
-                for (var i = 0; i < data.cards.length; i++) {
-                    var card = data.cards[i];
-                    if (!existingIds.has(card.id)) {
-                        cardCache.cards.push(card);
-                        added++;
-                    }
-                }
-                if (added > 0) {
-                    console.log(`[Card] 刷新了 ${added} 张新卡片`);
-                    // 重新打乱顺序
-                    cardCache.cards = shuffleArray(cardCache.cards);
-                }
-            }
-            if (callback) callback();
-        })
-        .catch(err => {
-            console.error('[Card] 刷新缓存失败:', err);
-            if (callback) callback();
-        });
-}
-
-function showDailyGrowthCard(forceShow = false) {
-    if (!cardCache.loaded) {
-        console.log('[Card] 卡片正在加载中...');
-        return;
-    }
-
-    if (cardCache.cards.length === 0) {
-        console.log('[Card] 没有可用卡片');
-        return;
-    }
-
-    showRandomCard();
-}
-
-// 辅助函数：将完整路径转换为 /photo/filename 格式
-function getPhotoUrl(path) {
-    if (!path) return '';
-    // 如果已经是 /photo/ 格式，直接返回
-    if (path.indexOf('/photo/') === 0) return path;
-    // 提取文件名
-    var filename = path.split('/').pop();
-    return '/photo/' + filename;
-}
-
-// 辅助函数：获取缩略图URL（节省内存）
-function getPhotoThumbUrl(path) {
-    if (!path) return '';
-    // 如果是 /photo/ 格式，转换为缩略图
-    if (path.indexOf('/photo/') === 0) {
-        var filename = path.replace('/photo/', '');
-        return '/photo/thumb/' + filename;
-    }
-    // 其他格式（绝对路径），提取文件名
-    var filename = path.split('/').pop();
-    return '/photo/thumb/' + filename;
-}
-
-// 创建带缩略图回退的图片HTML
-function createThumbImgHtml(path, className, extraAttrs) {
-    var thumbUrl = getPhotoThumbUrl(path);
-    var origUrl = getPhotoUrl(path);
-    var cls = className ? ' class="' + className + '"' : '';
-    var attrs = extraAttrs || '';
-    return '<img src="' + thumbUrl + '"' + cls + ' crossorigin="anonymous" onerror="this.onerror=null;this.src=\'' + origUrl + '\'"' + attrs + '>';
-}
-
-function renderDailyGrowthCard(card) {
-    const cardEl = document.getElementById('dailyGrowthCard');
-    const styleConfig = card.style_config || {};
-    const cardType = card.type || 'default_card';
-
-    // 更新分享按钮状态
-    const shareBtn = document.getElementById('shareCardBtn');
-    if (shareBtn) {
-        if (card.shared) {
-            shareBtn.innerHTML = '<i class="fas fa-check me-1"></i>已分享';
-            shareBtn.style.background = '#28a745';
-        } else {
-            shareBtn.innerHTML = '<i class="fas fa-share-alt me-1"></i>分享';
-            shareBtn.style.background = 'linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%)';
-        }
-    }
-
-    let cardHtml = '';
-
-    // 根据卡片类型渲染不同内容
-    if (cardType === 'photo_card' && card.photo) {
-        // 照片卡片
-        cardHtml = `
-            <div class="growth-card photo-card">
-                <div class="card-photo-wrapper">
-                    <img src="${getPhotoThumbUrl(card.photo)}" alt="宝宝照片" class="card-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(card.photo)}'">
-                </div>
-                <div class="card-photo-date">${card.photo_date || ''}</div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '今日瞬间'}</div>
-                    <div class="card-text">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'profile_card') {
-        // 画像卡片
-        cardHtml = `
-            <div class="growth-card profile-card">
-                <div class="card-header-bar">
-                    <span class="card-subtitle">${card.subtitle || '成长画像'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || 'AI读懂了宝宝'}</div>
-                    <div class="card-text" id="cardMainText">${card.content || ''}</div>
-                    ${card.traits && card.traits.length ? `
-                        <div class="card-traits">
-                            ${card.traits.map(t => `<span class="trait-tag">${t}</span>`).join('')}
-                        </div>
-                    ` : ''}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text" id="cardFooterText">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'milestone_card') {
-        // 里程碑卡片
-        cardHtml = `
-            <div class="growth-card milestone-card">
-                <div class="milestone-icon">🏆</div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '成长里程碑'}</div>
-                    <div class="card-text">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'trait_card') {
-        // 特质卡片
-        cardHtml = `
-            <div class="growth-card trait-card">
-                <div class="card-header-bar">
-                    <span class="card-subtitle">${card.subtitle || 'AI发现'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '宝宝的小特质'}</div>
-                    ${card.traits && card.traits.length ? `
-                        <div class="card-traits-large">
-                            ${card.traits.map(t => `<span class="trait-tag-large">✨ ${t}</span>`).join('')}
-                        </div>
-                    ` : ''}
-                    <div class="card-text">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'collage_card' || cardType === 'tag_collage_card') {
-        // 照片合图卡片 / 智能标签卡片
-        cardHtml = `
-            <div class="growth-card collage-card">
-                <div class="card-photo-wrapper">
-                    <img src="${getPhotoThumbUrl(card.photo)}" alt="成长合图" class="card-collage" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(card.photo)}'">
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '成长合辑'}</div>
-                    <div class="card-text">${card.subtitle || ''}</div>
-                    ${card.tag ? `<div class="card-tag-label">🏷️ ${card.tag}</div>` : ''}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'comparison_card') {
-        // 成长对比卡片（往昔 vs 近日）
-        const photoPaths = card.photo_paths || [];
-        const beforePhoto = getPhotoThumbUrl(photoPaths[0]);
-        const beforePhotoOrig = getPhotoUrl(photoPaths[0]);
-        const afterPhoto = photoPaths.length > 1 ? getPhotoThumbUrl(photoPaths[1]) : null;
-        const afterPhotoOrig = photoPaths.length > 1 ? getPhotoUrl(photoPaths[1]) : null;
-        const stats = card.stats || {};
-        cardHtml = `
-            <div class="growth-card comparison-card">
-                <div class="expression-compare">
-                    ${beforePhoto ? `<div class="compare-item"><div class="compare-label">${stats.before_date || card.before_date || '早期'}</div><img src="${beforePhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${beforePhotoOrig}'"></div>` : ''}
-                    <div class="compare-arrow">→</div>
-                    ${afterPhoto ? `<div class="compare-item"><div class="compare-label">${stats.after_date || card.after_date || '现在'}</div><img src="${afterPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${afterPhotoOrig}'"></div>` : ''}
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '成长对比'}</div>
-                    <div class="card-text">${card.subtitle || ''}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || '时光飞逝，成长可见'}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'special_milestone_card') {
-        // 特殊里程碑卡片
-        const photoPaths = card.photo_paths || [];
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card special-milestone-card">
-                <div class="milestone-icon">${card.emoji || '🏆'}</div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '里程碑'}</div>
-                    <div class="card-text">${card.subtitle || ''}</div>
-                    <div class="milestone-content">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || '每一个里程碑都值得纪念'}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'smile_collection_card') {
-        // 笑容收集册卡片
-        const photoPaths = card.photo_paths || [];
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card smile-collection-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '😊'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '笑容收集册'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'little_traveler_card') {
-        // 小小旅行家卡片
-        const stats = card.stats || {};
-        const scenes = stats.scenes || card.scenes || [];
-        const photoPaths = card.photo_paths || [];
-        const scenesHtml = scenes.length > 0 ? scenes.map(s => `
-            <div class="travel-scene-item">
-                <span class="scene-emoji">${s.emoji || '📍'}</span>
-                <span class="scene-name">${s.name}</span>
-                <span class="scene-count">${s.count}次</span>
-            </div>
-        `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card little-traveler-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🗺️'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '小小旅行家'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'scene' ? `<div class="travel-scenes">${scenesHtml}</div>` : ''}
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'sleep_evolution_card') {
-        // 睡眠进化史卡片
-        const stats = card.stats || {};
-        const poses = stats.poses || card.poses || [];
-        const photoPaths = card.photo_paths || [];
-        const posesHtml = poses.length > 0 ? poses.map(p => `
-            <div class="sleep-pose-tag">${p.name} ${p.count}次</div>
-        `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card sleep-evolution-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '😴'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '睡眠进化史'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'period' ? `<div class="sleep-poses">${posesHtml}</div>` : ''}
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'love_hug_card') {
-        // 爱的抱抱卡片
-        var stats = card.stats || {};
-        var huggerStats = stats.hugger_stats || card.hugger_stats || {};
-        var hugCount = stats.hug_count || card.hug_count || 1;
-        var photoPaths = card.photo_paths || [];
-        var huggerStatsHtml = '';
-        if (Object.keys(huggerStats).length > 0) {
-            var statKeys = Object.keys(huggerStats);
-            huggerStatsHtml = statKeys.map(function(name) {
-                var count = huggerStats[name];
-                return '<div class="hugger-stat-item">' +
-                    '<span class="hugger-name">' + name + '</span>' +
-                    '<span class="hugger-bar"><span class="hugger-bar-fill" style="width: ' + Math.min(100, count / hugCount * 100) + '%"></span></span>' +
-                    '<span class="hugger-count">' + count + '次</span>' +
-                '</div>';
-            }).join('');
-        }
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card love-hug-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '💕'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '爱的抱抱'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'person' ? `<div class="hugger-stats">${huggerStatsHtml}</div>` : ''}
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'companion_stats_card') {
-        // 陪伴统计卡片
-        const companions = card.companions || [];
-        const companionsHtml = companions.length > 0 ? companions.map(c => `
-            <div class="companion-item rank-${c.rank}">
-                <span class="companion-rank">${c.rank <= 3 ? ['🥇','🥈','🥉'][c.rank-1] : c.rank}</span>
-                <span class="companion-emoji">${c.emoji}</span>
-                <span class="companion-name">${c.name}</span>
-                <span class="companion-count">${c.count}次</span>
-            </div>
-        `).join('') : '';
-        cardHtml = `
-            <div class="growth-card companion-stats-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">👨‍👩‍👧</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '陪伴排行榜'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="companions-list">${companionsHtml}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'same_day_different_year_card') {
-        // 同一天不同年卡片
-        const stats = card.stats || {};
-        const yearSamples = stats.year_samples || [];
-        const yearsHtml = yearSamples.length > 0 ? yearSamples.map(s => `
-            <div class="year-sample-item">
-                <div class="year-label">${s.year}年</div>
-                ${s.photo ? `<div class="year-photo"><img src="${getPhotoThumbUrl(s.photo.path)}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(s.photo.path)}'"></div>` : ''}
-            </div>
-        `).join('') : '';
-        cardHtml = `
-            <div class="growth-card same-day-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">📅</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '同一天的不同年'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="year-samples">${yearsHtml}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'four_seasons_wardrobe_card') {
-        // 四季衣橱卡片
-        const stats = card.stats || {};
-        const seasons = stats.seasons || [];
-        const seasonsHtml = seasons.length > 0 ? seasons.map(s => `
-            <div class="season-item" style="--season-color: ${s.color}">
-                <div class="season-emoji">${s.emoji}</div>
-                <div class="season-name">${s.season}</div>
-                ${s.photo ? `<div class="season-photo"><img src="${getPhotoThumbUrl(s.photo.path)}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(s.photo.path)}'"></div>` : ''}
-            </div>
-        `).join('') : '';
-        cardHtml = `
-            <div class="growth-card four-seasons-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">👗</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '四季衣橱'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="seasons-grid">${seasonsHtml}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'sleep_pose_collection_card') {
-        // 睡姿大全卡片
-        const stats = card.stats || {};
-        const poses = stats.poses || card.poses || [];
-        const photoPaths = card.photo_paths || [];
-        const posesHtml = poses.length > 0 ? poses.map(p => `
-            <div class="pose-tag">
-                <span class="pose-emoji">${p.emoji || '😴'}</span>
-                <span class="pose-name">${p.name}</span>
-                <span class="pose-count">${p.count}次</span>
-            </div>
-        `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card sleep-poses-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🤸'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '睡姿大全'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'pose' ? `<div class="poses-cloud">${posesHtml}</div>` : ''}
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'expression_mimic_card') {
-        // 表情模仿秀卡片
-        const stats = card.stats || {};
-        const photoPaths = card.photo_paths || [];
-        const earlyPhoto = getPhotoThumbUrl(photoPaths[0]);
-        const earlyPhotoOrig = getPhotoUrl(photoPaths[0]);
-        const recentPhoto = photoPaths.length > 1 ? getPhotoThumbUrl(photoPaths[photoPaths.length - 1]) : null;
-        const recentPhotoOrig = photoPaths.length > 1 ? getPhotoUrl(photoPaths[photoPaths.length - 1]) : null;
-        const monthsDiff = stats.months_diff || card.months_diff || 0;
-        cardHtml = `
-            <div class="growth-card expression-mimic-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🎭'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '表情模仿秀'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="expression-compare">
-                        ${earlyPhoto ? `<div class="compare-item"><div class="compare-label">${monthsDiff || '?'}个月前</div><img src="${earlyPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${earlyPhotoOrig}'"></div>` : ''}
-                        <div class="compare-arrow">→</div>
-                        ${recentPhoto ? `<div class="compare-item"><div class="compare-label">现在</div><img src="${recentPhoto}" crossorigin="anonymous" onerror="this.onerror=null;this.src='${recentPhotoOrig}'"></div>` : ''}
-                    </div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'data_portrait_card') {
-        // 数据画像卡片
-        const stats = card.stats || {};
-        const totalPhotos = stats.total_photos || card.total_photos || 0;
-        const favoriteActivity = stats.favorite_activity || card.favorite_activity || '探索';
-        const favoriteScene = stats.favorite_scene || card.favorite_scene || '家里';
-        const statsHtml = `
-            <div class="data-stat-item">
-                <span class="stat-label">📸 总照片数</span>
-                <span class="stat-value">${totalPhotos}</span>
-            </div>
-            <div class="data-stat-item">
-                <span class="stat-label">😊 最爱做的事</span>
-                <span class="stat-value">${favoriteActivity}</span>
-            </div>
-            <div class="data-stat-item">
-                <span class="stat-label">🏠 最爱的地方</span>
-                <span class="stat-value">${favoriteScene}</span>
-            </div>
-            <div class="data-stat-item">
-                <span class="stat-label">🎭 最常表情</span>
-                <span class="stat-value">${stats.favorite_emotion || '开心'}</span>
-            </div>
-            <div class="data-stat-item">
-                <span class="stat-label">👨‍👩‍👧 最多陪伴</span>
-                <span class="stat-value">${stats.favorite_companion || '家人'}</span>
-            </div>
-        `;
-        cardHtml = `
-            <div class="growth-card data-portrait-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">📊</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '数据画像'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="data-stats">${statsHtml}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'home_to_world_card') {
-        // 从家里走向世界卡片
-        const stats = card.stats || {};
-        const milestones = stats.milestones || [];
-        const photoPaths = card.photo_paths || [];
-        const milestonesHtml = milestones.length > 0 ? milestones.map(m => `
-            <div class="explore-milestone">
-                <div class="milestone-stage">${m.stage}</div>
-                <div class="milestone-scenes">${m.scenes ? m.scenes.join('、') : ''}</div>
-                <div class="milestone-count">${m.scene_count}个地方</div>
-            </div>
-        `).join('') : '';
-        const photosHtml = photoPaths.length > 0 ? `
-            <div class="card-photos-grid">
-                ${photoPaths.slice(0, 6).map(p => `<img src="${getPhotoThumbUrl(p)}" class="card-grid-photo" crossorigin="anonymous" onerror="this.onerror=null;this.src='${getPhotoUrl(p)}'">`).join('')}
-            </div>
-        ` : '';
-        cardHtml = `
-            <div class="growth-card home-to-world-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🌍'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '从家里走向世界'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    ${card.card_subtype !== 'month' ? `<div class="explore-milestones">${milestonesHtml}</div>` : ''}
-                    <div class="card-highlight">${card.content || ''}</div>
-                    ${photosHtml}
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else if (cardType === 'emotion_weather_card') {
-        // 情绪天气卡片
-        const stats = card.stats || {};
-        const emotions = stats.emotions || card.emotions || [];
-        const emotionsHtml = emotions.length > 0 ? emotions.map(e => `
-            <div class="emotion-weather-item" style="--emotion-color: ${e.color}">
-                <span class="emotion-icon">${e.icon}</span>
-                <span class="emotion-name">${e.emotion}</span>
-                <span class="emotion-bar"><span class="emotion-bar-fill" style="width: ${e.percentage}%"></span></span>
-                <span class="emotion-percent">${e.percentage}%</span>
-            </div>
-        `).join('') : '';
-        cardHtml = `
-            <div class="growth-card emotion-weather-card">
-                <div class="card-header-bar">
-                    <span class="card-emoji-large">${card.emoji || '🌈'}</span>
-                </div>
-                <div class="card-content">
-                    <div class="card-title">${card.title || '情绪天气'}</div>
-                    <div class="card-subtitle">${card.subtitle || ''}</div>
-                    <div class="emotion-weather-list">${emotionsHtml}</div>
-                    <div class="card-highlight">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    } else {
-        // 默认卡片
-        cardHtml = `
-            <div class="growth-card default-card">
-                <div class="card-content">
-                    <div class="card-title">${card.title || '宝宝成长'}</div>
-                    <div class="card-text">${card.content || ''}</div>
-                </div>
-                <div class="card-footer">
-                    <span class="card-footer-text">${card.footer || ''}</span>
-                    <span class="card-brand">mumu成长日志系统 © mumu.ftir.fun</span>
-                </div>
-            </div>
-        `;
-    }
-
-    cardEl.innerHTML = cardHtml;
-    cardEl.style.background = styleConfig.bg_color || '#FFF5F7';
-
-    // 预生成分享图片（后台执行，不阻塞显示）
-    pregenerateShareImage(cardEl);
-
-    // 显示模态框
-    const modal = new bootstrap.Modal(document.getElementById('dailyCardModal'));
-    modal.show();
-}
-
-// 预生成分享图片
-let pregeneratedCanvas = null;
-function pregenerateShareImage(cardEl) {
-    pregeneratedCanvas = null; // 重置
-    
-    // 等待图片加载完成
-    const images = cardEl.querySelectorAll('img');
-    let loadedCount = 0;
-    const totalImages = images.length;
-    
-    const doGenerate = () => {
-        // 加载 html2canvas（本地资源，避免 CDN 超时）
-        if (typeof html2canvas === 'undefined') {
-            const script = document.createElement('script');
-            script.src = '/static/vendor/html2canvas/html2canvas.min.js';
-            script.onload = () => generateCanvas(cardEl);
-            script.onerror = () => {
-                console.error('[Card] html2canvas 加载失败');
-                showNotification('图片生成组件加载失败', 'error');
-            };
-            document.head.appendChild(script);
-        } else {
-            generateCanvas(cardEl);
-        }
-    };
-    
-    if (totalImages === 0) {
-        doGenerate();
-    } else {
-        images.forEach(img => {
-            if (img.complete) {
-                loadedCount++;
-                if (loadedCount === totalImages) doGenerate();
-            } else {
-                img.onload = () => {
-                    loadedCount++;
-                    if (loadedCount === totalImages) doGenerate();
-                };
-                img.onerror = () => {
-                    loadedCount++;
-                    if (loadedCount === totalImages) doGenerate();
-                };
-            }
-        });
-    }
-}
-
-function generateCanvas(cardEl) {
-    html2canvas(cardEl, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        imageTimeout: 15000,
-        onclone: (clonedDoc) => {
-            // 确保克隆的图片元素正确加载
-            const clonedImages = clonedDoc.querySelectorAll('img');
-            clonedImages.forEach(img => {
-                img.crossOrigin = 'anonymous';
-            });
-        }
-    }).then(canvas => {
-        pregeneratedCanvas = canvas;
-        console.log('[Card] 分享图片预生成完成');
-    }).catch(err => {
-        console.error('[Card] 预生成图片失败:', err);
-    });
-}
-
-function editCardText() {
-    const mainText = document.getElementById('cardMainText');
-    const footerText = document.getElementById('cardFooterText');
-
-    // 切换编辑模式
-    if (mainText.contentEditable === 'true') {
-        mainText.contentEditable = 'false';
-        footerText.contentEditable = 'false';
-        mainText.style.border = 'none';
-        footerText.style.border = 'none';
-        document.getElementById('editBtn').innerHTML = '<i class="fas fa-edit me-1"></i>编辑';
-    } else {
-        mainText.contentEditable = 'true';
-        footerText.contentEditable = 'true';
-        mainText.style.border = '1px dashed #FFB6C1';
-        footerText.style.border = '1px dashed #FFB6C1';
-        mainText.style.borderRadius = '8px';
-        footerText.style.borderRadius = '8px';
-        mainText.style.padding = '8px';
-        footerText.style.padding = '8px';
-        mainText.focus();
-        document.getElementById('editBtn').innerHTML = '<i class="fas fa-check me-1"></i>完成';
-    }
-}
-
-function shareDailyCard() {
-    const card = document.getElementById('dailyGrowthCard');
-    if (!card) return;
-
-    // 标记卡片已分享
-    if (currentCardData && currentCardData.id) {
-        markCardShared(currentCardData.id);
-    }
-
-    // 如果图片已预生成，直接使用
-    if (pregeneratedCanvas) {
-        doShareWithCanvas(pregeneratedCanvas);
-        return;
-    }
-
-    // 否则显示加载提示并生成
-    showNotification('正在生成图片...', 'info');
-    
-    if (typeof html2canvas === 'undefined') {
-        const script = document.createElement('script');
-        script.src = '/static/vendor/html2canvas/html2canvas.min.js';
-        script.onload = () => generateAndShare(card);
-        script.onerror = () => {
-            console.error('[Card] html2canvas 加载失败');
-            showNotification('图片生成组件加载失败', 'error');
-        };
-        document.head.appendChild(script);
-    } else {
-        generateAndShare(card);
-    }
-}
-
-function generateAndShare(card) {
-    html2canvas(card, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        imageTimeout: 15000,
-        onclone: (clonedDoc) => {
-            const clonedImages = clonedDoc.querySelectorAll('img');
-            clonedImages.forEach(img => {
-                img.crossOrigin = 'anonymous';
-            });
-        }
-    }).then(canvas => {
-        pregeneratedCanvas = canvas;
-        doShareWithCanvas(canvas);
-    }).catch(err => {
-        console.error('[Card] 生成图片失败:', err);
-        showNotification('生成图片失败，请重试', 'error');
-    });
-}
-
-function doShareWithCanvas(canvas) {
-    // 检测是否为移动端
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    // 统一显示图片预览，移动端长按保存，桌面端显示下载按钮
-    showImagePreview(canvas, !isMobile);
-}
-
-function showImagePreview(canvas, showDownload = false) {
-    // 创建预览模态框
-    let modal = document.getElementById('imagePreviewModal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'imagePreviewModal';
-        modal.className = 'image-preview-modal';
-        document.body.appendChild(modal);
-
-        // 点击背景关闭
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeImagePreview();
-        });
-    }
-
-    // 根据是否桌面端显示不同内容
-    if (showDownload) {
-        modal.innerHTML = `
-            <div class="image-preview-content">
-                <div class="image-preview-header">
-                    <span>保存图片</span>
-                    <button class="image-preview-close" onclick="closeImagePreview()">✕</button>
-                </div>
-                <div class="image-preview-body">
-                    <img id="previewImage" src="" alt="成长卡片">
-                </div>
-                <div class="image-preview-tip" style="display: flex; gap: 10px; justify-content: center;">
-                    <button onclick="downloadCardFromPreview()" style="background: linear-gradient(135deg, #FFB6C1, #FFD700); border: none; color: white; padding: 10px 24px; border-radius: 20px; font-weight: 600; cursor: pointer;">
-                        <i class="fas fa-download"></i> 保存图片
-                    </button>
-                </div>
-            </div>
-        `;
-    } else {
-        modal.innerHTML = `
-            <div class="image-preview-content">
-                <div class="image-preview-header">
-                    <span>长按图片保存到相册</span>
-                    <button class="image-preview-close" onclick="closeImagePreview()">✕</button>
-                </div>
-                <div class="image-preview-body">
-                    <img id="previewImage" src="" alt="成长卡片">
-                </div>
-                <div class="image-preview-tip">
-                    <i class="fas fa-hand-pointer"></i> 长按图片保存，然后分享到微信朋友圈
-                </div>
-            </div>
-        `;
-    }
-
-    // 设置图片 - 使用JPEG格式减小文件大小
-    document.getElementById('previewImage').src = canvas.toDataURL('image/jpeg', 0.8);
-    
-    // 保存canvas引用供下载使用
-    window.previewCanvas = canvas;
-    
-    modal.classList.add('show');
-}
-
-function downloadCardFromPreview() {
-    if (window.previewCanvas) {
-        downloadCard(window.previewCanvas);
-    }
-}
-
-function closeImagePreview() {
-    const modal = document.getElementById('imagePreviewModal');
-    if (modal) {
-        modal.classList.remove('show');
-    }
-}
-
-function downloadCard(canvas) {
-    const link = document.createElement('a');
-    link.download = `成长卡片_${new Date().toISOString().slice(0,10)}.jpg`;
-    link.href = canvas.toDataURL('image/jpeg', 0.8);
-    link.click();
-}
-
-function refreshDailyCard() {
-    // 直接从缓存切换，秒开
-    if (switchToNextCard()) {
-        console.log('[Card] 切换到下一张缓存卡片');
-    }
-}
-
-function closeDailyCard() {
-    const modalEl = document.getElementById('dailyCardModal');
-    const modal = bootstrap.Modal.getInstance(modalEl);
-    if (modal) {
-        modal.hide();
-    }
-    
-    // 确保清理遮罩层
-    setTimeout(() => {
-        document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
-    });
-}
-
 // 页面加载完成后立即显示右下角卡片入口
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(showMiniCard, 100);
@@ -5593,112 +4791,6 @@ function hideMiniCard() {
     }
 }
 </script>
-
-<!-- 每日成长卡片模态框 -->
-<div class="modal fade" id="dailyCardModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content" style="border: none; border-radius: 24px; overflow: hidden;">
-            <div class="modal-body p-0" id="dailyCardContainer">
-                <div id="dailyGrowthCard" style="padding: 24px;">
-                    <div class="text-center py-4">
-                        <i class="fas fa-spinner fa-spin" style="color: #FFB6C1; font-size: 24px;"></i>
-                    </div>
-                </div>
-
-                <!-- 操作按钮 -->
-                <div style="padding: 16px; background: white; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-                    <button class="btn btn-outline-secondary btn-sm" onclick="refreshDailyCard()" style="border-radius: 20px;" id="refreshCardBtn">
-                        <i class="fas fa-sync-alt me-1"></i>换一个
-                    </button>
-                    <button id="editBtn" class="btn btn-outline-secondary btn-sm" onclick="editCardText()" style="border-radius: 20px; display: none;">
-                        <i class="fas fa-edit me-1"></i>编辑
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="closeDailyCard()" style="border-radius: 20px;">
-                        关闭
-                    </button>
-                    <button id="shareCardBtn" class="btn btn-sm" onclick="shareDailyCard()" style="background: linear-gradient(135deg, #FFB6C1 0%, #FFD700 100%); color: white; border: none; border-radius: 20px; padding: 8px 20px;">
-                        <i class="fas fa-share-alt me-1"></i>分享
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- 图片预览模态框 -->
-<style>
-.image-preview-modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 99999;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-}
-
-.image-preview-modal.show {
-    display: flex;
-}
-
-.image-preview-content {
-    background: white;
-    border-radius: 16px;
-    max-width: 90%;
-    max-height: 90%;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.image-preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    border-bottom: 1px solid #eee;
-    font-weight: 500;
-}
-
-.image-preview-close {
-    background: none;
-    border: none;
-    font-size: 20px;
-    cursor: pointer;
-    color: #666;
-    padding: 4px 8px;
-}
-
-.image-preview-body {
-    padding: 20px;
-    overflow: auto;
-}
-
-.image-preview-body img {
-    max-width: 100%;
-    max-height: 60vh;
-    border-radius: 8px;
-    display: block;
-    margin: 0 auto;
-}
-
-.image-preview-tip {
-    padding: 16px 20px;
-    background: #FFF5F7;
-    text-align: center;
-    color: #666;
-    font-size: 14px;
-}
-
-.image-preview-tip i {
-    margin-right: 8px;
-    color: #FF8FAB;
-}
-</style>
 
 <!-- 右下角小卡片 -->
 <style>
@@ -5729,20 +4821,6 @@ function hideMiniCard() {
 
 .mini-growth-card:active {
     transform: scale(0.95);
-}
-
-/* 加载动画 */
-.mini-card-loading {
-    width: 22px;
-    height: 22px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-top-color: white;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
 }
 
 .mini-card-icon {
@@ -5779,8 +4857,53 @@ function hideMiniCard() {
     
     /* 照片网格适配 */
     .gallery-grid-uni {
-        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
         gap: 8px;
+    }
+
+    .gallery-tabs {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .gallery-tab {
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
+
+    .photo-tools {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .gallery-item-overlay {
+        padding: 8px;
+        align-items: center;
+        background: linear-gradient(to top, rgba(44,44,44,0.82) 0%, rgba(44,44,44,0.16) 100%);
+    }
+
+    .gallery-item-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .gallery-item-actions > div {
+        width: 100%;
+    }
+
+    .gallery-item-actions > div .btn-gallery-action {
+        width: 100%;
+    }
+
+    .btn-gallery-action {
+        width: 100%;
+        height: 32px;
+        border-radius: 999px;
+        font-size: 0.82rem;
     }
 }
 
@@ -5823,765 +4946,6 @@ function hideMiniCard() {
         font-size: 13px;
         font-weight: 600;
     }
-}
-
-/* 每日成长卡片样式 - 全新设计 */
-.growth-card {
-    border-radius: 20px;
-    overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* 照片卡片 */
-.photo-card .card-photo-wrapper {
-    position: relative;
-    width: 100%;
-    padding-top: 100%;
-    overflow: hidden;
-}
-
-.photo-card .card-photo {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.photo-card .card-date-badge {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: rgba(255,255,255,0.9);
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    color: #666;
-}
-
-.photo-card .card-content {
-    padding: 20px;
-    background: white;
-}
-
-/* 合图卡片 */
-.collage-card .card-photo-wrapper {
-    position: relative;
-    width: 100%;
-    padding: 10px;
-    background: #f5f5f5;
-}
-
-.collage-card .card-collage {
-    width: 100%;
-    border-radius: 12px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.collage-card .card-date-badge {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: rgba(255,255,255,0.9);
-    padding: 6px 12px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 500;
-    color: #666;
-}
-
-.collage-card .card-content {
-    padding: 16px 20px;
-    background: white;
-}
-
-/* 成长对比卡片 */
-.comparison-card {
-    background: #F5F7FA;
-}
-
-.comparison-card .card-photo-wrapper {
-    position: relative;
-    overflow: hidden;
-}
-
-.comparison-card .card-collage {
-    width: 100%;
-    height: auto;
-    display: block;
-}
-
-.comparison-card .card-date-badge {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.comparison-card .card-content {
-    padding: 16px 20px;
-    background: white;
-}
-
-.comparison-card .card-comparison-info {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    margin-top: 8px;
-    font-size: 12px;
-    color: #888;
-}
-
-.comparison-card .card-comparison-info .arrow {
-    color: #FF8FAB;
-    font-weight: bold;
-}
-
-.comparison-card .card-comparison-info .before-date {
-    color: #999;
-}
-
-.comparison-card .card-comparison-info .after-date {
-    color: #666;
-    font-weight: 500;
-}
-
-/* 特殊里程碑卡片 */
-.special-milestone-card {
-    background: #FFF9E6;
-    text-align: center;
-    padding: 30px 20px;
-}
-
-.special-milestone-card .milestone-icon {
-    font-size: 56px;
-    margin-bottom: 16px;
-    animation: bounce 1s ease infinite;
-}
-
-@keyframes bounce {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-}
-
-.special-milestone-card .card-title {
-    font-size: 22px;
-    font-weight: 700;
-    color: #B8860B;
-    margin-bottom: 8px;
-}
-
-.special-milestone-card .card-text {
-    font-size: 14px;
-    color: #DAA520;
-    margin-bottom: 12px;
-}
-
-.special-milestone-card .milestone-content {
-    font-size: 14px;
-    color: #666;
-    line-height: 1.6;
-}
-
-/* 画像卡片 */
-.profile-card {
-    background: #FFF5F7;
-}
-
-.profile-card .card-header-bar {
-    padding: 16px 20px;
-    border-bottom: 1px solid rgba(255,143,171,0.2);
-}
-
-.profile-card .card-subtitle {
-    font-size: 12px;
-    color: #FF8FAB;
-    font-weight: 500;
-}
-
-.profile-card .card-content {
-    padding: 20px;
-}
-
-/* 里程碑卡片 */
-.milestone-card {
-    background: #FFF9E6;
-    text-align: center;
-    padding: 30px 20px;
-}
-
-.milestone-card .milestone-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-}
-
-/* 特质卡片 */
-.trait-card {
-    background: #F0FFF4;
-}
-
-.trait-card .card-header-bar {
-    padding: 16px 20px;
-    border-bottom: 1px solid rgba(104,211,145,0.2);
-}
-
-.trait-card .card-subtitle {
-    font-size: 12px;
-    color: #68D391;
-    font-weight: 500;
-}
-
-/* 通用卡片元素 */
-.card-title {
-    font-size: 20px;
-    font-weight: 600;
-    color: #2D3748;
-    margin-bottom: 12px;
-    line-height: 1.4;
-}
-
-.card-text {
-    font-size: 15px;
-    color: #4A5568;
-    line-height: 1.7;
-}
-
-.card-photo-date {
-    text-align: center;
-    font-size: 13px;
-    color: #718096;
-    padding: 8px 16px;
-    background: rgba(255,255,255,0.9);
-}
-
-.card-traits {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 16px;
-}
-
-.trait-tag {
-    background: rgba(255,143,171,0.15);
-    color: #FF8FAB;
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 500;
-}
-
-.card-traits-large {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 16px 0;
-}
-
-.trait-tag-large {
-    background: rgba(104,211,145,0.2);
-    color: #2F855A;
-    padding: 10px 18px;
-    border-radius: 25px;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    background: rgba(255,255,255,0.5);
-    border-top: 1px solid rgba(0,0,0,0.05);
-}
-
-.card-footer-text {
-    font-size: 12px;
-    color: #718096;
-}
-
-.card-brand {
-    font-size: 11px;
-    color: #A0AEC0;
-    font-weight: 500;
-}
-
-/* ========== 扩展卡片样式 ========== */
-
-/* 通用大emoji */
-.card-emoji-large {
-    font-size: 48px;
-    text-align: center;
-    display: block;
-    margin-bottom: 16px;
-}
-
-/* 高亮文本 */
-.card-highlight {
-    font-size: 16px;
-    color: #4A5568;
-    margin-top: 16px;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.6);
-    border-radius: 12px;
-    line-height: 1.6;
-}
-
-/* 小小旅行家卡片 */
-.little-traveler-card {
-    background: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
-}
-
-.travel-scenes {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin: 16px 0;
-}
-
-.travel-scene-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 12px;
-}
-
-.scene-emoji {
-    font-size: 24px;
-}
-
-.scene-name {
-    flex: 1;
-    font-size: 14px;
-    color: #2D3748;
-}
-
-.scene-count {
-    font-size: 12px;
-    color: #718096;
-}
-
-/* 睡眠进化史卡片 */
-.sleep-evolution-card {
-    background: linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%);
-}
-
-.sleep-poses {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 16px 0;
-}
-
-.sleep-pose-tag {
-    padding: 8px 16px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 20px;
-    font-size: 13px;
-    color: #4A5568;
-}
-
-/* 爱的抱抱卡片 */
-.love-hug-card {
-    background: linear-gradient(135deg, #FCE4EC 0%, #F8BBD9 100%);
-}
-
-.hugger-stats {
-    margin: 16px 0;
-}
-
-.hugger-stat-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 0;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
-}
-
-.hugger-stat-item:last-child {
-    border-bottom: none;
-}
-
-.hugger-name {
-    width: 60px;
-    font-size: 14px;
-    color: #2D3748;
-}
-
-.hugger-bar {
-    flex: 1;
-    height: 8px;
-    background: rgba(0,0,0,0.1);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.hugger-bar-fill {
-    display: block;
-    height: 100%;
-    width: 0;
-    background: linear-gradient(90deg, #FF8FAB, #FFB6C1);
-    border-radius: 4px;
-    transition: width 0.5s ease;
-}
-
-.hugger-count {
-    width: 50px;
-    text-align: right;
-    font-size: 13px;
-    color: #718096;
-}
-
-/* 陪伴统计卡片 */
-.companion-stats-card {
-    background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%);
-}
-
-.companions-list {
-    margin: 16px 0;
-}
-
-.companion-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 12px;
-    margin-bottom: 8px;
-}
-
-.companion-rank {
-    font-size: 20px;
-}
-
-.companion-emoji {
-    font-size: 24px;
-}
-
-.companion-name {
-    flex: 1;
-    font-size: 15px;
-    color: #2D3748;
-    font-weight: 500;
-}
-
-.companion-count {
-    font-size: 14px;
-    color: #FF8FAB;
-    font-weight: 600;
-}
-
-.companion-item.rank-1 {
-    background: linear-gradient(90deg, #FFD700 0%, #FFA500 100%);
-}
-
-.companion-item.rank-2 {
-    background: linear-gradient(90deg, #C0C0C0 0%, #A0A0A0 100%);
-}
-
-.companion-item.rank-3 {
-    background: linear-gradient(90deg, #CD7F32 0%, #B87333 100%);
-}
-
-/* 四季衣橱卡片 */
-.four-seasons-card {
-    background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
-}
-
-.seasons-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin: 16px 0;
-}
-
-.season-item {
-    text-align: center;
-    padding: 16px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 16px;
-    border-top: 4px solid var(--season-color, #999);
-}
-
-.season-emoji {
-    font-size: 32px;
-    display: block;
-    margin-bottom: 8px;
-}
-
-.season-name {
-    font-size: 16px;
-    font-weight: 600;
-    color: #2D3748;
-}
-
-.season-photo img {
-    width: 100%;
-    height: 80px;
-    object-fit: cover;
-    border-radius: 8px;
-    margin-top: 8px;
-}
-
-/* 睡姿大全卡片 */
-.sleep-poses-card {
-    background: linear-gradient(135deg, #E1F5FE 0%, #B3E5FC 100%);
-}
-
-.poses-cloud {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 16px 0;
-    justify-content: center;
-}
-
-.pose-tag {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 10px 16px;
-    background: rgba(255,255,255,0.9);
-    border-radius: 24px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.pose-emoji {
-    font-size: 20px;
-}
-
-.pose-name {
-    font-size: 14px;
-    color: #2D3748;
-}
-
-.pose-count {
-    font-size: 12px;
-    color: #718096;
-}
-
-.card-photos-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin: 16px 0;
-}
-
-.card-grid-photo {
-    width: 100%;
-    aspect-ratio: 1;
-    object-fit: cover;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* 表情模仿秀卡片 */
-.expression-mimic-card {
-    background: linear-gradient(135deg, #FFF8E1 0%, #FFECB3 100%);
-}
-
-.expression-compare {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    margin: 16px 0;
-}
-
-.compare-item {
-    text-align: center;
-}
-
-.compare-item img {
-    width: 120px;
-    height: 120px;
-    object-fit: cover;
-    border-radius: 16px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-.compare-label {
-    font-size: 12px;
-    color: #718096;
-    margin-bottom: 8px;
-}
-
-.compare-arrow {
-    font-size: 24px;
-    color: #FF8FAB;
-    font-weight: bold;
-}
-
-/* 数据画像卡片 */
-.data-portrait-card {
-    background: linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%);
-}
-
-.data-stats {
-    margin: 16px 0;
-}
-
-.data-stat-item {
-    display: flex;
-    align-items: center;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 12px;
-    margin-bottom: 8px;
-}
-
-.stat-label {
-    flex: 1;
-    font-size: 14px;
-    color: #4A5568;
-}
-
-.stat-value {
-    font-size: 15px;
-    font-weight: 600;
-    color: #6B46C1;
-}
-
-/* 从家里走向世界卡片 */
-.home-to-world-card {
-    background: linear-gradient(135deg, #E0F7FA 0%, #B2EBF2 100%);
-}
-
-.explore-milestones {
-    margin: 16px 0;
-}
-
-.explore-milestone {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: rgba(255,255,255,0.8);
-    border-radius: 12px;
-    margin-bottom: 8px;
-}
-
-.milestone-stage {
-    width: 60px;
-    font-size: 14px;
-    font-weight: 600;
-    color: #0891B2;
-}
-
-.milestone-scenes {
-    flex: 1;
-    font-size: 13px;
-    color: #4A5568;
-}
-
-.milestone-count {
-    font-size: 12px;
-    color: #0891B2;
-    font-weight: 500;
-}
-
-/* 情绪天气卡片 */
-.emotion-weather-card {
-    background: linear-gradient(135deg, #FFFDE7 0%, #FFF9C4 100%);
-}
-
-.emotion-weather-list {
-    margin: 16px 0;
-}
-
-.emotion-weather-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 0;
-    border-bottom: 1px solid rgba(0,0,0,0.05);
-}
-
-.emotion-weather-item:last-child {
-    border-bottom: none;
-}
-
-.emotion-icon {
-    font-size: 24px;
-    width: 30px;
-    text-align: center;
-}
-
-.emotion-name {
-    width: 60px;
-    font-size: 14px;
-    color: #2D3748;
-}
-
-.emotion-bar {
-    flex: 1;
-    height: 8px;
-    background: rgba(0,0,0,0.1);
-    border-radius: 4px;
-    overflow: hidden;
-}
-
-.emotion-bar-fill {
-    display: block;
-    height: 100%;
-    width: 0;
-    background: var(--emotion-color, #999);
-    border-radius: 4px;
-    transition: width 0.5s ease;
-}
-
-.emotion-percent {
-    width: 40px;
-    text-align: right;
-    font-size: 13px;
-    color: #718096;
-}
-
-/* 同一天不同年卡片 */
-.same-day-card {
-    background: linear-gradient(135deg, #FBE9E7 0%, #FFCCBC 100%);
-}
-
-.year-samples {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin: 16px 0;
-    justify-content: center;
-}
-
-.year-sample-item {
-    text-align: center;
-}
-
-.year-label {
-    font-size: 12px;
-    color: #718096;
-    margin-bottom: 6px;
-}
-
-.year-photo img {
-    width: 100px;
-    height: 100px;
-    object-fit: cover;
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-
-/* 笑容收集册卡片 */
-.smile-collection-card {
-    background: linear-gradient(135deg, #FFF0F5 0%, #FFB6C1 100%);
 }
 
 </style>

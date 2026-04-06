@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="theme-color" content="#FF9A8B">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="format-detection" content="telephone=no">
@@ -67,9 +68,6 @@
     }
     </style>
     
-    <!-- 动态主题 CSS -->
-    <style id="dynamic-theme">{{ theme_css | safe }}</style>
-    
     <!-- 日历 CSS (本地) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.css') }}">
     
@@ -95,7 +93,7 @@
     <nav class="navbar navbar-expand-lg navbar-light fixed-top">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" class="navbar-avatar rounded-circle me-2">
+                <img src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="navbar-avatar rounded-circle me-2">
                 <span class="brand-text">{{ baby_name }}的成长记录</span>
             </a>
             
@@ -131,13 +129,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" onclick="openAllTagsModal(); return false;">
-                            <span class="me-2">🏷️</span>标签照片
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#themeModal">
-                            <span class="me-2">🎨</span>主题
+                        <a class="nav-link" href="{{ url_for('storybook_page') }}">
+                            <span class="me-2">🕰️</span>时光相册
                         </a>
                     </li>
                     <li class="nav-item">
@@ -178,7 +171,6 @@
     {% include 'modals/calendar.html' %}
     {% include 'modals/upload.html' %}
     {% include 'modals/ai.html' %}
-    {% include 'modals/theme_customizer.html' %}
     {% include 'modals/photo_detail.html' %}
     {% include 'modals/photo_tags.html' %}
     {% include 'modals/settings.html' %}
@@ -353,9 +345,6 @@
     
     <!-- Bootstrap JS (本地) -->
     <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.bundle.min.js') }}"></script>
-    
-    <!-- Masonry for瀑布流 (本地) -->
-    <script src="{{ url_for('static', filename='vendor/masonry/masonry-4.2.2.pkgd.min.js') }}"></script>
     
     <!-- 日历组件 (本地) -->
     <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>

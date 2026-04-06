@@ -434,11 +434,6 @@ function uploadFiles() {
             selectedFiles = [];
             hideQuickAddBar();
 
-            // ========== 显示勋章通知 ==========
-            if (data.badges && data.badges.length > 0) {
-                showBadgeNotification(data.badges);
-            }
-
             // 刷新当前日期数据
             setTimeout(function() {
                 if (typeof loadDateData === 'function' && typeof window.currentCalendarDate !== 'undefined') {

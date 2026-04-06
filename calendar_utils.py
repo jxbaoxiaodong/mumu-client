@@ -207,12 +207,3 @@ def get_calendar_info(target_date: date = None) -> Dict:
         "lunar_festival": lunar_festival,
         "festival": festival,
     }
-
-
-if __name__ == "__main__":
-    info = get_calendar_info()
-    print(f"日期: {info['date']}")
-    print(f"星期: {info['weekday']}")
-    print(f"农历: {info['lunar_display']}")
-    if info["festival"]:
-        print(f"节日: {info['festival']}")

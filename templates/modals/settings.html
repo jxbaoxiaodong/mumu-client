@@ -74,6 +74,21 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 图片生成用量 -->
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="me-3">
+                                    <i class="fas fa-images fa-2x text-warning"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 text-muted small">图片生成使用量</h6>
+                                    <div class="d-flex align-items-center">
+                                        <span class="me-2" style="font-size: 0.95rem;">
+                                            <span class="text-primary">{{ "{:,}".format(image_usage.image_count if image_usage else 0) }}</span> 张
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                             
                             <!-- 网络访问 -->
                             <div class="mb-0">
@@ -119,8 +134,8 @@
                         <p class="text-muted small mb-0">点击下方按钮进入设置修改页面</p>
                     </div>
                     <div class="d-grid">
-                        <button class="btn btn-primary" onclick="showSettingsPasswordVerify()">
-                            <i class="fas fa-sign-in-alt me-2"></i>进入修改页面
+                        <button class="btn btn-primary" onclick="openSettingsEditor()">
+                            <i class="fas fa-sign-in-alt me-2"></i>进入设置
                         </button>
                     </div>
                     <div class="text-center mt-3">
@@ -128,32 +143,6 @@
                             <i class="fas fa-info-circle me-1"></i>
                             远程访问首次通过家庭码后，可直接修改设置
                         </small>
-                    </div>
-                </div>
-
-                <!-- 密码验证区域（初始隐藏） -->
-                <div id="passwordVerifySection" class="d-none">
-                    <div class="text-center mb-4">
-                        <i class="fas fa-lock fa-3x text-primary mb-3"></i>
-                        <h5>请输入管理密码</h5>
-                        <p class="text-muted">为保护设置安全，需要验证密码</p>
-                    </div>
-                    <div class="mb-3">
-                        <input type="password" class="form-control form-control-lg" id="settingsPassword" 
-                               placeholder="输入管理密码" onkeypress="if(event.key==='Enter')verifySettingsPassword()">
-                    </div>
-                    <div class="d-grid">
-                        <button class="btn btn-primary btn-lg" onclick="verifySettingsPassword()">
-                            <i class="fas fa-unlock me-2"></i>验证密码
-                        </button>
-                    </div>
-                    <div id="passwordError" class="alert alert-danger mt-3 d-none">
-                        <i class="fas fa-exclamation-triangle me-2"></i>密码错误，请重试
-                    </div>
-                    <div class="text-center mt-3">
-                        <button class="btn btn-link text-muted" onclick="backToEnterSection()">
-                            <i class="fas fa-arrow-left me-1"></i>返回
-                        </button>
                     </div>
                 </div>
 
@@ -167,7 +156,7 @@
                         <div class="card-body text-center">
                             <div class="mb-3">
                                 <div class="avatar-upload-settings" onclick="document.getElementById('settingsAvatarInput').click()">
-                                    <img id="settingsAvatarPreview" src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                    <img id="settingsAvatarPreview" src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
                                     <div class="avatar-overlay-settings">
                                         <i class="fas fa-camera"></i>
                                     </div>
@@ -229,7 +218,7 @@
                         <div class="card-body">
                             <div class="mb-2">
                                 <select class="form-select" id="logStyle" onchange="toggleCustomStyleInput(); saveLogStyleFromSettings();">
-                                    <option value="简练" selected>简练 - 简洁明了，100字左右</option>
+                                    <option value="简练" selected>简练 - 温馨平淡，像真人日记</option>
                                     <option value="诗意">诗意 - 文艺清新，诗意比喻</option>
                                     <option value="东北腔">东北腔 - 幽默风趣，东北话口吻</option>
                                     <option value="详细">详细 - 记录细节，200字左右</option>
@@ -275,21 +264,21 @@
                         </div>
                     </div>
 
-                    <!-- 修改密码 -->
+                    <!-- 修改家庭码 -->
                     <div class="card mb-3">
                         <div class="card-header">
-                            <h6 class="mb-0"><i class="fas fa-lock me-2"></i>修改管理密码</h6>
+                            <h6 class="mb-0"><i class="fas fa-lock me-2"></i>修改家庭码</h6>
                         </div>
                         <div class="card-body">
                             <div class="mb-2">
-                                <input type="password" class="form-control" id="modalNewPassword" 
-                                       placeholder="输入新密码（留空则不修改）">
+                                <input type="password" class="form-control" id="modalFamilyCode" 
+                                       placeholder="输入新的家庭码（留空则不修改）">
                             </div>
                             <div class="mb-2">
-                                <input type="password" class="form-control" id="modalConfirmPassword" 
-                                       placeholder="再次输入新密码">
+                                <input type="password" class="form-control" id="modalConfirmFamilyCode" 
+                                       placeholder="再次输入新的家庭码">
                             </div>
-                            <small class="text-muted">提示：localhost 或 127.0.0.1 访问可免密码</small>
+                            <small class="text-muted">提示：局域网内访问免家庭码，公网首次输入一次后会自动记住</small>
                         </div>
                     </div>
                     
@@ -580,27 +569,12 @@ function copyFamilyShareText() {
     });
 }
 
-// 显示密码验证界面
-function showSettingsPasswordVerify() {
-    // 统一家庭码策略：首次访问已验证，这里直接进入设置内容
+// 进入设置编辑界面
+function openSettingsEditor() {
     document.getElementById('enterModifySection').classList.add('d-none');
-    document.getElementById('passwordVerifySection').classList.add('d-none');
     document.getElementById('settingsContentSection').classList.remove('d-none');
     document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
     loadCurrentSettings();
-}
-
-// 返回进入修改页面界面
-function backToEnterSection() {
-    document.getElementById('passwordVerifySection').classList.add('d-none');
-    document.getElementById('enterModifySection').classList.remove('d-none');
-    document.getElementById('settingsPassword').value = '';
-    document.getElementById('passwordError').classList.add('d-none');
-    document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>系统设置';
-}
-
-function verifySettingsPassword() {
-    showSettingsPasswordVerify();
 }
 
 function saveModalSettings() {
@@ -618,11 +592,11 @@ function saveModalSettings() {
         }
     });
     
-    var newPassword = document.getElementById('modalNewPassword').value;
-    var confirmPassword = document.getElementById('modalConfirmPassword').value;
+    var familyCode = document.getElementById('modalFamilyCode').value;
+    var confirmFamilyCode = document.getElementById('modalConfirmFamilyCode').value;
     
-    if (newPassword && newPassword !== confirmPassword) {
-        showNotification('两次输入的新密码不一致', 'error');
+    if (familyCode && familyCode !== confirmFamilyCode) {
+        showNotification('两次输入的家庭码不一致', 'error');
         return;
     }
     
@@ -637,8 +611,8 @@ function saveModalSettings() {
         index_after_date: document.getElementById('rebuildIndexStartDate').value
     };
     
-    if (newPassword) {
-        requestData.admin_password = newPassword;
+    if (familyCode) {
+        requestData.family_code = familyCode;
     }
     
     fetch('/api/setup', {
@@ -841,12 +815,9 @@ function saveLogStyleFromSettings() {
 // 重置模态框状态
 document.getElementById('settingsModal').addEventListener('hidden.bs.modal', function () {
     document.getElementById('enterModifySection').classList.remove('d-none');
-    document.getElementById('passwordVerifySection').classList.add('d-none');
     document.getElementById('settingsContentSection').classList.add('d-none');
-    document.getElementById('passwordError').classList.add('d-none');
-    document.getElementById('settingsPassword').value = '';
-    document.getElementById('modalNewPassword').value = '';
-    document.getElementById('modalConfirmPassword').value = '';
+    document.getElementById('modalFamilyCode').value = '';
+    document.getElementById('modalConfirmFamilyCode').value = '';
     document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>系统设置';
 });
 

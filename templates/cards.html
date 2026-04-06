@@ -16,6 +16,50 @@
     .cards-header h1 { font-size: 2rem; color: #FF8FAB; margin-bottom: 10px; font-weight: 600; }
     .cards-subtitle { color: #718096; font-size: 0.95rem; margin-bottom: 5px; }
     .cards-count { color: #A0AEC0; font-size: 0.9rem; }
+    .cards-filter-shell { display: grid; gap: 12px; margin: 0 auto 24px; }
+    .cards-filter-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+    .cards-filter-btn {
+        border: none;
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: rgba(255,255,255,0.92);
+        color: #6b7280;
+        font-size: 0.92rem;
+        font-weight: 700;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.06);
+        transition: all 0.2s ease;
+    }
+    .cards-filter-btn:hover { transform: translateY(-1px); color: #ff6b9d; }
+    .cards-filter-btn.active {
+        background: linear-gradient(135deg, #ff9fba 0%, #ffcf7d 100%);
+        color: white;
+        box-shadow: 0 12px 24px rgba(255, 143, 171, 0.26);
+    }
+    .cards-filter-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        height: 22px;
+        margin-left: 8px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.85);
+        color: inherit;
+        font-size: 0.76rem;
+        padding: 0 7px;
+    }
+    .cards-filter-btn.active .cards-filter-count {
+        background: rgba(255,255,255,0.22);
+        color: white;
+    }
+    .cards-category-desc {
+        text-align: center;
+        color: #718096;
+        font-size: 0.92rem;
+        line-height: 1.7;
+        max-width: 520px;
+        margin: 0 auto;
+    }
     .back-link { display: inline-flex; align-items: center; color: #FF8FAB; text-decoration: none; margin-bottom: 20px; transition: all 0.3s ease; font-size: 0.95rem; }
     .back-link:hover { color: #FF6B9D; transform: translateX(-3px); }
     .back-link i { margin-right: 8px; }
@@ -118,10 +162,589 @@
         font-size: 14px;
         line-height: 1.7;
     }
+    .story-card {
+        background: linear-gradient(180deg, #fff8ef 0%, #fffdf8 100%);
+    }
+    .story-cover-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #ffe3b5 0%, #ffd3df 48%, #d9f0ff 100%);
+        padding: 18px;
+        min-height: 240px;
+    }
+    .story-cover-hero.has-photo {
+        min-height: 320px;
+    }
+    .story-cover-hero img {
+        width: 100%;
+        aspect-ratio: 4 / 5;
+        object-fit: cover;
+        border-radius: 16px;
+        display: block;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+    }
+    .story-cover-overlay {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 8px 24px rgba(94, 72, 39, 0.12);
+    }
+    .story-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #8a5b11;
+        background: rgba(255, 245, 223, 0.92);
+        border-radius: 999px;
+        padding: 5px 10px;
+        margin-bottom: 10px;
+    }
+    .story-role-name {
+        font-size: 26px;
+        font-weight: 800;
+        color: #2c2a43;
+        letter-spacing: 0.02em;
+        margin-bottom: 8px;
+    }
+    .story-world-name {
+        color: #695c5c;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+    .story-grid {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .story-info-panel {
+        border-radius: 16px;
+        padding: 14px 16px;
+        background: linear-gradient(135deg, rgba(255,244,231,0.9), rgba(252,252,255,0.95));
+        border: 1px solid rgba(228, 210, 186, 0.8);
+    }
+    .story-panel-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #946b29;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .story-traits,
+    .story-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .story-trait-pill,
+    .story-tag-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 7px 11px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.92);
+        color: #503f4e;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid rgba(223, 208, 188, 0.9);
+    }
+    .story-quote-box {
+        margin-top: 16px;
+        padding: 18px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, rgba(255, 240, 226, 0.96), rgba(242, 247, 255, 0.96));
+        color: #2d3748;
+        box-shadow: inset 0 0 0 1px rgba(225, 214, 197, 0.85);
+    }
+    .story-quote-mark {
+        font-size: 30px;
+        color: #d78c7a;
+        line-height: 1;
+        margin-bottom: 8px;
+    }
+    .story-quote-text {
+        font-size: 24px;
+        font-weight: 800;
+        line-height: 1.45;
+        color: #3a2e4d;
+        letter-spacing: 0.01em;
+    }
+    .story-quote-caption {
+        margin-top: 10px;
+        color: #73656d;
+        font-size: 13px;
+    }
+    .story-skill-shell {
+        display: grid;
+        gap: 14px;
+        margin-top: 16px;
+    }
+    .story-skill-meter {
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(73, 63, 63, 0.08);
+        overflow: hidden;
+    }
+    .story-skill-fill {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff9f7f 0%, #ffc76a 100%);
+    }
+    .story-skill-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 10px;
+    }
+    .story-skill-name {
+        font-size: 22px;
+        font-weight: 800;
+        color: #2f3142;
+    }
+    .story-skill-level {
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: rgba(255, 234, 193, 0.95);
+        color: #8a5913;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .story-weather-mix {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+    }
+    .story-weather-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 10px;
+    }
+    .story-weather-name {
+        min-width: 3em;
+        font-size: 13px;
+        font-weight: 700;
+        color: #374151;
+    }
+    .story-weather-bar {
+        height: 10px;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+    }
+    .story-weather-fill {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ffb36a 0%, #ff8fab 100%);
+    }
+    .story-update-shell {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .story-update-block {
+        border-radius: 16px;
+        padding: 14px 16px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid rgba(226, 214, 197, 0.9);
+    }
+    .story-update-label {
+        font-size: 12px;
+        font-weight: 700;
+        color: #8c5a21;
+        margin-bottom: 8px;
+    }
+    .care-guide-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .care-guide-item {
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: rgba(255,255,255,0.92);
+        border: 1px solid rgba(225, 214, 196, 0.9);
+    }
+    .care-guide-item-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #8a5b11;
+        margin-bottom: 8px;
+    }
+    .story-support-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 14px;
+    }
+    .story-support-grid img {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        border-radius: 12px;
+        display: block;
+    }
     .grid-2-up { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 14px; }
     .grid-3-up { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
     .timeline-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
     .timeline-step { font-size: 12px; color: #718096; }
+    .shared-frame {
+        position: relative;
+        overflow: hidden;
+        background: #f4ece3;
+        border: 9px solid rgba(255,255,255,0.86);
+        box-shadow: 0 14px 28px rgba(67, 52, 40, 0.16);
+    }
+    .shared-frame img {
+        width: 100%;
+        display: block;
+        object-fit: cover;
+        aspect-ratio: 4 / 5;
+    }
+    .shared-frame.frame-circle { border-radius: 50%; }
+    .shared-frame.frame-circle img { aspect-ratio: 1 / 1; }
+    .shared-frame.frame-arch { border-radius: 180px 180px 24px 24px; }
+    .shared-frame.frame-square { border-radius: 24px; }
+    .shared-frame.frame-ticket { border-radius: 24px; clip-path: polygon(0 0, 90% 0, 100% 10%, 100% 100%, 10% 100%, 0 90%); }
+    .shared-frame.frame-oval { border-radius: 48% 48% 44% 44% / 56% 56% 40% 40%; }
+    .album-preview-card {
+        background: linear-gradient(180deg, #fff8ef 0%, #fff3e7 52%, #f8fbff 100%);
+    }
+    .album-preview-hero {
+        padding: 18px;
+        border-radius: 18px;
+        background: linear-gradient(145deg, rgba(255,233,200,0.96), rgba(219,238,246,0.94));
+        color: #2f2926;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.62);
+    }
+    .album-preview-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.72);
+        color: #845b3d;
+        font-size: 11px;
+        font-weight: 800;
+        margin-bottom: 10px;
+    }
+    .album-preview-cover {
+        display: grid;
+        grid-template-columns: 132px 1fr;
+        gap: 14px;
+        align-items: center;
+    }
+    .album-preview-title {
+        font-size: 24px;
+        line-height: 1.2;
+        font-weight: 800;
+        color: #2f2926;
+    }
+    .album-preview-summary {
+        color: #615852;
+        font-size: 14px;
+        line-height: 1.8;
+        margin-top: 8px;
+    }
+    .album-preview-rail {
+        position: relative;
+        display: grid;
+        gap: 14px;
+        margin-top: 16px;
+    }
+    .album-preview-rail::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 14px;
+        width: 2px;
+        background: linear-gradient(180deg, rgba(181, 141, 97, 0.18), rgba(181, 141, 97, 0.58), rgba(93, 146, 173, 0.2));
+    }
+    .album-preview-node {
+        position: relative;
+        display: grid;
+        grid-template-columns: 30px 1fr;
+        gap: 12px;
+        align-items: start;
+    }
+    .album-preview-dot {
+        width: 14px;
+        height: 14px;
+        margin-top: 14px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #d69357, #d7c7b1);
+        border: 3px solid rgba(255,255,255,0.96);
+        box-shadow: 0 0 0 1px rgba(181, 143, 103, 0.22);
+    }
+    .album-preview-body {
+        border-radius: 18px;
+        padding: 14px;
+        background: rgba(255,255,255,0.84);
+        box-shadow: 0 10px 24px rgba(67, 52, 40, 0.06);
+    }
+    .album-preview-date {
+        color: #8d7b6d;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+    }
+    .album-preview-node-title {
+        font-size: 18px;
+        line-height: 1.28;
+        font-weight: 800;
+        color: #2f2926;
+        margin-bottom: 8px;
+    }
+    .album-preview-node-summary {
+        color: #635954;
+        font-size: 14px;
+        line-height: 1.75;
+    }
+    .album-preview-node-media {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 78px;
+        gap: 10px;
+        margin-top: 12px;
+        align-items: start;
+    }
+    .album-preview-secondary {
+        display: grid;
+        gap: 8px;
+    }
+    .album-preview-secondary .shared-frame {
+        border-width: 5px;
+    }
+    .album-preview-secondary .shared-frame img {
+        aspect-ratio: 1 / 1;
+    }
+    .album-preview-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 14px;
+        color: #8a5b11;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 800;
+    }
+    .generated-comic-card {
+        color: #2f2926;
+        overflow: hidden;
+    }
+    .generated-comic-card.theme-sunlit {
+        background: linear-gradient(160deg, #fff0cb 0%, #fff8ed 48%, #eaf8f2 100%);
+    }
+    .generated-comic-card.theme-film {
+        background: linear-gradient(160deg, #f3e4d8 0%, #fcf7f2 48%, #ecf3ef 100%);
+    }
+    .generated-comic-card.theme-paper {
+        background: linear-gradient(160deg, #ffe5da 0%, #fff7ee 46%, #eef5ff 100%);
+    }
+    .generated-comic-card.theme-oil {
+        background: linear-gradient(160deg, #f2dfca 0%, #fbf6ef 46%, #eef1f8 100%);
+    }
+    .generated-comic-card.theme-night {
+        background: linear-gradient(160deg, #e4e9f8 0%, #f7f3ef 42%, #fff7ed 100%);
+    }
+    .generated-comic-card.theme-woodcut {
+        background: linear-gradient(160deg, #e4f2f2 0%, #f8faf5 44%, #fff2db 100%);
+    }
+    .generated-comic-shell {
+        display: grid;
+        grid-template-columns: 0.88fr 1.12fr;
+        gap: 18px;
+        align-items: center;
+    }
+    .generated-comic-visual {
+        display: grid;
+        gap: 12px;
+    }
+    .generated-comic-copy {
+        display: grid;
+        gap: 10px;
+    }
+    .generated-comic-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        width: fit-content;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.72);
+        color: #875c40;
+        font-size: 11px;
+        font-weight: 800;
+    }
+    .generated-comic-style {
+        font-size: 28px;
+        line-height: 1.15;
+        font-weight: 800;
+        color: #2f2926;
+    }
+    .generated-comic-tagline {
+        color: #615852;
+        font-size: 14px;
+        line-height: 1.75;
+    }
+    .generated-comic-palette {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .generated-comic-palette-chip {
+        display: inline-flex;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.85);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    }
+    .generated-comic-reasons {
+        display: grid;
+        gap: 8px;
+    }
+    .generated-comic-reason {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        color: #514844;
+        font-size: 13px;
+        line-height: 1.7;
+    }
+    .generated-comic-reason i {
+        color: #b5794f;
+        margin-top: 3px;
+    }
+    .generated-comic-prompt {
+        margin-top: 2px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.76);
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.72);
+    }
+    .generated-comic-prompt-label {
+        color: #8a5b11;
+        font-size: 11px;
+        font-weight: 800;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+    .generated-comic-prompt-text {
+        color: #615852;
+        font-size: 13px;
+        line-height: 1.75;
+        word-break: break-word;
+    }
+    .virtual-role-card {
+        background: linear-gradient(160deg, #fff6ea 0%, #fffdf8 46%, #eef5ff 100%);
+        color: #2f2a26;
+    }
+    .virtual-role-shell {
+        display: grid;
+        gap: 16px;
+    }
+    .virtual-role-hero {
+        position: relative;
+        border-radius: 22px;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(247, 221, 185, 0.72), rgba(225, 239, 255, 0.86));
+        padding: 18px;
+    }
+    .virtual-role-hero .shared-frame {
+        max-width: 280px;
+        margin: 0 auto;
+    }
+    .virtual-role-overlay {
+        margin-top: 14px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(255,255,255,0.86);
+        box-shadow: 0 12px 28px rgba(84, 61, 39, 0.12);
+        backdrop-filter: blur(8px);
+    }
+    .virtual-role-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255, 247, 231, 0.96);
+        color: #8a5b11;
+        font-size: 11px;
+        font-weight: 800;
+        margin-bottom: 10px;
+    }
+    .virtual-role-name {
+        font-size: 30px;
+        line-height: 1.1;
+        font-weight: 900;
+        color: #2f2926;
+        margin-bottom: 8px;
+    }
+    .virtual-role-subtitle {
+        color: #5f5750;
+        font-size: 14px;
+        line-height: 1.8;
+    }
+    .virtual-role-copy {
+        display: grid;
+        gap: 12px;
+    }
+    .virtual-role-signature {
+        padding: 12px 14px;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.82);
+        color: #6a5645;
+        font-size: 14px;
+        line-height: 1.8;
+    }
+    .virtual-role-reasons {
+        display: grid;
+        gap: 8px;
+    }
+    .virtual-role-reason {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        color: #514844;
+        font-size: 13px;
+        line-height: 1.7;
+    }
+    .virtual-role-reason i {
+        color: #b5794f;
+        margin-top: 3px;
+    }
+    .virtual-role-alt {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .virtual-role-alt-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 7px 11px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.9);
+        color: #5a5149;
+        font-size: 12px;
+        font-weight: 700;
+        border: 1px solid rgba(223, 208, 188, 0.9);
+    }
     .expression-compare { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 16px 0; padding: 20px; }
     .compare-item { text-align: center; }
     .compare-item img { width: 120px; height: 120px; object-fit: cover; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
@@ -215,6 +838,11 @@
         .nav-btn { width: 48px; height: 48px; font-size: 1.2rem; }
         .compare-item img { width: 90px; height: 90px; }
         .expression-compare { gap: 10px; padding: 15px; }
+        .story-role-name { font-size: 22px; }
+        .story-quote-text { font-size: 20px; }
+        .story-cover-hero.has-photo { min-height: 280px; }
+        .album-preview-cover,
+        .generated-comic-shell { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
@@ -227,6 +855,11 @@
         <h1>✨ 成长卡片</h1>
         <div class="cards-subtitle">{{ baby_name }}的精彩瞬间</div>
         <div class="cards-count"><span id="cardCount">0</span> 张卡片</div>
+    </div>
+
+    <div class="cards-filter-shell">
+        <div class="cards-filter-tabs" id="cardsCategoryTabs"></div>
+        <div class="cards-category-desc" id="cardsCategoryDesc"></div>
     </div>
     
     <div class="card-display-area">
@@ -270,12 +903,16 @@
 
 <script>
 window.__CARDS__ = {{ cards|tojson }};
+window.__INITIAL_CATEGORY__ = {{ initial_category|tojson }};
+window.__CATEGORY_COUNTS__ = {{ category_counts|tojson }};
 </script>
 
 <script>
-let allCards = [];
+let allCards = Array.isArray(window.__CARDS__) ? window.__CARDS__ : [];
 let currentCardIndex = 0;
 let pregeneratedCanvas = null;
+let currentCategory = window.__INITIAL_CATEGORY__ || 'all';
+let cardCategoryCounts = Array.isArray(window.__CATEGORY_COUNTS__) ? window.__CATEGORY_COUNTS__ : [];
 
 function getPhotoUrl(path) {
     if (!path) return '';
@@ -287,6 +924,7 @@ function getPhotoUrl(path) {
 
 function getPhotoThumbUrl(path) {
     if (!path) return '';
+    if (path.indexOf('/generated-assets/') === 0 || path.indexOf('/story-assets/') === 0 || path.indexOf('/video/thumb/') === 0) return path;
     if (path.indexOf('/photo/thumb/') === 0) return path;
     if (path.indexOf('/photo/') === 0) {
         return '/photo/thumb/' + path.replace('/photo/', '');
@@ -320,6 +958,58 @@ function escapeHtml(text) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function updateCategoryUrl(category) {
+    const url = new URL(window.location.href);
+    if (!category || category === 'all') {
+        url.searchParams.delete('category');
+    } else {
+        url.searchParams.set('category', category);
+    }
+    window.history.replaceState({}, '', url.toString());
+}
+
+function getCategoryMeta(category) {
+    const source = cardCategoryCounts.find(function(item) {
+        return item && item.key === category;
+    });
+    if (source) {
+        return source;
+    }
+    return {
+        key: category,
+        label: category,
+        description: '',
+        count: 0
+    };
+}
+
+function renderCategoryTabs() {
+    const container = document.getElementById('cardsCategoryTabs');
+    const descEl = document.getElementById('cardsCategoryDesc');
+    if (!container) return;
+
+    container.innerHTML = cardCategoryCounts.map(function(item) {
+        const isActive = item.key === currentCategory;
+        return '<button class="cards-filter-btn ' + (isActive ? 'active' : '') + '" onclick="switchCardCategory(\'' + escapeHtml(item.key) + '\')">'
+            + escapeHtml(item.label)
+            + '<span class="cards-filter-count">' + escapeHtml(String(item.count || 0)) + '</span>'
+            + '</button>';
+    }).join('');
+
+    const current = getCategoryMeta(currentCategory);
+    if (descEl) {
+        descEl.textContent = current.description || '';
+    }
+}
+
+function switchCardCategory(category) {
+    if (!category || category === currentCategory) return;
+    currentCategory = category;
+    currentCardIndex = 0;
+    renderCategoryTabs();
+    loadCards(category, true);
 }
 
 function getCardPhotos(card) {
@@ -594,6 +1284,433 @@ function renderUserAnnotationCard(card) {
     return html;
 }
 
+function renderSharedFrame(path, shape, extraClass) {
+    if (!path) return '';
+    return '<div class="shared-frame frame-' + escapeHtml(shape || 'square') + ' ' + (extraClass || '') + '">'
+        + '<img src="' + getCardImageUrl(path) + '" crossorigin="anonymous"></div>';
+}
+
+function renderTimeAlbumCard(card) {
+    var assets = card.assets || {};
+    var entries = assets.timeline_entries || card.timeline_entries || [];
+    var coverPhoto = assets.cover_photo || card.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var coverTitle = assets.cover_title || card.cover_title || card.title || '时光相册';
+    var coverSummary = assets.cover_summary || card.cover_summary || card.content || '';
+    var selectedDays = assets.selected_days || card.selected_days || entries.length || 0;
+    var sourceDays = assets.source_days || card.source_days || selectedDays;
+    var dateSpan = assets.date_span || card.date_span || card.subtitle || '';
+    var html = '<div class="growth-card album-preview-card"><div class="card-content">';
+    html += '<div class="album-preview-hero">';
+    html += '<div class="album-preview-kicker"><i class="fas fa-hourglass-half"></i> 时光相册预告</div>';
+    html += '<div class="album-preview-cover">';
+    html += renderSharedFrame(coverPhoto, 'arch');
+    html += '<div><div class="album-preview-title">' + escapeHtml(card.title || '时光相册') + '</div>';
+    html += '<div class="album-preview-summary">' + escapeHtml(card.subtitle || dateSpan) + '</div>';
+    if (coverTitle || coverSummary) {
+        html += '<div class="album-preview-summary"><strong>' + escapeHtml(coverTitle) + '</strong> · ' + escapeHtml(coverSummary) + '</div>';
+    }
+    html += '<div class="card-stats-row">'
+        + '<span class="card-stat-pill">入册 ' + escapeHtml(String(selectedDays)) + ' 节点</span>'
+        + '<span class="card-stat-pill">来源 ' + escapeHtml(String(sourceDays)) + ' 天</span>'
+        + '</div></div></div>';
+    html += '</div>';
+    if (entries.length) {
+        html += '<div class="album-preview-rail">';
+        html += entries.slice(0, 5).map(function(entry) {
+            var secondary = Array.isArray(entry.secondary_photos) ? entry.secondary_photos : [];
+            var mainPhoto = entry.photo || '';
+            var summary = entry.summary || entry.scene || entry.activity || '';
+            var body = '<div class="album-preview-date">' + escapeHtml(formatCardDate(entry.date || entry.date_label || '')) + '</div>'
+                + '<div class="album-preview-node-title">' + escapeHtml(entry.title || '时间节点') + '</div>'
+                + '<div class="album-preview-node-summary">' + escapeHtml(summary) + '</div>'
+                + '<div class="album-preview-node-media">'
+                + renderSharedFrame(mainPhoto, entry.frame_shape || 'square')
+                + (secondary.length ? '<div class="album-preview-secondary">' + secondary.slice(0, 2).map(function(path) {
+                    var photoPath = typeof path === 'string' ? path : (path.path || path.photo || '');
+                    var shape = typeof path === 'object' ? (path.frame_shape || 'square') : 'square';
+                    return renderSharedFrame(photoPath, shape);
+                }).join('') + '</div>' : '')
+                + '</div>';
+            return '<div class="album-preview-node"><div class="album-preview-dot"></div><div class="album-preview-body">' + body + '</div></div>';
+        }).join('');
+        html += '</div>';
+    }
+    html += '<a class="album-preview-link" href="/storybook"><i class="fas fa-up-right-from-square"></i> 打开完整长卷</a>';
+    html += '</div>' + buildCardFooter() + '</div>';
+    return html;
+}
+
+function renderGeneratedComicCard(card) {
+    var assets = card.assets || {};
+    var generatedImage = assets.generated_image || card.generated_image || card.generated_image_url || '';
+    var photoPath = generatedImage || assets.cover_photo || card.photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var styleName = assets.style_name || card.style_name || card.title || 'AI漫画';
+    var tagline = assets.style_tagline || card.style_tagline || card.subtitle || '';
+    var theme = assets.style_theme || card.style_theme || 'sunlit';
+    var shape = assets.frame_shape || card.frame_shape || 'square';
+    var palette = assets.style_palette || card.style_palette || [];
+    var reasons = assets.reason_lines || card.reason_lines || [];
+    var promptHint = assets.prompt_hint || card.prompt_hint || '';
+    var generationMode = assets.generation_mode || card.generation_mode || '';
+    var customPrompt = assets.custom_prompt || card.custom_prompt || '';
+    var narrative = assets.narrative_line || card.narrative_line || card.content || '';
+    var qualityLabel = assets.quality_label || card.quality_label || '';
+    var dateLabel = assets.photo_label || formatCardDate(assets.photo_date || card.photo_date || '');
+    var sceneLabel = assets.scene_label || card.scene_label || '';
+    var activityLabel = assets.activity_label || card.activity_label || '';
+    var kicker = customPrompt ? '定制漫画' : 'AI生成漫画';
+    var html = '<div class="growth-card generated-comic-card theme-' + escapeHtml(theme) + '"><div class="card-content">';
+    html += '<div class="generated-comic-shell">';
+    html += '<div class="generated-comic-visual">';
+    html += renderSharedFrame(photoPath, shape);
+    html += '<div class="card-stats-row">';
+    if (qualityLabel) {
+        html += '<span class="card-stat-pill">' + escapeHtml(qualityLabel) + '</span>';
+    }
+    if (dateLabel) {
+        html += '<span class="card-stat-pill">' + escapeHtml(dateLabel) + '</span>';
+    }
+    html += '</div></div>';
+    html += '<div class="generated-comic-copy">';
+    html += '<div class="generated-comic-kicker"><i class="fas fa-palette"></i> ' + escapeHtml(kicker) + '</div>';
+    html += '<div class="generated-comic-style">' + escapeHtml(styleName) + '</div>';
+    html += '<div class="generated-comic-tagline">' + escapeHtml(tagline) + '</div>';
+    html += '<div class="card-text" style="margin:0;">' + escapeHtml(narrative) + '</div>';
+    if (sceneLabel || activityLabel) {
+        html += '<div class="card-stats-row">';
+        if (sceneLabel) html += '<span class="card-stat-pill">' + escapeHtml(sceneLabel) + '</span>';
+        if (activityLabel) html += '<span class="card-stat-pill">' + escapeHtml(activityLabel) + '</span>';
+        html += '</div>';
+    }
+    if (palette.length) {
+        html += '<div class="generated-comic-palette">' + palette.map(function(color) {
+            return '<span class="generated-comic-palette-chip" style="background:' + escapeHtml(color) + ';"></span>';
+        }).join('') + '</div>';
+    }
+    if (reasons.length) {
+        html += '<div class="generated-comic-reasons">' + reasons.map(function(reason) {
+            return '<div class="generated-comic-reason"><i class="fas fa-star"></i><span>' + escapeHtml(reason) + '</span></div>';
+        }).join('') + '</div>';
+    }
+    if (promptHint) {
+        html += '<div class="generated-comic-prompt"><div class="generated-comic-prompt-label">绘制方向</div><div class="generated-comic-prompt-text">' + escapeHtml(promptHint) + '</div></div>';
+    }
+    html += '</div></div></div>' + buildCardFooter() + '</div>';
+    return html;
+}
+
+function renderVirtualRoleCard(card) {
+    var assets = card.assets || {};
+    var generatedImage = assets.generated_image || card.generated_image || card.generated_image_url || '';
+    var coverPhoto = generatedImage || assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var roleName = assets.role_name || card.role_name || card.subtitle || '虚拟角色';
+    var roleSubtitle = assets.role_subtitle || card.role_subtitle || card.content || '';
+    var roleStoryline = assets.role_storyline || card.role_storyline || '';
+    var roleSignature = assets.role_signature || card.role_signature || '';
+    var palette = assets.role_palette || card.role_palette || [];
+    var shape = assets.frame_shape || card.frame_shape || 'arch';
+    var kicker = generatedImage ? 'AI角色形象' : '虚拟角色映射';
+    var html = '<div class="growth-card virtual-role-card"><div class="card-content">';
+    html += '<div class="virtual-role-shell">';
+    html += '<div class="virtual-role-hero">';
+    if (coverPhoto) {
+        html += renderSharedFrame(coverPhoto, shape);
+    }
+    html += '<div class="virtual-role-overlay">';
+    html += '<div class="virtual-role-kicker"><i class="fas fa-user-astronaut"></i> ' + escapeHtml(kicker) + '</div>';
+    html += '<div class="virtual-role-name">' + escapeHtml(roleName) + '</div>';
+    html += '<div class="virtual-role-subtitle">' + escapeHtml(roleSubtitle) + '</div>';
+    if (palette.length) {
+        html += '<div class="generated-comic-palette" style="margin-top:12px;">' + palette.map(function(color) {
+            return '<span class="generated-comic-palette-chip" style="background:' + escapeHtml(color) + ';"></span>';
+        }).join('') + '</div>';
+    }
+    html += '</div></div>';
+    html += '<div class="virtual-role-copy">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '虚拟角色卡') + '</div>';
+    if (roleStoryline) {
+        html += '<div class="card-text">' + escapeHtml(roleStoryline) + '</div>';
+    } else if (card.content) {
+        html += '<div class="card-text">' + escapeHtml(card.content) + '</div>';
+    }
+    if (roleSignature) {
+        html += '<div class="virtual-role-signature">角色识别句：' + escapeHtml(roleSignature) + '</div>';
+    }
+    html += '</div></div></div>' + buildCardFooter() + '</div>';
+    return html;
+}
+
+function renderStoryCharacterCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var traits = assets.signature_traits || card.signature_traits || [];
+    var abilityTracks = assets.ability_tracks || card.ability_tracks || [];
+    var gearTracks = assets.gear_tracks || card.gear_tracks || [];
+    var storyEngine = assets.story_engine || card.story_engine || '';
+    var storyMotifs = assets.story_motifs || card.story_motifs || [];
+    var worldRules = assets.world_rules || card.world_rules || [];
+    var roleName = assets.role_name || card.role_name || '';
+    var heroArchetype = assets.hero_archetype || card.hero_archetype || '';
+    var worldName = assets.world_name || card.world_name || '';
+    var catchphrase = assets.catchphrase || card.catchphrase || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="story-cover-hero' + (coverPhoto ? ' has-photo' : '') + '">';
+    if (coverPhoto) {
+        html += '<img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous">';
+    }
+    html += '<div class="story-cover-overlay">';
+    html += '<div class="story-kicker">主角档案</div>';
+    html += '<div class="story-role-name">' + escapeHtml(heroArchetype || roleName || card.title || '主角档案') + '</div>';
+    html += '<div class="story-world-name">' + escapeHtml(worldName || card.subtitle || '') + '</div>';
+    html += '</div></div>';
+    html += '<div class="card-title" style="margin-top:16px;">' + escapeHtml(card.title || '主角档案') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.content || card.subtitle || '') + '</div>';
+    html += '<div class="story-grid">';
+    if (traits.length) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">主角识别点</div><div class="story-traits">';
+        html += traits.map(function(item) {
+            return '<span class="story-trait-pill">' + escapeHtml(item) + '</span>';
+        }).join('');
+        html += '</div></div>';
+    }
+    if (abilityTracks.length) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">能力成长线</div><div class="story-traits">';
+        html += abilityTracks.map(function(item) {
+            return '<span class="story-trait-pill">' + escapeHtml(item) + '</span>';
+        }).join('');
+        html += '</div></div>';
+    }
+    if (gearTracks.length) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">道具线索</div><div class="story-traits">';
+        html += gearTracks.map(function(item) {
+            return '<span class="story-trait-pill">' + escapeHtml(item) + '</span>';
+        }).join('');
+        html += '</div></div>';
+    }
+    if (storyEngine) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">叙事引擎</div><div class="card-text" style="margin:0;">' + escapeHtml(storyEngine) + '</div></div>';
+    }
+    if (storyMotifs.length) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">视觉母题</div><div class="story-traits">';
+        html += storyMotifs.map(function(item) {
+            return '<span class="story-trait-pill">' + escapeHtml(item) + '</span>';
+        }).join('');
+        html += '</div></div>';
+    }
+    if (worldRules.length) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">连载规则</div><div class="story-traits">';
+        html += worldRules.map(function(item) {
+            return '<span class="story-trait-pill">' + escapeHtml(item) + '</span>';
+        }).join('');
+        html += '</div></div>';
+    }
+    if (catchphrase) {
+        html += '<div class="story-info-panel"><div class="story-panel-title">旁白口吻</div><div class="card-text" style="margin:0;">' + escapeHtml(catchphrase) + '</div></div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderStoryEpisodeCard(card) {
+    var assets = card.assets || {};
+    var photos = getCardPhotos(card);
+    var coverPhoto = assets.cover_photo || (photos[0] && (photos[0].path || photos[0])) || '';
+    var supportPhotos = assets.supporting_photos || (card.photo_paths || []).slice(1, 3);
+    var storyTags = assets.story_tags || card.story_tags || [];
+    var roleName = assets.role_name || card.role_name || '';
+    var heroArchetype = assets.hero_archetype || card.hero_archetype || '';
+    var sceneLabel = assets.scene_label || card.scene_label || '';
+    var fantasyMission = assets.fantasy_mission || card.fantasy_mission || '';
+    var skillProgress = assets.skill_progress || card.skill_progress || '';
+    var gearUnlock = assets.gear_unlock || card.gear_unlock || '';
+    var quote = assets.quote || card.quote || '';
+    var episodeDate = assets.episode_date || card.episode_date || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="story-cover-hero' + (coverPhoto ? ' has-photo' : '') + '">';
+    if (coverPhoto) {
+        html += '<img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous">';
+    }
+    html += '<div class="story-cover-overlay">';
+    html += '<div class="story-kicker">成长连续剧</div>';
+    html += '<div class="story-role-name">' + escapeHtml(card.title || '最新一集') + '</div>';
+    html += '<div class="story-world-name">' + escapeHtml((episodeDate ? formatCardDate(episodeDate) + ' · ' : '') + (heroArchetype || roleName || sceneLabel || '')) + '</div>';
+    html += '</div></div>';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.subtitle || '') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.content || '') + '</div>';
+    if (fantasyMission || skillProgress || gearUnlock) {
+        html += '<div class="story-grid">';
+        if (fantasyMission) {
+            html += '<div class="story-info-panel"><div class="story-panel-title">今日任务</div><div class="card-text" style="margin:0;">' + escapeHtml(fantasyMission) + '</div></div>';
+        }
+        if (skillProgress) {
+            html += '<div class="story-info-panel"><div class="story-panel-title">能力成长</div><div class="card-text" style="margin:0;">' + escapeHtml(skillProgress) + '</div></div>';
+        }
+        if (gearUnlock) {
+            html += '<div class="story-info-panel"><div class="story-panel-title">道具线索</div><div class="card-text" style="margin:0;">' + escapeHtml(gearUnlock) + '</div></div>';
+        }
+        html += '</div>';
+    }
+    if (storyTags.length) {
+        html += '<div class="story-tags">';
+        html += storyTags.map(function(tag) {
+            return '<span class="story-tag-pill">' + escapeHtml(tag) + '</span>';
+        }).join('');
+        html += '</div>';
+    }
+    if (quote) {
+        html += '<div class="story-info-panel" style="margin-top:14px;"><div class="story-panel-title">本集台词</div><div class="card-text" style="margin:0;">“' + escapeHtml(quote) + '”</div></div>';
+    }
+    if (supportPhotos.length) {
+        html += '<div class="story-support-grid">' + supportPhotos.slice(0, 2).map(function(path) {
+            var photoPath = typeof path === 'string' ? path : (path.path || path.photo || '');
+            return '<img src="' + getCardImageUrl(photoPath) + '" crossorigin="anonymous">';
+        }).join('') + '</div>';
+    }
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderStoryQuoteCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var quote = assets.quote || card.quote || '';
+    var sceneLabel = assets.scene_label || card.scene_label || '';
+    var episodeDate = assets.episode_date || card.episode_date || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '语录卡') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.subtitle || '') + '</div>';
+    if (coverPhoto) {
+        html += '<div class="annotation-card-photo">';
+        html += episodeDate ? '<div class="card-date-badge centered">' + escapeHtml(formatCardDate(episodeDate)) + '</div>' : '';
+        html += '<img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous">';
+        html += '</div>';
+    }
+    html += '<div class="story-quote-box">';
+    html += '<div class="story-quote-mark">“</div>';
+    html += '<div class="story-quote-text">' + escapeHtml(quote || card.content || '') + '</div>';
+    html += '<div class="story-quote-caption">' + escapeHtml(sceneLabel ? ('来自' + sceneLabel) : (card.content || '')) + '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderStorySkillCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var level = Number(assets.level || card.level || 1);
+    var skillName = assets.skill_name || card.skill_name || '';
+    var reason = assets.reason || card.reason || card.content || '';
+    var evidenceCount = assets.evidence_count || card.evidence_count || 0;
+    var fill = Math.max(18, Math.min(100, level * 20));
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '技能解锁') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.subtitle || '') + '</div>';
+    if (coverPhoto) {
+        html += '<div class="annotation-card-photo"><img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous"></div>';
+    }
+    html += '<div class="story-skill-shell">';
+    html += '<div class="story-info-panel">';
+    html += '<div class="story-skill-head"><div class="story-skill-name">' + escapeHtml(skillName || '新能力') + '</div><div class="story-skill-level">Lv.' + escapeHtml(String(level)) + '</div></div>';
+    html += '<div class="story-skill-meter"><span class="story-skill-fill" style="width:' + fill + '%;"></span></div>';
+    html += '<div class="card-text" style="margin-top:12px;">' + escapeHtml(reason) + '</div>';
+    html += '<div class="story-tags" style="margin-top:12px;"><span class="story-tag-pill">证据 ' + escapeHtml(String(evidenceCount)) + ' 条</span></div>';
+    html += '</div></div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderStoryWeatherCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var moodMix = assets.mood_mix || card.mood_mix || [];
+    var heroArchetype = assets.hero_archetype || card.hero_archetype || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '剧情天气') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.subtitle || '') + '</div>';
+    if (coverPhoto) {
+        html += '<div class="annotation-card-photo"><img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous"></div>';
+    }
+    html += '<div class="story-info-panel" style="margin-top:16px;">';
+    html += '<div class="story-panel-title">近期气候</div>';
+    html += '<div class="card-text" style="margin:0 0 10px 0;">' + escapeHtml(card.content || heroArchetype) + '</div>';
+    if (moodMix.length) {
+        html += '<div class="story-weather-mix">' + moodMix.map(function(item) {
+            var pct = Number(item.percentage || 0);
+            return '<div class="story-weather-row"><span class="story-weather-name">' + escapeHtml(item.emotion || '') + '</span><span class="story-weather-bar"><span class="story-weather-fill" style="width:' + Math.max(0, Math.min(100, pct)) + '%;"></span></span><span class="emotion-percent">' + escapeHtml(String(pct)) + '%</span></div>';
+        }).join('') + '</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderStoryUpdateCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var beforeText = assets.before_text || card.before_text || '';
+    var afterText = assets.after_text || card.after_text || '';
+    var feedbackHint = assets.feedback_hint || card.feedback_hint || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '画像更新卡') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.subtitle || '') + '</div>';
+    if (coverPhoto) {
+        html += '<div class="annotation-card-photo"><img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous"></div>';
+    }
+    html += '<div class="story-update-shell">';
+    html += '<div class="story-update-block"><div class="story-update-label">AI之前更容易这样理解</div><div class="card-text" style="margin:0;">' + escapeHtml(beforeText) + '</div></div>';
+    html += '<div class="story-update-block"><div class="story-update-label">家长补充后，现在更像</div><div class="card-text" style="margin:0;">' + escapeHtml(afterText) + '</div></div>';
+    if (feedbackHint) {
+        html += '<div class="story-update-block"><div class="story-update-label">这次补充的关键信息</div><div class="card-text" style="margin:0;">' + escapeHtml(feedbackHint) + '</div></div>';
+    }
+    html += '</div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
+function renderCareGuideCard(card) {
+    var assets = card.assets || {};
+    var coverPhoto = assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
+    var items = assets.guide_items || card.guide_items || [];
+    var sceneLabel = assets.scene_label || card.scene_label || '';
+    var html = '<div class="growth-card story-card">';
+    html += '<div class="card-content">';
+    html += '<div class="card-title">' + escapeHtml(card.title || '使用说明书') + '</div>';
+    html += '<div class="card-text">' + escapeHtml(card.subtitle || '') + '</div>';
+    if (coverPhoto) {
+        html += '<div class="annotation-card-photo">';
+        html += sceneLabel ? '<div class="card-date-badge centered">' + escapeHtml(sceneLabel) + '</div>' : '';
+        html += '<img src="' + getCardImageUrl(coverPhoto) + '" crossorigin="anonymous"></div>';
+    }
+    html += '<div class="care-guide-list">';
+    html += items.map(function(item) {
+        return '<div class="care-guide-item"><div class="care-guide-item-title">' + escapeHtml(item.label || '') + '</div><div class="card-text" style="margin:0;">' + escapeHtml(item.text || '') + '</div></div>';
+    }).join('');
+    html += '</div>';
+    html += '</div>';
+    html += buildCardFooter();
+    html += '</div>';
+    return html;
+}
+
 function renderMultiPhotoCard(card) {
     var html = '<div class="growth-card">';
     html += '<div class="card-content">';
@@ -631,6 +1748,26 @@ function renderDailyGrowthCard(card) {
     
     if (layout === 'tag_collage' || cardType === 'tag_collage_card' || cardType === 'collage_card') {
         cardHtml = renderTagCollageCard(card);
+    } else if (layout === 'album_timeline' || cardType === 'time_album_card') {
+        cardHtml = renderTimeAlbumCard(card);
+    } else if (layout === 'generated_comic' || cardType === 'generated_comic_card') {
+        cardHtml = renderGeneratedComicCard(card);
+    } else if (layout === 'virtual_role' || cardType === 'virtual_role_card') {
+        cardHtml = renderVirtualRoleCard(card);
+    } else if (layout === 'story_profile' || cardType === 'story_character_card') {
+        cardHtml = renderStoryCharacterCard(card);
+    } else if (layout === 'story_cover' || cardType === 'story_episode_card') {
+        cardHtml = renderStoryEpisodeCard(card);
+    } else if (layout === 'quote_spotlight' || cardType === 'story_quote_card') {
+        cardHtml = renderStoryQuoteCard(card);
+    } else if (layout === 'skill_badge' || cardType === 'story_skill_card') {
+        cardHtml = renderStorySkillCard(card);
+    } else if (layout === 'story_weather' || cardType === 'story_weather_card') {
+        cardHtml = renderStoryWeatherCard(card);
+    } else if (layout === 'story_update' || cardType === 'story_update_card') {
+        cardHtml = renderStoryUpdateCard(card);
+    } else if (layout === 'care_guide' || cardType === 'care_guide_card') {
+        cardHtml = renderCareGuideCard(card);
     } else if (layout === 'comparison' || cardType === 'comparison_card') {
         cardHtml = renderComparisonCard(card);
     } else if (layout === 'year_compare' || cardType === 'same_day_different_year_card') {
@@ -689,14 +1826,18 @@ function pregenerateCanvas(cardEl) {
     });
 }
 
-async function loadCards() {
+async function loadCards(category, shouldUpdateUrl) {
     try {
-        console.log('[Card] 开始加载...');
+        var targetCategory = category || currentCategory || 'all';
+        console.log('[Card] 开始加载分类:', targetCategory);
         
         const controller = new AbortController();
         const timeoutId = setTimeout(function() { controller.abort(); }, 60000);
-        
-        const resp = await fetch('/api/card/cache/list', {
+
+        const query = targetCategory && targetCategory !== 'all'
+            ? ('?category=' + encodeURIComponent(targetCategory))
+            : '';
+        const resp = await fetch('/api/card/cache/list' + query, {
             signal: controller.signal
         });
         
@@ -709,16 +1850,28 @@ async function loadCards() {
         }
         
         const data = await resp.json();
-        console.log('[Card] API响应: success=' + data.success + ', total=' + data.total);
+        console.log('[Card] API响应: success=' + data.success + ', total=' + data.total + ', category=' + data.category);
         
-        if (data.success && data.cards && data.cards.length > 0) {
-            allCards = data.cards;
+        if (data.success) {
+            allCards = data.cards || [];
+            currentCategory = data.category || targetCategory;
+            if (Array.isArray(data.category_counts) && data.category_counts.length) {
+                cardCategoryCounts = data.category_counts;
+            }
             currentCardIndex = 0;
-            updateUI();
-            renderCard(currentCardIndex);
+            renderCategoryTabs();
+            if (shouldUpdateUrl !== false) {
+                updateCategoryUrl(currentCategory);
+            }
+            if (allCards.length > 0) {
+                updateUI();
+                renderCard(currentCardIndex);
+            } else {
+                console.log('[Card] 当前分类无卡片');
+                showNoCards();
+            }
         } else {
-            console.log('[Card] 无卡片数据');
-            showNoCards();
+            showError(data.message || '卡片加载失败');
         }
     } catch (e) {
         console.error('[Card] 加载失败:', e);
@@ -737,6 +1890,7 @@ function showError(message) {
     document.getElementById('prevBtn').disabled = true;
     document.getElementById('nextBtn').disabled = true;
     document.getElementById('cardCount').textContent = '0';
+    renderCategoryTabs();
 }
 
 function updateUI() {
@@ -783,10 +1937,13 @@ function goToCard(idx) {
 }
 
 function showNoCards() {
-    document.getElementById('currentCard').innerHTML = '<div class="no-cards"><i class="fas fa-images"></i><h3>暂无卡片</h3><p style="font-size: 0.9rem; margin-top: 10px; color: #718096;">卡片会在后台自动同步，稍后刷新即可看到内容。</p></div>';
+    var current = getCategoryMeta(currentCategory);
+    document.getElementById('currentCard').innerHTML = '<div class="no-cards"><i class="fas fa-images"></i><h3>这个分类还没有卡片</h3><p style="font-size: 0.9rem; margin-top: 10px; color: #718096;">' + escapeHtml(current.description || '卡片会在后台自动同步，稍后刷新即可看到内容。') + '</p></div>';
     document.getElementById('prevBtn').disabled = true;
     document.getElementById('nextBtn').disabled = true;
     document.getElementById('cardCount').textContent = '0';
+    document.getElementById('cardPagination').innerHTML = '';
+    renderCategoryTabs();
 }
 
 // 分享功能 - 使用html2canvas生成图片
@@ -910,18 +2067,16 @@ document.getElementById('imagePreviewModal').addEventListener('click', function(
 // 页面加载完成
 document.addEventListener('DOMContentLoaded', function() {
     console.log('[Card] 页面加载完成');
-    if (Array.isArray(window.__CARDS__)) {
+    renderCategoryTabs();
+    if (Array.isArray(window.__CARDS__) && window.__CARDS__.length > 0) {
         allCards = window.__CARDS__;
-        if (allCards.length > 0) {
-            currentCardIndex = 0;
-            updateUI();
-            renderCard(currentCardIndex);
-        } else {
-            showNoCards();
-        }
+        currentCardIndex = 0;
+        updateUI();
+        renderCard(currentCardIndex);
     } else {
-        loadCards();
+        showNoCards();
     }
+    loadCards(currentCategory, false);
 });
 </script>
 {% endblock %}

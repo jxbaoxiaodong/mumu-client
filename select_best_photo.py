@@ -16,6 +16,17 @@ import sys
 from pathlib import Path
 from PIL import Image
 from datetime import datetime
+from urllib.parse import urlencode
+from photo_status import (
+    PHOTO_STATUS_OK,
+    classify_terminal_photo_error,
+    build_blocked_photo_record,
+    build_blurry_photo_record,
+    build_duplicate_photo_record,
+    build_other_error_photo_record,
+)
+
+CLIENT_USER_AGENT = "CZRZ-Client/2.0"
 
 
 def create_signature(secret_key, method, path, timestamp, body=""):
@@ -37,24 +48,26 @@ def add_signature_headers(headers, client_id, secret_key, method, path, body="")
     return headers
 
 
+def _running_in_server_process() -> bool:
+    main_module = sys.modules.get("__main__")
+    main_file = str(getattr(main_module, "__file__", "") or "")
+    return main_file.endswith("server_public.py")
+
+
 def _check_token_quota() -> tuple:
     """检查 token 配额，返回 (can_use, used, limit)"""
     try:
-        config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
-        if not config_file.exists():
-            return True, 0, 0
-        with open(config_file, "r", encoding="utf-8") as f:
-            config = json.load(f)
+        config = get_client_config()
         client_id = config.get("client_id")
         server_url = config.get("server_url", "")
         if not client_id or not server_url:
             return True, 0, 0
-        resp = requests.get(
-            f"{server_url}/czrz/client/token-check",
+
+        resp = _signed_server_request(
+            "GET",
+            "/czrz/client/token-check",
             params={"client_id": client_id},
             timeout=30,
-            verify=False,
-            headers={"User-Agent": "CZRZ-Client/2.0"},
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -67,21 +80,21 @@ def _check_token_quota() -> tuple:
 def _report_token_usage(usage: dict, operation: str = "select_photo"):
     """上报 token 使用到服务端"""
     try:
-        config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
-        if not config_file.exists():
-            return
-        with open(config_file, "r", encoding="utf-8") as f:
-            config = json.load(f)
+        config = get_client_config()
         client_id = config.get("client_id")
         server_url = config.get("server_url", "")
         if not client_id or not server_url:
             return
-        resp = requests.post(
-            f"{server_url}/czrz/client/token-record",
-            json={"client_id": client_id, "usage": usage, "operation": operation},
+
+        resp = _signed_server_request(
+            "POST",
+            "/czrz/client/token-record",
+            json_body={
+                "client_id": client_id,
+                "usage": usage,
+                "operation": operation,
+            },
             timeout=30,
-            verify=False,
-            headers={"User-Agent": "CZRZ-Client/2.0"},
         )
         print(
             f"[Token] 上报 {operation}: {usage.get('total_tokens', 0)} tokens, 状态: {resp.status_code}"
@@ -113,14 +126,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 # =====================
 
 MAX_IMAGE_SIZE = 1024
-ROUND1_BATCH = 20
-ROUND1_SELECT = 1  # 只选1张最佳照片
 PHASH_THRESHOLD = 8
 
 
 def get_client_config():
     """获取客户端配置（server_url, client_id, secret_key）"""
     try:
+        if _running_in_server_process():
+            return {"server_url": "", "client_id": "", "secret_key": ""}
+
         config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
         if config_file.exists():
             with open(config_file, "r", encoding="utf-8") as f:
@@ -133,6 +147,168 @@ def get_client_config():
     except:
         pass
     return {"server_url": "", "client_id": "", "secret_key": ""}
+
+
+def is_content_inspection_block_error(error) -> bool:
+    info = classify_terminal_photo_error(error)
+    if not info:
+        return False
+    return info.get("processed_status") == "blocked"
+
+
+def _save_processed_photo_descriptions_to_server(client_id: str, date: str, photos: list):
+    if photos:
+        save_photo_descriptions_to_server(client_id, date, photos)
+    return photos
+
+
+def save_blocked_photo_descriptions_to_server(client_id: str, date: str, photo_paths: list):
+    """将内容审核拦截图片标记为已处理，避免后续刷新反复重试。"""
+    blocked_photos = [
+        build_blocked_photo_record(path)
+        for path in (photo_paths or [])
+        if path
+    ]
+    return _save_processed_photo_descriptions_to_server(
+        client_id,
+        date,
+        blocked_photos,
+    )
+
+
+def save_other_error_photo_descriptions_to_server(
+    client_id: str,
+    date: str,
+    photo_paths: list,
+    error_detail: str = "",
+    error_code: str = "other_error",
+):
+    """将明确不可重试的图片异常标记为已处理。"""
+    errored_photos = [
+        build_other_error_photo_record(
+            path,
+            error_detail=error_detail,
+            error_code=error_code,
+        )
+        for path in (photo_paths or [])
+        if path
+    ]
+    return _save_processed_photo_descriptions_to_server(
+        client_id,
+        date,
+        errored_photos,
+    )
+
+
+def _signed_server_request(
+    method: str,
+    path: str,
+    params: dict = None,
+    json_body: dict = None,
+    timeout: int = 30,
+):
+    """向服务端发起签名请求，避免旧直连/裸请求残留。"""
+    client_config = get_client_config()
+    server_url = client_config.get("server_url", "")
+    client_id = client_config.get("client_id", "")
+    secret_key = client_config.get("secret_key", "")
+
+    if not server_url:
+        raise Exception("未配置服务端地址")
+
+    signed_path = path
+    if params:
+        query_string = urlencode(params, doseq=True)
+        if query_string:
+            signed_path = f"{path}?{query_string}"
+
+    headers = {"User-Agent": CLIENT_USER_AGENT}
+    request_kwargs = {
+        "params": params,
+        "headers": headers,
+        "timeout": timeout,
+        "verify": False,
+    }
+    body_str = ""
+
+    if json_body is not None:
+        body_str = json.dumps(json_body)
+        headers["Content-Type"] = "application/json"
+        request_kwargs["data"] = body_str
+
+    if client_id and secret_key:
+        add_signature_headers(
+            headers,
+            client_id,
+            secret_key,
+            method,
+            signed_path,
+            body_str,
+        )
+
+    return requests.request(method, f"{server_url}{path}", **request_kwargs)
+
+
+def _safe_json_response(response, context: str) -> dict:
+    """解析代理返回，确保拿到 JSON 而不是 Cloudflare/网关 HTML。"""
+    try:
+        return response.json()
+    except ValueError:
+        snippet = (response.text or "").strip().replace("\n", " ")[:160]
+        if response.status_code >= 500:
+            raise Exception(f"{context}服务端错误: HTTP {response.status_code}")
+        raise Exception(
+            f"{context}返回非JSON响应: HTTP {response.status_code}"
+            + (f" {snippet}" if snippet else "")
+        )
+
+
+def _post_proxy_json(
+    url: str,
+    body_str: str,
+    headers: dict,
+    *,
+    timeout: int,
+    context: str,
+    retries: int = 2,
+) -> dict:
+    """向服务端代理发请求，自动处理 502/503/504 和非 JSON 返回。"""
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            response = requests.post(
+                url,
+                data=body_str.encode("utf-8"),
+                headers=headers,
+                timeout=timeout,
+                verify=False,
+            )
+        except requests.exceptions.RequestException as e:
+            last_error = f"{context}请求失败: {e}"
+            if attempt < retries:
+                time.sleep(1 + attempt)
+                continue
+            raise Exception(last_error)
+
+        if response.status_code in {502, 503, 504}:
+            last_error = f"{context}服务端错误: HTTP {response.status_code}"
+            if attempt < retries:
+                time.sleep(1 + attempt)
+                continue
+            raise Exception(last_error)
+
+        return _safe_json_response(response, context)
+
+    raise Exception(last_error or f"{context}请求失败")
+
+
+def _default_child_features():
+    return {
+        "top_interests": [],
+        "personality_highs": [],
+        "diversity_hints": "暂无画像数据",
+        "familiarity": 0,
+    }
 
 
 def get_api_config():
@@ -182,44 +358,36 @@ def get_child_features(child_id):
             'diversity_hints': '之前主要选择了笑的照片'  # 多样性提示
         }
     """
+    default_result = _default_child_features()
+
     try:
-        import requests as req
+        client_config = get_client_config()
+        server_url = client_config.get("server_url", "")
+        client_id = client_config.get("client_id", "")
 
-        # 从配置获取baby_health_ai服务地址
-        from model_config import get_text_model_config
-
-        config = get_text_model_config()
-
-        # 通过服务端代理访问健康AI
-        config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
-        server_url = ""
-        if config_file.exists():
-            with open(config_file, "r", encoding="utf-8") as f:
-                client_config = json.load(f)
-            server_url = client_config.get("server_url", "")
-
-        if not server_url:
+        if not server_url or not client_id:
             print("[DEBUG] 未配置服务端URL，跳过画像获取")
             return default_result
 
         # 通过服务端代理调用特征API
         print(f"[DEBUG] 获取宝宝画像: {server_url}/api/ai/features/{child_id}")
-        response = req.get(
-            f"{server_url}/api/ai/features/{child_id}",
+        response = _signed_server_request(
+            "GET",
+            f"/api/ai/features/{child_id}",
             timeout=1200,
-            headers={"User-Agent": "CZRZ-Client/2.0"},
-            verify=False,
         )
 
         if response.status_code == 200:
             data = response.json()
             print(f"[DEBUG] 画像API返回: {data}")
             if data.get("success"):
-                features = data["features"]
+                features = data.get("features", {})
+                interests = features.get("interest", {})
+                personality = features.get("personality", {})
 
                 # 提取主要兴趣（分数>7的）
                 top_interests = []
-                for key, value in features["interest"].items():
+                for key, value in interests.items():
                     if value > 7.0:
                         interest_names = {
                             "music": "音乐",
@@ -233,7 +401,7 @@ def get_child_features(child_id):
 
                 # 提取性格特点（分数>8的）
                 personality_highs = []
-                for key, value in features["personality"].items():
+                for key, value in personality.items():
                     if value > 8.0:
                         personality_names = {
                             "activity": "活泼",
@@ -262,42 +430,13 @@ def get_child_features(child_id):
                     else "暂无明显偏好",
                     "familiarity": data.get("familiarity", 0),
                 }
+        else:
+            print(f"[WARN] 获取宝宝画像失败，状态码: {response.status_code}")
     except Exception as e:
         print(f"[WARN] 获取宝宝画像失败: {e}")
 
     # 返回默认值
-    return {
-        "top_interests": [],
-        "personality_highs": [],
-        "diversity_hints": "暂无画像数据",
-        "familiarity": 0,
-    }
-
-
-def analyze_previous_selections():
-    """
-    分析之前选择的照片类型，用于多样性约束
-    当前实现：返回空数据（首次选择时无历史记录）
-
-    Returns:
-        dict: {
-            'emotion_types': [],  # 已选择的表情类型
-            'scene_types': [],  # 已选择的场景类型
-            'suggestion': ''  # 选择建议
-        }
-    """
-    # 当前返回空数据，表示首次选择无历史记录
-    # 未来可从baby_health_ai数据库查询历史选择记录
-    return {
-        "emotion_types": [],
-        "scene_types": [],
-        "suggestion": "",
-    }
-
-
-# =====================
-# 日期目录识别
-# =====================
+    return default_result
 
 
 def is_date_folder(name):
@@ -388,8 +527,6 @@ def remove_similar(images):
 
     return result
 
-    return result
-
 
 # =====================
 # 图片压缩
@@ -409,12 +546,59 @@ def compress_image(path):
     return base64.b64encode(buf.getvalue()).decode()
 
 
-# =====================
-# 调用 Qwen
-# =====================
+def _extract_json_payload(text):
+    """从模型输出中提取 JSON 对象。"""
+    raw = (text or "").strip()
+    if not raw:
+        return {}
+
+    candidates = [raw]
+    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.S)
+    candidates = fenced + candidates
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(raw[start : end + 1])
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except Exception:
+            continue
+    return {}
 
 
-def call_qwen(images, select_n, child_id=None):
+def describe_photo_batch(paths, child_id=None):
+    """
+    只对照片做增量描述和质量识别，不负责精选决策。
+
+    Returns:
+        dict: {
+            "selected": [],
+            "blurry": [模糊照片路径],
+            "duplicates": [[相似照片组路径]],
+            "no_baby": [无宝宝照片路径],
+            "photos": {文件名: {description, has_baby, scene, activity}},
+            "blurry_filenames": [...],
+            "duplicate_filenames": [[...]],
+            "no_baby_filenames": [...],
+            "reasons": []
+        }
+    """
+    if not paths:
+        return {
+            "selected": [],
+            "blurry": [],
+            "duplicates": [],
+            "no_baby": [],
+            "photos": {},
+            "blurry_filenames": [],
+            "duplicate_filenames": [],
+            "no_baby_filenames": [],
+            "reasons": [],
+        }
+
     config = get_api_config()
     proxy_url = config.get("proxy_url", "")
     client_id = config.get("client_id", "") or child_id
@@ -423,33 +607,15 @@ def call_qwen(images, select_n, child_id=None):
     if not proxy_url or not client_id:
         raise Exception("未配置服务端地址或客户端ID")
 
-    child_features = {}
-    if child_id:
-        child_features = get_child_features(child_id)
-        print(
-            f"[INFO] 宝宝画像: 兴趣={child_features.get('top_interests', [])}, 性格={child_features.get('personality_highs', [])}"
-        )
-
-    previous_selections = analyze_previous_selections()
-
-    interest_hint = ""
-    if child_features.get("top_interests"):
-        interests = "、".join(child_features["top_interests"][:3])
-        interest_hint = f"宝宝当前兴趣方向：{interests}（仅供参考，不要只选相关照片）"
-
-    personality_hint = ""
-    if child_features.get("personality_highs"):
-        personality = "、".join(child_features["personality_highs"][:3])
-        personality_hint = f"宝宝性格特点：{personality}（但要展现多面性）"
-
-    diversity_hint = ""
-    if previous_selections.get("suggestion"):
-        diversity_hint = f"历史选择提示：{previous_selections['suggestion']}"
+    batch = []
+    for path in paths:
+        filename = os.path.basename(path)
+        batch.append((filename, compress_image(path)))
 
     content = [
         {
             "type": "text",
-            "text": f"""
+            "text": """
 你是宝宝成长记录助手。
 
 请分析这些照片，完成以下任务：
@@ -461,159 +627,245 @@ def call_qwen(images, select_n, child_id=None):
 - scene: 场景（如：公园、家里、商场）
 - activity: 活动（如：玩耍、吃饭、睡觉）
 
-【任务2：选出精选照片】
-从有宝宝的照片中选出最有代表性的 {select_n} 张：
-- 照片质量好（清晰、构图好）
-- 有意义（宝宝表情好、动作清晰）
-- 多样性（不同场景、不同表情）
-
-【任务3：识别问题照片】
+【任务2：识别问题照片】
 - blurry: 明显模糊的照片
 - duplicates: 内容相似的照片组（连拍、同一场景）
 - no_baby: 照片中没有宝宝
 
 只返回 JSON 格式：
 
-{{
-  "photos": {{
-    "照片1.jpg": {{"description": "宝宝在公园草地上奔跑", "has_baby": true, "scene": "公园", "activity": "玩耍"}},
-    "照片2.jpg": {{"description": "公园的树荫", "has_baby": false, "scene": "公园", "activity": ""}}
-  }},
-  "selected": ["精选照片1.jpg"],
-  "reasons": ["选择原因：宝宝表情自然，光线充足"],
+{
+  "photos": {
+    "照片1.jpg": {"description": "宝宝在公园草地上奔跑", "has_baby": true, "scene": "公园", "activity": "玩耍"},
+    "照片2.jpg": {"description": "公园的树荫", "has_baby": false, "scene": "公园", "activity": ""}
+  },
   "blurry": ["模糊照片.jpg"],
   "duplicates": [["相似A.jpg", "相似B.jpg"]],
   "no_baby": ["无宝宝照片.jpg"]
-}}
+}
 
 注意：
 1. photos 字段必须包含所有照片的描述
-2. selected 只从 has_baby=true 的照片中选择
-3. blurry、duplicates、no_baby 可以为空数组
+2. blurry、duplicates、no_baby 可以为空数组
 """,
         }
     ]
 
-    for filename, b64 in images:
+    for filename, b64 in batch:
         content.append({"type": "text", "text": f"文件名: {filename}"})
         content.append(
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
         )
 
+    request_body = {
+        "client_id": client_id,
+        "messages": [{"role": "user", "content": content}],
+        "operation": "describe_photos",
+    }
+    body_str = json.dumps(request_body)
+    headers = {"Content-Type": "application/json", "User-Agent": CLIENT_USER_AGENT}
+    path = "/czrz/ai/proxy/vision"
+
+    if client_id and secret_key:
+        add_signature_headers(headers, client_id, secret_key, "POST", path, body_str)
+
     try:
-        request_body = {
-            "client_id": client_id,
-            "messages": [{"role": "user", "content": content}],
-            "operation": "select_photo",
-        }
-        body_str = json.dumps(request_body)
-        headers = {"Content-Type": "application/json", "User-Agent": "CZRZ-Client/2.0"}
-        path = "/czrz/ai/proxy/vision"
-
-        if client_id and secret_key:
-            add_signature_headers(
-                headers, client_id, secret_key, "POST", path, body_str
-            )
-
-        r = requests.post(
+        res = _post_proxy_json(
             proxy_url,
-            json=request_body,
-            headers=headers,
+            body_str,
+            headers,
             timeout=1200,
-            verify=False,
+            context="视觉代理",
         )
-
-        res = r.json()
-
         if not res.get("success"):
             error = res.get("error", "未知错误")
             message = res.get("message", error)
-            if error == "QUOTA_EXCEEDED" or error == "QUOTA_EXHAUSTED":
+            if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED"}:
                 raise Exception(f"ALL_MODELS_EXHAUSTED:{message}")
             raise Exception(message)
 
-        result = res.get("result", {})
-        content_result = result.get("content", "")
-
-        if content_result:
-            return content_result
-
-        raise Exception("代理API返回空结果")
-
+        content_result = (res.get("result") or {}).get("content", "")
+        data = _extract_json_payload(content_result)
+        if not data:
+            raise Exception("照片描述解析失败")
     except requests.exceptions.RequestException as e:
-        raise Exception(f"代理请求失败: {str(e)}")
+        raise Exception(f"视觉代理请求失败: {str(e)}")
 
-
-# =====================
-# AI筛选
-# =====================
-
-
-def ai_select(paths, select_n, child_id=None):
-    """
-    AI智能选择最佳照片，同时返回所有照片的详细描述
-
-    Args:
-        paths: 照片路径列表
-        select_n: 要选择的照片数量
-        child_id: 宝宝ID（用于获取画像特征）
-
-    Returns:
-        dict: {
-            "selected": [选中的照片路径],
-            "blurry": [模糊照片路径],
-            "duplicates": [[相似照片组]],
-            "no_baby": [无宝宝照片路径],
-            "photos": {文件名: {description, has_baby, scene, activity}},
-            "reasons": [选择原因]
-        }
-    """
-    batch = []
-
-    for p in paths:
-        filename = os.path.basename(p)
-
-        b64 = compress_image(p)
-
-        batch.append((filename, b64))
-
-    result = call_qwen(batch, select_n, child_id)
-
-    data = json.loads(result)
-
-    selected_filenames = data.get("selected", [])
-    selected_paths = [p for p in paths if os.path.basename(p) in selected_filenames]
-
-    blurry_filenames = data.get("blurry", [])
+    blurry_filenames = data.get("blurry", []) or []
     blurry_paths = [p for p in paths if os.path.basename(p) in blurry_filenames]
 
-    duplicate_groups = data.get("duplicates", [])
+    duplicate_groups = data.get("duplicates", []) or []
     duplicate_path_groups = []
     for group in duplicate_groups:
         path_group = [p for p in paths if os.path.basename(p) in group]
         if len(path_group) > 1:
             duplicate_path_groups.append(path_group)
 
-    no_baby_filenames = data.get("no_baby", [])
+    no_baby_filenames = data.get("no_baby", []) or []
     no_baby_paths = [p for p in paths if os.path.basename(p) in no_baby_filenames]
 
-    photos = data.get("photos", {})
-
-    if data.get("reasons"):
-        print(f"[INFO] 照片选择原因: {data.get('reasons')}")
-    if no_baby_paths:
-        print(f"[INFO] 无宝宝照片: {len(no_baby_paths)}张")
-
     return {
-        "selected": selected_paths,
+        "selected": [],
         "blurry": blurry_paths,
         "duplicates": duplicate_path_groups,
         "no_baby": no_baby_paths,
-        "photos": photos,
+        "photos": data.get("photos", {}) or {},
         "blurry_filenames": blurry_filenames,
         "duplicate_filenames": duplicate_groups,
         "no_baby_filenames": no_baby_filenames,
-        "reasons": data.get("reasons", []),
+        "reasons": [],
+    }
+
+
+def _call_text_proxy(prompt, operation="text_call", max_tokens=500, client_id=None):
+    """通过服务端代理调用文本模型。"""
+    client_config = get_client_config()
+    server_url = client_config.get("server_url", "")
+    signed_client_id = client_config.get("client_id", "") or client_id
+    secret_key = client_config.get("secret_key", "")
+
+    if not server_url or not signed_client_id:
+        raise Exception("未配置服务端地址或客户端ID")
+
+    request_body = {
+        "client_id": signed_client_id,
+        "prompt": prompt,
+        "max_tokens": max_tokens,
+        "operation": operation,
+    }
+    body_str = json.dumps(
+        request_body,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    headers = {"Content-Type": "application/json", "User-Agent": CLIENT_USER_AGENT}
+    path = "/czrz/ai/proxy/text"
+    if signed_client_id and secret_key:
+        add_signature_headers(headers, signed_client_id, secret_key, "POST", path, body_str)
+
+    res = _post_proxy_json(
+        f"{server_url}{path}",
+        body_str,
+        headers,
+        timeout=1200,
+        context="文本代理",
+    )
+    if not res.get("success"):
+        error = res.get("error", "未知错误")
+        message = res.get("message", error)
+        if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED"}:
+            raise Exception(f"ALL_MODELS_EXHAUSTED:{message}")
+        raise Exception(message)
+
+    return (res.get("result") or {}).get("content", "")
+
+
+def select_featured_photo_from_descriptions(photo_records, select_n=1, child_id=None):
+    """
+    基于已保存的文字描述选择精选照片，避免为选图重复读取整天图片。
+    """
+    candidates = []
+    seen = set()
+    for item in photo_records or []:
+        path = item.get("path", "") or ""
+        filename = item.get("filename") or (os.path.basename(path) if path else "")
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        candidates.append(
+            {
+                "filename": filename,
+                "path": path,
+                "description": (item.get("description") or "").strip(),
+                "has_baby": bool(item.get("has_baby", True)),
+                "scene": (item.get("scene") or "").strip(),
+                "activity": (item.get("activity") or "").strip(),
+            }
+        )
+
+    if not candidates:
+        return {"selected": [], "selected_filenames": [], "reasons": []}
+
+    eligible = [item for item in candidates if item.get("has_baby")]
+    if not eligible:
+        eligible = list(candidates)
+
+    if len(eligible) <= select_n:
+        chosen = eligible[:select_n]
+        return {
+            "selected": [item.get("path") or item["filename"] for item in chosen],
+            "selected_filenames": [item["filename"] for item in chosen],
+            "reasons": [item.get("description") or "当天唯一候选照片" for item in chosen],
+        }
+
+    child_features = get_child_features(child_id) if child_id else {}
+    interest_hint = ""
+    if child_features.get("top_interests"):
+        interest_hint = f"宝宝近期兴趣：{'、'.join(child_features['top_interests'][:3])}"
+
+    personality_hint = ""
+    if child_features.get("personality_highs"):
+        personality_hint = f"宝宝性格：{'、'.join(child_features['personality_highs'][:3])}"
+
+    candidate_lines = []
+    for index, item in enumerate(eligible[:60], start=1):
+        candidate_lines.append(
+            f"{index}. filename={item['filename']} | has_baby={'true' if item['has_baby'] else 'false'} | "
+            f"scene={item['scene'] or '未知'} | activity={item['activity'] or '未知'} | "
+            f"description={item['description'] or '无描述'}"
+        )
+
+    prompt = f"""你是宝宝成长记录助手。
+
+现在不要重新看图片，只能根据已经生成好的照片描述，从候选里挑出最适合作为当天精选封面的 {select_n} 张照片。
+
+优先原则：
+1. 优先选择 has_baby=true 的照片
+2. 宝宝动作、表情、互动明确，适合代表这一天
+3. 场景和活动有记忆点，不要选纯背景或信息太弱的照片
+4. 如果描述看起来像重复角度或无明显主体，不优先
+5. 理由要具体，基于提供的描述，不要虚构
+
+{interest_hint}
+{personality_hint}
+
+候选照片：
+{chr(10).join(candidate_lines)}
+
+只返回 JSON：
+{{
+  "selected": ["xxx.jpg"],
+  "reasons": ["为什么选它，20字以内"]
+}}"""
+
+    raw = _call_text_proxy(
+        prompt,
+        operation="select_featured_photo",
+        max_tokens=300,
+        client_id=child_id,
+    )
+    payload = _extract_json_payload(raw)
+    selected_filenames = [
+        name for name in (payload.get("selected") or []) if any(item["filename"] == name for item in eligible)
+    ][:select_n]
+
+    if not selected_filenames:
+        selected_filenames = [eligible[0]["filename"]]
+
+    eligible_map = {item["filename"]: item for item in eligible}
+    reasons = payload.get("reasons") or []
+    if not reasons:
+        reasons = [
+            eligible_map[name].get("description") or "当天代表性照片"
+            for name in selected_filenames
+        ]
+
+    return {
+        "selected": [
+            eligible_map[name].get("path") or name for name in selected_filenames
+        ],
+        "selected_filenames": selected_filenames,
+        "reasons": reasons[: len(selected_filenames)],
     }
 
 
@@ -656,20 +908,30 @@ def select_best_photo(child_id=None):
     if clear_count == 0:
         raise Exception("没有清晰照片")
 
-    # 第一轮
-    candidates = []
-
-    for i in range(0, len(images), ROUND1_BATCH):
-        chunk = images[i : i + ROUND1_BATCH]
-
-        selected = ai_select(chunk, ROUND1_SELECT, child_id)
-
-        candidates.extend(selected)
-
-    # 第二轮
-    final = ai_select(candidates, 1, child_id)
-
-    best = os.path.basename(final[0])
+    selection_reason = ""
+    try:
+        describe_result = describe_photo_batch(images, child_id=child_id)
+        analysis = analyze_all_photos(
+            images,
+            max_photos=len(images),
+            ai_result=describe_result,
+        )
+        selection = select_featured_photo_from_descriptions(
+            analysis.get("photos", []),
+            select_n=1,
+            child_id=child_id,
+        )
+        best = (
+            os.path.basename(selection["selected"][0])
+            if selection.get("selected")
+            else os.path.basename(images[0])
+        )
+        selection_reason = (
+            selection.get("reasons", [None])[0] if selection.get("reasons") else ""
+        )
+    except Exception as e:
+        print(f"[WARN] 选择精选照片失败: {e}，使用第一张")
+        best = os.path.basename(images[0])
 
     return {
         "date": datetime.now().strftime("%Y-%m-%d"),
@@ -679,8 +941,9 @@ def select_best_photo(child_id=None):
             "original": original_count,
             "after_dedup": dedup_count,
             "after_blur_filter": clear_count,
-            "round2_candidates": len(candidates),
         },
+        "method": "description_select",
+        "selection_reason": selection_reason,
     }
 
 
@@ -710,7 +973,10 @@ def select_best_photo_for_client(
         from pathlib import Path
 
         if data_dir is None:
-            data_dir = Path.home() / "Documents" / "CZRZ"
+            if _running_in_server_process():
+                data_dir = Path(__file__).parent / "data" / "server_photo_index"
+            else:
+                data_dir = Path.home() / "Documents" / "CZRZ"
 
         pm = PhotoManager(media_folders, Path(data_dir))
         photos = pm.get_photos_by_date(target_date)
@@ -764,19 +1030,33 @@ def select_best_photo_for_client(
             "method": "single",
         }
 
-    # AI选择最佳照片
+    # 先做图片描述，再基于描述选精选，避免把“描述”和“精选”绑死在一次调用里
     all_blurry = []
     all_duplicates = []
+    selection_reason = ""
 
     try:
-        result = ai_select(images, 1, client_id)
+        describe_result = describe_photo_batch(images, child_id=client_id)
+        analysis = analyze_all_photos(
+            images,
+            max_photos=len(images),
+            ai_result=describe_result,
+        )
+        selection = select_featured_photo_from_descriptions(
+            analysis.get("photos", []),
+            select_n=1,
+            child_id=client_id,
+        )
         best = (
-            os.path.basename(result["selected"][0])
-            if result["selected"]
+            os.path.basename(selection["selected"][0])
+            if selection.get("selected")
             else os.path.basename(images[0])
         )
-        all_blurry = result.get("blurry_filenames", [])
-        all_duplicates = result.get("duplicate_filenames", [])
+        all_blurry = describe_result.get("blurry_filenames", [])
+        all_duplicates = describe_result.get("duplicate_filenames", [])
+        selection_reason = (
+            selection.get("reasons", [None])[0] if selection.get("reasons") else ""
+        )
     except Exception as e:
         print(f"[WARN] AI选择失败: {e}，使用第一张")
         best = os.path.basename(images[0])
@@ -788,7 +1068,8 @@ def select_best_photo_for_client(
         "stats": {"original": original_count},
         "blurry": all_blurry,
         "duplicates": all_duplicates,
-        "method": "ai",
+        "method": "description_select",
+        "selection_reason": selection_reason,
     }
 
 
@@ -824,9 +1105,17 @@ def select_best_from_list(photo_paths, select_n=1):
     if len(images) <= select_n:
         return images
 
-    # AI选择
+    # 先描述，再根据描述挑选
     try:
-        result = ai_select(images, select_n)
+        describe_result = describe_photo_batch(images)
+        analysis = analyze_all_photos(
+            images,
+            max_photos=len(images),
+            ai_result=describe_result,
+        )
+        result = select_featured_photo_from_descriptions(
+            analysis.get("photos", []), select_n=select_n
+        )
         return result.get("selected", images[:select_n])
     except Exception as e:
         print(f"[WARN] AI选择失败: {e}, 返回第一张")
@@ -879,7 +1168,7 @@ def analyze_photo_content(photo_path):
             "operation": "analyze_photo",
         }
         body_str = json.dumps(request_body)
-        headers = {"Content-Type": "application/json", "User-Agent": "CZRZ-Client/2.0"}
+        headers = {"Content-Type": "application/json", "User-Agent": CLIENT_USER_AGENT}
         path = "/czrz/ai/proxy/vision"
 
         if client_id and secret_key:
@@ -887,15 +1176,13 @@ def analyze_photo_content(photo_path):
                 headers, client_id, secret_key, "POST", path, body_str
             )
 
-        r = requests.post(
+        res = _post_proxy_json(
             proxy_url,
-            json=request_body,
-            headers=headers,
+            body_str,
+            headers,
             timeout=1200,
-            verify=False,
+            context="单图视觉代理",
         )
-
-        res = r.json()
 
         if not res.get("success"):
             print(f"[WARN] 代理API失败: {res.get('error')}")
@@ -911,7 +1198,7 @@ def analyze_photo_content(photo_path):
 
 
 LOG_STYLE_PROMPTS = {
-    "简练": "用简洁明了的语言，像日常记录，100字左右",
+    "简练": "用温馨平淡、像真人随手记下生活的口吻来写，克制自然，不堆砌辞藻，少用感叹词和语气词，120字左右",
     "诗意": "用文艺清新的语言，可以加入诗意的比喻，如'阳光洒在脸上...'，150字左右",
     "东北腔": "用东北话的口吻写，幽默风趣，可以说'这孩子咋这么招人稀罕'、'杠杠的'等，100字左右",
     "详细": "详细记录当天的活动细节，时间、地点、做了什么，200字左右",
@@ -923,7 +1210,7 @@ LOG_STYLE_PROMPTS = {
 
 def analyze_all_photos(
     photo_paths: list,
-    max_photos: int = 20,
+    max_photos: int | None = None,
     client_id: str = None,
     date: str = None,
     ai_result: dict = None,
@@ -933,7 +1220,7 @@ def analyze_all_photos(
 
     Args:
         photo_paths: 照片路径列表（用于降级时分析）
-        max_photos: 最多分析的照片数量
+        max_photos: 最多分析的照片数量，None 或 <=0 表示不设上限
         client_id: 客户端ID（用于保存到服务端）
         date: 日期（用于保存到服务端）
         ai_result: ai_select 的结果，包含 photos, blurry, no_baby, duplicates
@@ -1003,28 +1290,47 @@ def analyze_all_photos(
             for filename in group[1:]:
                 dup_to_remove.add(filename)
 
+    if max_photos is None or max_photos <= 0:
+        target_paths = list(photo_paths)
+    else:
+        target_paths = photo_paths[:max_photos]
+
     valid_photos = []
+    processed_skip_photos = []
     all_scenes = set()
     all_activities = set()
     baby_count = 0
     scenery_count = 0
 
-    for path in photo_paths[:max_photos]:
+    for path in target_paths:
         filename = os.path.basename(path)
+        photo_info = photos_dict.get(filename, {})
+
+        if not photo_info:
+            processed_skip_photos.append(
+                build_other_error_photo_record(
+                    path,
+                    error_detail="AI未返回该照片结果，按已处理跳过",
+                    error_code="missing_ai_result",
+                )
+            )
+            continue
 
         if filename in blurry_filenames:
-            continue
-        if filename in no_baby_filenames:
+            processed_skip_photos.append(
+                build_blurry_photo_record(path, source_info=photo_info)
+            )
             continue
         if filename in dup_to_remove:
-            continue
-
-        photo_info = photos_dict.get(filename, {})
-        if not photo_info:
+            processed_skip_photos.append(
+                build_duplicate_photo_record(path, source_info=photo_info)
+            )
             continue
 
         description = photo_info.get("description", "")
         has_baby = photo_info.get("has_baby", True)
+        if filename in no_baby_filenames:
+            has_baby = False
         scene = photo_info.get("scene", "")
         activity = photo_info.get("activity", "")
 
@@ -1051,7 +1357,7 @@ def analyze_all_photos(
     if baby_count > 0:
         combined_parts.append(f"共{baby_count}张宝宝照片")
     if scenery_count > 0:
-        combined_parts.append(f"{scenery_count}张场景照片")
+        combined_parts.append(f"{scenery_count}张场景照片（无人像也保留用于地点和氛围叙事）")
 
     descriptions = [p["description"] for p in valid_photos if p["description"]]
     if descriptions:
@@ -1059,14 +1365,16 @@ def analyze_all_photos(
 
     combined_summary = "。".join(combined_parts) if combined_parts else "照片分析完成"
 
-    if client_id and date and valid_photos:
+    records_to_save = valid_photos + processed_skip_photos
+    if client_id and date and records_to_save:
         try:
-            save_photo_descriptions_to_server(client_id, date, valid_photos)
+            save_photo_descriptions_to_server(client_id, date, records_to_save)
         except Exception as e:
             print(f"[WARN] 保存照片描述失败: {e}")
 
     return {
         "photos": valid_photos,
+        "skipped_photos": processed_skip_photos,
         "scenes": list(all_scenes),
         "activities": list(all_activities),
         "baby_photos": baby_count,
@@ -1091,9 +1399,9 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
     for p in photos:
         if p.get("description") and p["description"] != "分析失败":
             # 计算照片文件哈希
-            file_hash = ""
+            file_hash = (p.get("hash", "") or p.get("file_hash", "") or "").strip()
             file_path = p.get("path", "")
-            if file_path:
+            if file_path and not file_hash:
                 try:
                     hasher = hashlib.md5()
                     with open(file_path, "rb") as f:
@@ -1111,6 +1419,9 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
                     "has_baby": p.get("has_baby", True),
                     "scene": p.get("scene", ""),
                     "activity": p.get("activity", ""),
+                    "processed_status": p.get("processed_status", "") or PHOTO_STATUS_OK,
+                    "processed_error_code": p.get("processed_error_code", "") or "",
+                    "processed_error_detail": p.get("processed_error_detail", "") or "",
                 }
             )
 
@@ -1118,16 +1429,9 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
         return
 
     try:
-        # 从客户端配置获取 server_url, secret_key
-        client_config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
-        if client_config_file.exists():
-            with open(client_config_file, "r", encoding="utf-8") as f:
-                client_config = json.load(f)
-            server_url = client_config.get("server_url", "")
-            secret_key = client_config.get("secret_key", "")
-        else:
-            server_url = ""
-            secret_key = ""
+        client_config = get_client_config()
+        server_url = client_config.get("server_url", "")
+        secret_key = client_config.get("secret_key", "")
 
         if not server_url:
             print("[WARN] 未配置 server_url，跳过保存照片描述")
@@ -1137,7 +1441,7 @@ def save_photo_descriptions_to_server(client_id: str, date: str, photos: list):
         body = json.dumps(
             {"client_id": client_id, "date": date, "photos": descriptions}
         )
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": CLIENT_USER_AGENT}
         if client_id and secret_key:
             add_signature_headers(headers, client_id, secret_key, "POST", path, body)
 

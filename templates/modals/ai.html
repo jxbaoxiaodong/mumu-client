@@ -39,7 +39,7 @@
                             <i class="fas fa-pen-fancy me-1"></i>日志风格
                         </label>
                         <select class="form-select" id="logStyleModal" onchange="toggleCustomStyleModal()">
-                            <option value="简练" selected>简练 - 简洁明了，100字左右</option>
+                            <option value="简练" selected>简练 - 温馨平淡，像真人日记</option>
                             <option value="诗意">诗意 - 文艺清新，诗意比喻</option>
                             <option value="东北腔">东北腔 - 幽默风趣，东北话口吻</option>
                             <option value="详细">详细 - 记录细节，200字左右</option>
@@ -206,32 +206,6 @@ function hideGeneratingToast() {
     }
 }
 
-function saveGeneratingState(date) {
-    localStorage.setItem('log_generating', JSON.stringify({
-        generating: true,
-        date: date,
-        startTime: Date.now()
-    }));
-}
-
-function clearGeneratingState() {
-    localStorage.removeItem('log_generating');
-}
-
-function checkGeneratingState() {
-    var stateStr = localStorage.getItem('log_generating');
-    if (!stateStr) return null;
-    try {
-        var state = JSON.parse(stateStr);
-        if (state.generating && (Date.now() - state.startTime < 120000)) {
-            return state;
-        } else {
-            clearGeneratingState();
-        }
-    } catch(e) {}
-    return null;
-}
-
 function generateAILogAsync() {
     var date = document.getElementById('logDate').value;
     var userNote = document.getElementById('userNote').value.trim();
@@ -247,7 +221,6 @@ function generateAILogAsync() {
     var modal = bootstrap.Modal.getInstance(document.getElementById('aiModal'));
     modal.hide();
     
-    saveGeneratingState(date);
     var toast = showGeneratingToast();
     
     var includeNews = document.getElementById('includeNews').checked;
@@ -269,7 +242,6 @@ function generateAILogAsync() {
     .then(function(response) { return response.json(); })
     .then(function(data) {
         hideGeneratingToast();
-        clearGeneratingState();
         
         if (data.success) {
             if (typeof showNotification === 'function') {
@@ -288,7 +260,6 @@ function generateAILogAsync() {
     })
     .catch(function(error) {
         hideGeneratingToast();
-        clearGeneratingState();
         if (typeof showNotification === 'function') {
             showNotification('生成失败: ' + error.message, 'error');
         } else {

@@ -3,14 +3,17 @@
 
 架构：
 - 全局索引数据库 (data/index.db)：用户列表、Tunnel池、新闻池、配置
-- 单用户数据库 (data/users/{client_id}.db)：日志、留言、AI会话、Token使用
+- 单用户数据库 (data/users/{client_id}.db)：日志、留言、AI会话等
 """
 
-import os
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from contextlib import contextmanager
-from datetime import datetime, date
+from datetime import datetime
+import threading
+import sqlite3
+import time
 
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlalchemy import event
@@ -23,14 +26,28 @@ from models import (
     Log,
     Message,
     AISession,
-    TokenUsage,
     FeaturedPhoto,
     PhotoDescription,
     SpeechRecord,
     PhotoTag,
-    Badge,
     ProfileFeedback,
     DailyCard,
+    LOG_SOURCE_AUTO,
+    LOG_SOURCE_AUTO_LEGACY,
+    LOG_SOURCE_MANUAL,
+    LOG_SOURCE_MANUAL_LEGACY,
+    LOG_SOURCE_UNKNOWN,
+    is_manual_log_source,
+)
+from photo_status import (
+    PHOTO_CONTENT_BLOCK_DESCRIPTION,
+    PHOTO_CONTENT_BLOCK_ERROR_CODE,
+    PHOTO_OTHER_ERROR_DESCRIPTION,
+    PHOTO_OTHER_ERROR_CODE,
+    PHOTO_STATUS_BLOCKED,
+    PHOTO_STATUS_OK,
+    PHOTO_STATUS_OTHER_ERROR,
+    normalize_photo_processed_status,
 )
 
 
@@ -45,15 +62,39 @@ USERS_DIR.mkdir(exist_ok=True)
 
 # 全局索引数据库引擎
 _index_engine = None
+_user_engines = {}
+_user_engines_lock = threading.Lock()
+
+SQLITE_BUSY_TIMEOUT_MS = 30000
+SQLITE_LOCK_RETRY_ATTEMPTS = 5
+SQLITE_LOCK_RETRY_BASE_DELAY_S = 0.2
+
+
+def _is_sqlite_lock_error(exc: Exception) -> bool:
+    """判断是否为可重试的 SQLite 锁冲突。"""
+    text = str(exc or "").lower()
+    return (
+        "database is locked" in text
+        or "database table is locked" in text
+        or "sqlite busy" in text
+    )
 
 
 def get_index_engine():
     """获取全局索引数据库引擎"""
     global _index_engine
     if _index_engine is None:
-        _index_engine = create_engine(f"sqlite:///{INDEX_DB_PATH}")
+        _index_engine = create_engine(
+            f"sqlite:///{INDEX_DB_PATH}",
+            connect_args={
+                "check_same_thread": False,
+                "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000,
+            },
+        )
         _apply_sqlite_pragmas(_index_engine)
         SQLModel.metadata.create_all(_index_engine)
+        _migrate_logs_schema(INDEX_DB_PATH)
+        _migrate_photo_descriptions_schema(INDEX_DB_PATH)
     return _index_engine
 
 
@@ -85,28 +126,171 @@ def get_user_db_path(client_id: str) -> Path:
 def get_user_engine(client_id: str):
     """获取用户数据库引擎"""
     db_path = get_user_db_path(client_id)
-    engine = create_engine(f"sqlite:///{db_path}")
-    _apply_sqlite_pragmas(engine)
+    key = str(db_path)
+    with _user_engines_lock:
+        engine = _user_engines.get(key)
+        if engine is None:
+            engine = create_engine(
+                f"sqlite:///{db_path}",
+                connect_args={
+                    "check_same_thread": False,
+                    "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000,
+                },
+            )
+            _apply_sqlite_pragmas(engine)
 
-    # 创建表
-    SQLModel.metadata.create_all(
-        engine,
-        tables=[
-            Log.__table__,
-            Message.__table__,
-            AISession.__table__,
-            TokenUsage.__table__,
-            FeaturedPhoto.__table__,
-            PhotoDescription.__table__,
-            SpeechRecord.__table__,
-            PhotoTag.__table__,
-            Badge.__table__,
-            ProfileFeedback.__table__,
-            DailyCard.__table__,
-        ],
-    )
-
+            SQLModel.metadata.create_all(
+                engine,
+                tables=[
+                    Log.__table__,
+                    Message.__table__,
+                    AISession.__table__,
+                    FeaturedPhoto.__table__,
+                    PhotoDescription.__table__,
+                    SpeechRecord.__table__,
+                    PhotoTag.__table__,
+                    ProfileFeedback.__table__,
+                    DailyCard.__table__,
+                ],
+            )
+            _migrate_logs_schema(db_path)
+            _migrate_photo_descriptions_schema(db_path)
+            _user_engines[key] = engine
     return engine
+
+
+def _migrate_logs_schema(db_path: Path):
+    """为 logs 表补齐来源字段并回填历史来源。"""
+    if not db_path.exists():
+        return
+
+    with sqlite3.connect(
+        str(db_path), timeout=SQLITE_BUSY_TIMEOUT_MS / 1000
+    ) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='logs'"
+        )
+        if not cursor.fetchone():
+            return
+
+        cursor.execute("PRAGMA table_info(logs)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "source_kind" not in columns:
+            cursor.execute(
+                "ALTER TABLE logs "
+                "ADD COLUMN source_kind VARCHAR(32) NOT NULL DEFAULT 'unknown'"
+            )
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_logs_source_kind "
+            "ON logs (source_kind)"
+        )
+
+        cursor.execute(
+            "UPDATE logs "
+            "SET source_kind = CASE "
+            "WHEN is_ai_generated = 1 THEN ? "
+            "ELSE ? "
+            "END "
+            "WHERE source_kind IS NULL OR TRIM(source_kind) = '' OR source_kind = ?",
+            (
+                LOG_SOURCE_AUTO_LEGACY,
+                LOG_SOURCE_MANUAL_LEGACY,
+                LOG_SOURCE_UNKNOWN,
+            ),
+        )
+        conn.commit()
+
+
+def _normalize_log_source_kind(source_kind: str | None, is_ai_generated: bool) -> str:
+    source = str(source_kind or "").strip().lower()
+    if source and source != LOG_SOURCE_UNKNOWN:
+        return source
+    return LOG_SOURCE_AUTO_LEGACY if is_ai_generated else LOG_SOURCE_MANUAL_LEGACY
+
+
+def _is_manual_log_source_kind(source_kind: str | None, is_ai_generated: bool = False) -> bool:
+    if is_manual_log_source(source_kind):
+        return True
+    if not str(source_kind or "").strip() and not bool(is_ai_generated):
+        return True
+    return False
+
+
+def _migrate_photo_descriptions_schema(db_path: Path):
+    """为 photo_descriptions 表补齐增量字段并回填历史状态。"""
+    if not db_path.exists():
+        return
+
+    with sqlite3.connect(
+        str(db_path), timeout=SQLITE_BUSY_TIMEOUT_MS / 1000
+    ) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='photo_descriptions'"
+        )
+        if not cursor.fetchone():
+            return
+
+        cursor.execute("PRAGMA table_info(photo_descriptions)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "processed_status" not in columns:
+            cursor.execute(
+                "ALTER TABLE photo_descriptions "
+                "ADD COLUMN processed_status VARCHAR(32) NOT NULL DEFAULT 'ok'"
+            )
+        if "processed_error_code" not in columns:
+            cursor.execute(
+                "ALTER TABLE photo_descriptions "
+                "ADD COLUMN processed_error_code VARCHAR(64)"
+            )
+        if "processed_error_detail" not in columns:
+            cursor.execute(
+                "ALTER TABLE photo_descriptions "
+                "ADD COLUMN processed_error_detail TEXT"
+            )
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS ix_photo_descriptions_processed_status "
+            "ON photo_descriptions (processed_status)"
+        )
+
+        cursor.execute(
+            "UPDATE photo_descriptions "
+            "SET processed_status = ?, "
+            "processed_error_code = COALESCE(NULLIF(processed_error_code, ''), ?), "
+            "processed_error_detail = COALESCE(processed_error_detail, description) "
+            "WHERE description = ? "
+            "OR description LIKE '[内容审核拦截]%'",
+            (
+                PHOTO_STATUS_BLOCKED,
+                PHOTO_CONTENT_BLOCK_ERROR_CODE,
+                PHOTO_CONTENT_BLOCK_DESCRIPTION,
+            ),
+        )
+        cursor.execute(
+            "UPDATE photo_descriptions "
+            "SET processed_status = ?, "
+            "processed_error_code = COALESCE(NULLIF(processed_error_code, ''), ?), "
+            "processed_error_detail = COALESCE(processed_error_detail, description) "
+            "WHERE description = ? "
+            "OR description LIKE '[处理异常]%'",
+            (
+                PHOTO_STATUS_OTHER_ERROR,
+                PHOTO_OTHER_ERROR_CODE,
+                PHOTO_OTHER_ERROR_DESCRIPTION,
+            ),
+        )
+        cursor.execute(
+            "UPDATE photo_descriptions "
+            "SET processed_status = ? "
+            "WHERE processed_status IS NULL OR TRIM(processed_status) = ''",
+            (PHOTO_STATUS_OK,),
+        )
+        conn.commit()
 
 
 def _apply_sqlite_pragmas(engine):
@@ -118,7 +302,7 @@ def _apply_sqlite_pragmas(engine):
         try:
             cursor.execute("PRAGMA journal_mode=WAL;")
             cursor.execute("PRAGMA synchronous=NORMAL;")
-            cursor.execute("PRAGMA busy_timeout=5000;")
+            cursor.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS};")
         finally:
             cursor.close()
 
@@ -201,18 +385,32 @@ def update_client(client_id: str, **kwargs) -> Optional[Dict]:
             except (ValueError, TypeError):
                 kwargs[field] = None
 
-    with index_session() as session:
-        client = session.exec(
-            select(Client).where(Client.client_id == client_id)
-        ).first()
-        if client:
-            for key, value in kwargs.items():
-                if hasattr(client, key):
-                    setattr(client, key, value)
-            session.flush()
-            session.refresh(client)
-            return client.model_dump()
-        return None
+    last_exc = None
+    for attempt in range(SQLITE_LOCK_RETRY_ATTEMPTS):
+        try:
+            with index_session() as session:
+                client = session.exec(
+                    select(Client).where(Client.client_id == client_id)
+                ).first()
+                if client:
+                    for key, value in kwargs.items():
+                        if hasattr(client, key):
+                            setattr(client, key, value)
+                    session.flush()
+                    session.refresh(client)
+                    return client.model_dump()
+                return None
+        except Exception as exc:
+            last_exc = exc
+            if not _is_sqlite_lock_error(exc) or attempt >= (
+                SQLITE_LOCK_RETRY_ATTEMPTS - 1
+            ):
+                raise
+            time.sleep(SQLITE_LOCK_RETRY_BASE_DELAY_S * (attempt + 1))
+
+    if last_exc:
+        raise last_exc
+    return None
 
 
 def delete_client(client_id: str) -> bool:
@@ -437,16 +635,6 @@ def list_news(limit: int = 100) -> List[Dict]:
         return [n.model_dump() for n in news_list]
 
 
-def delete_news(news_id: int) -> bool:
-    """删除新闻"""
-    with index_session() as session:
-        news = session.exec(select(NewsItem).where(NewsItem.id == news_id)).first()
-        if news:
-            session.delete(news)
-            return True
-        return False
-
-
 def delete_news_by_index(index: int) -> bool:
     """按索引删除新闻（从列表开头计数）"""
     with index_session() as session:
@@ -529,14 +717,40 @@ def save_log(
     calendar: Dict = None,
     news: str = None,
     is_ai_generated: bool = False,
+    source_kind: str = LOG_SOURCE_UNKNOWN,
+    allow_overwrite_manual: bool = False,
 ) -> Dict:
     """保存日志，返回字典"""
+    incoming_source_kind = _normalize_log_source_kind(source_kind, is_ai_generated)
+    incoming_is_manual = _is_manual_log_source_kind(
+        incoming_source_kind, is_ai_generated=is_ai_generated
+    )
+
     with user_session(client_id) as session:
         existing = session.exec(select(Log).where(Log.date == date_str)).first()
 
         if existing:
+            existing_source_kind = getattr(existing, "source_kind", LOG_SOURCE_UNKNOWN)
+            existing_is_manual = _is_manual_log_source_kind(
+                existing_source_kind, is_ai_generated=existing.is_ai_generated
+            )
+            if (
+                existing_is_manual
+                and not incoming_is_manual
+                and not allow_overwrite_manual
+            ):
+                session.flush()
+                session.refresh(existing)
+                payload = existing.model_dump()
+                payload["skipped"] = True
+                payload["skip_reason"] = "manual_log_exists"
+                return payload
+
             existing.content = content
             existing.updated_at = datetime.now()
+            existing.is_ai_generated = not incoming_is_manual
+            existing.source_kind = incoming_source_kind
+            existing.generated_at = None if incoming_is_manual else datetime.now()
             if weather:
                 existing.weather_city = weather.get("city")
                 existing.weather_temperature = weather.get("temperature")
@@ -559,8 +773,9 @@ def save_log(
             weekday=calendar.get("weekday") if calendar else None,
             lunar=calendar.get("lunar") if calendar else None,
             news=news,
-            is_ai_generated=is_ai_generated,
-            generated_at=datetime.now(),
+            is_ai_generated=not incoming_is_manual,
+            source_kind=incoming_source_kind,
+            generated_at=None if incoming_is_manual else datetime.now(),
         )
         session.add(log)
         session.flush()
@@ -583,6 +798,7 @@ def get_log(client_id: str, date_str: str) -> Optional[Dict]:
                 "lunar": log.lunar,
                 "news": log.news,
                 "is_ai_generated": log.is_ai_generated,
+                "source_kind": getattr(log, "source_kind", LOG_SOURCE_UNKNOWN),
                 "generated_at": log.generated_at.isoformat()
                 if log.generated_at
                 else None,
@@ -612,6 +828,7 @@ def get_log_dict(client_id: str, date_str: str) -> Optional[Dict]:
             else None,
             "news": log["news"],
             "is_ai_generated": log["is_ai_generated"],
+            "source_kind": log.get("source_kind", LOG_SOURCE_UNKNOWN),
             "generated_at": log["generated_at"],
         }
     return None
@@ -651,6 +868,7 @@ def get_recent_logs(client_id: str, limit: int = 50) -> List[Dict]:
                 if len(log.content) > 200
                 else log.content,
                 "is_ai_generated": log.is_ai_generated,
+                "source_kind": getattr(log, "source_kind", LOG_SOURCE_UNKNOWN),
                 "generated_at": log.generated_at.isoformat()
                 if log.generated_at
                 else None,
@@ -663,7 +881,6 @@ def get_all_clients_stats() -> List[Dict]:
     """获取所有客户端的统计信息"""
     stats = []
     clients = list_clients()
-    today = datetime.now().strftime("%Y-%m-%d")
 
     for client in clients:
         client_id = client.get("client_id")
@@ -683,7 +900,6 @@ def get_all_clients_stats() -> List[Dict]:
                 "client_id": client_id,
                 "baby_name": client.get("baby_name", "未知"),
                 "log_count": log_count,
-                "photo_count": 0,  # 照片在客户端本地，服务端无法统计
                 "latest_log": latest_log,
                 "registered_at": client.get("registered_at"),
                 "last_active": client.get("last_active"),
@@ -806,6 +1022,25 @@ def get_ai_sessions(client_id: str, limit: int = 100) -> List[Dict]:
         return [s.model_dump() for s in sessions]
 
 
+def get_ai_sessions_filtered(
+    client_id: str,
+    operations: Optional[List[str]] = None,
+    start_at: Optional[datetime] = None,
+    limit: Optional[int] = None,
+) -> List[Dict]:
+    """按条件获取 AI 会话列表，返回字典列表。"""
+    with user_session(client_id) as session:
+        stmt = select(AISession).order_by(AISession.created_at.desc())
+        if operations:
+            stmt = stmt.where(AISession.operation.in_(operations))
+        if start_at:
+            stmt = stmt.where(AISession.created_at >= start_at)
+        if limit and limit > 0:
+            stmt = stmt.limit(limit)
+        sessions = session.exec(stmt).all()
+        return [s.model_dump() for s in sessions]
+
+
 def get_ai_sessions_light(client_id: str, limit: int = 100) -> List[Dict]:
     """获取 AI 会话列表（轻量版，不含prompt/response）"""
     with user_session(client_id) as session:
@@ -821,19 +1056,6 @@ def get_ai_sessions_light(client_id: str, limit: int = 100) -> List[Dict]:
             }
             for s in sessions
         ]
-
-
-def get_token_usage(client_id: str, date_str: str = None) -> List[Dict]:
-    """获取 Token 使用记录，返回字典列表"""
-    with user_session(client_id) as session:
-        if date_str:
-            usages = session.exec(
-                select(TokenUsage).where(TokenUsage.date == date_str)
-            ).all()
-        else:
-            usages = session.exec(select(TokenUsage)).all()
-        return [u.model_dump() for u in usages]
-
 
 def save_featured_photo(
     client_id: str,
@@ -882,29 +1104,26 @@ def get_featured_photo(client_id: str, date_str: str) -> Optional[Dict]:
         return None
 
 
-# 照片描述
-def save_photo_description(
-    client_id: str,
-    date_str: str,
-    file_hash: str,
-    file_path: str,
-    description: str = None,
-    has_baby: bool = True,
-    scene: str = None,
-    activity: str = None,
-):
-    """保存照片描述"""
+def get_featured_photos_by_dates(client_id: str, date_list: List[str]) -> Dict[str, Dict]:
+    """批量获取多天的精选照片，减少相册页的重复查询。"""
+    normalized_dates = [str(item or "").strip() for item in (date_list or []) if str(item or "").strip()]
+    if not normalized_dates:
+        return {}
+
     with user_session(client_id) as session:
-        photo_desc = PhotoDescription(
-            date=date_str,
-            file_hash=file_hash,
-            file_path=file_path,
-            description=description,
-            has_baby=has_baby,
-            scene=scene,
-            activity=activity,
-        )
-        session.add(photo_desc)
+        rows = session.exec(
+            select(FeaturedPhoto).where(FeaturedPhoto.date.in_(normalized_dates))
+        ).all()
+        result = {}
+        for featured in rows:
+            result[featured.date] = {
+                "filename": featured.filename,
+                "file_hash": featured.file_hash,
+                "ai_description": featured.ai_description,
+                "date": featured.date,
+                "created_at": featured.created_at.isoformat() if featured.created_at else None,
+            }
+        return result
 
 
 def save_photo_descriptions(client_id: str, date_str: str, photos: list):
@@ -919,27 +1138,50 @@ def save_photo_descriptions(client_id: str, date_str: str, photos: list):
         existing_map = {r.file_path: r for r in existing_records}
         
         for photo in photos:
-            file_path = photo.get("path", "")
+            file_path = (photo.get("path") or "").strip()
+            if not file_path:
+                continue
+
+            incoming_hash = (
+                photo.get("hash", "")
+                or photo.get("file_hash", "")
+                or ""
+            ).strip()
+            processed_status = normalize_photo_processed_status(
+                photo.get("processed_status", ""),
+                photo.get("description", ""),
+            )
+            processed_error_code = (photo.get("processed_error_code") or "").strip() or None
+            processed_error_detail = (
+                photo.get("processed_error_detail") or ""
+            ).strip() or None
             
             if file_path in existing_map:
                 # 更新现有记录
                 record = existing_map[file_path]
-                record.file_hash = photo.get("hash", "")
+                if incoming_hash:
+                    record.file_hash = incoming_hash
                 record.description = photo.get("description")
                 record.has_baby = photo.get("has_baby", True)
                 record.scene = photo.get("scene")
                 record.activity = photo.get("activity")
+                record.processed_status = processed_status
+                record.processed_error_code = processed_error_code
+                record.processed_error_detail = processed_error_detail
                 session.add(record)
             else:
                 # 插入新记录
                 photo_desc = PhotoDescription(
                     date=date_str,
-                    file_hash=photo.get("hash", ""),
+                    file_hash=incoming_hash,
                     file_path=file_path,
                     description=photo.get("description"),
                     has_baby=photo.get("has_baby", True),
                     scene=photo.get("scene"),
                     activity=photo.get("activity"),
+                    processed_status=processed_status,
+                    processed_error_code=processed_error_code,
+                    processed_error_detail=processed_error_detail,
                 )
                 session.add(photo_desc)
 
@@ -958,9 +1200,46 @@ def get_photo_descriptions(client_id: str, date_str: str) -> List[Dict]:
                 "has_baby": p.has_baby,
                 "scene": p.scene,
                 "activity": p.activity,
+                "processed_status": normalize_photo_processed_status(
+                    getattr(p, "processed_status", ""),
+                    p.description or "",
+                ),
+                "processed_error_code": getattr(p, "processed_error_code", None),
+                "processed_error_detail": getattr(p, "processed_error_detail", None),
             }
             for p in photos
         ]
+
+
+def get_photo_descriptions_by_dates(client_id: str, date_list: List[str]) -> Dict[str, List[Dict]]:
+    """批量获取多天的照片描述，避免相册逐天查询导致的慢请求。"""
+    normalized_dates = [str(item or "").strip() for item in (date_list or []) if str(item or "").strip()]
+    if not normalized_dates:
+        return {}
+
+    with user_session(client_id) as session:
+        photos = session.exec(
+            select(PhotoDescription).where(PhotoDescription.date.in_(normalized_dates))
+        ).all()
+        grouped = defaultdict(list)
+        for p in photos:
+            grouped[p.date].append(
+                {
+                    "path": p.file_path,
+                    "hash": p.file_hash,
+                    "description": p.description,
+                    "has_baby": p.has_baby,
+                    "scene": p.scene,
+                    "activity": p.activity,
+                    "processed_status": normalize_photo_processed_status(
+                        getattr(p, "processed_status", ""),
+                        p.description or "",
+                    ),
+                    "processed_error_code": getattr(p, "processed_error_code", None),
+                    "processed_error_detail": getattr(p, "processed_error_detail", None),
+                }
+            )
+        return dict(grouped)
 
 
 def save_speech_record(
@@ -974,7 +1253,6 @@ def save_speech_record(
 ) -> Dict:
     """保存语音记录，返回字典。使用 UPSERT：已存在则更新，不存在则插入"""
     import json
-    from sqlalchemy.dialects.sqlite import insert
 
     with user_session(client_id) as session:
         # 先检查是否已存在
@@ -987,10 +1265,25 @@ def save_speech_record(
         
         if existing:
             # 更新现有记录
-            existing.transcript = transcript
+            existing_transcript = str(existing.transcript or "").strip()
+            incoming_transcript = (
+                str(transcript or "").strip() if transcript is not None else None
+            )
+            can_replace_textual_fields = bool(incoming_transcript) or not existing_transcript
+
+            if transcript is not None and can_replace_textual_fields:
+                existing.transcript = transcript
             existing.duration = duration
-            existing.language_analysis = json.dumps(language_analysis, ensure_ascii=False) if language_analysis else None
-            existing.file_hash = file_hash
+            if language_analysis is not None and (
+                can_replace_textual_fields or not str(existing.language_analysis or "").strip()
+            ):
+                existing.language_analysis = (
+                    json.dumps(language_analysis, ensure_ascii=False)
+                    if language_analysis
+                    else None
+                )
+            if file_hash:
+                existing.file_hash = file_hash
             session.add(existing)
             session.flush()
             session.refresh(existing)
@@ -1133,14 +1426,11 @@ def init_database():
     # 创建全局索引数据库
     engine = get_index_engine()
     SQLModel.metadata.create_all(engine)
-
-    # 迁移：添加 ai_child_id 列（如果不存在）
-    with engine.connect() as conn:
-        try:
-            conn.execute("ALTER TABLE clients ADD COLUMN ai_child_id VARCHAR(64)")
-            print("   已添加 ai_child_id 列")
-        except Exception:
-            pass  # 列已存在，忽略
+    _migrate_logs_schema(INDEX_DB_PATH)
+    _migrate_photo_descriptions_schema(INDEX_DB_PATH)
+    for user_db in USERS_DIR.glob("*.db"):
+        _migrate_logs_schema(user_db)
+        _migrate_photo_descriptions_schema(user_db)
 
     print(f"✅ 数据库初始化完成: {INDEX_DB_PATH}")
     print(f"   用户数据库目录: {USERS_DIR}")

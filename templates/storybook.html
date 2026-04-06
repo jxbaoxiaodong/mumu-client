@@ -1,0 +1,616 @@
+{% extends "base.html" %}
+
+{% block title %}时光相册 - {{ baby_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.album-page {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 26px 16px 60px;
+}
+.album-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+.album-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #7a5a43;
+    text-decoration: none;
+    font-weight: 700;
+}
+.album-back-link:hover { color: #5f4533; }
+.album-toolbar-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.album-shell {
+    position: relative;
+    overflow: hidden;
+    border-radius: 36px;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top left, rgba(255, 224, 187, 0.9), transparent 32%),
+        radial-gradient(circle at top right, rgba(198, 234, 255, 0.9), transparent 28%),
+        linear-gradient(180deg, #fbf5ee 0%, #f7f0e6 52%, #fffaf4 100%);
+    box-shadow: 0 26px 80px rgba(66, 52, 40, 0.12);
+}
+.album-shell::before,
+.album-shell::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    pointer-events: none;
+    opacity: 0.45;
+}
+.album-shell::before {
+    width: 360px;
+    height: 360px;
+    right: -140px;
+    top: -120px;
+    background: radial-gradient(circle, rgba(255, 210, 150, 0.72), transparent 70%);
+}
+.album-shell::after {
+    width: 300px;
+    height: 300px;
+    left: -120px;
+    bottom: -140px;
+    background: radial-gradient(circle, rgba(126, 173, 199, 0.28), transparent 72%);
+}
+.poster-head {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1.04fr 0.96fr;
+    gap: 24px;
+    align-items: stretch;
+}
+.poster-hero {
+    position: relative;
+    min-height: 480px;
+    border-radius: 32px;
+    overflow: hidden;
+    background: linear-gradient(145deg, #dfb67d 0%, #f7e6cf 48%, #d7edf5 100%);
+    box-shadow: 0 18px 44px rgba(64, 45, 31, 0.14);
+}
+.poster-hero img.hero-main {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.poster-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(35, 29, 25, 0.08) 0%, rgba(35, 29, 25, 0.55) 100%);
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    color: white;
+}
+.poster-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(10px);
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+}
+.poster-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", "Noto Serif SC", serif;
+    font-size: 3rem;
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+.poster-cover-chip {
+    margin-top: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+.poster-collage {
+    position: absolute;
+    top: 26px;
+    right: 24px;
+    display: grid;
+    gap: 10px;
+    width: 138px;
+}
+.poster-mini-frame {
+    border-radius: 24px;
+    overflow: hidden;
+    border: 7px solid rgba(255,255,255,0.68);
+    box-shadow: 0 12px 28px rgba(32, 29, 26, 0.14);
+    background: rgba(255,255,255,0.36);
+}
+.poster-mini-frame img {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    display: block;
+}
+.poster-summary {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    gap: 18px;
+    padding: 28px;
+    border-radius: 32px;
+    background: rgba(255,255,255,0.74);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.62);
+    box-shadow: 0 16px 40px rgba(80, 59, 43, 0.08);
+}
+.album-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.album-stat-card {
+    border-radius: 22px;
+    padding: 16px 18px;
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 8px 24px rgba(82, 65, 51, 0.06);
+}
+.album-stat-label {
+    color: #92867b;
+    font-size: 0.82rem;
+    margin-bottom: 6px;
+}
+.album-stat-value {
+    color: #2f2926;
+    font-weight: 800;
+    font-size: 1.08rem;
+}
+.album-section {
+    position: relative;
+    z-index: 1;
+    margin-top: 30px;
+}
+.album-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.album-section-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", serif;
+    font-size: 1.65rem;
+    color: #2d2724;
+    font-weight: 700;
+}
+.poster-canvas {
+    position: relative;
+    z-index: 1;
+    margin-top: 10px;
+    padding: 10px 4px 4px;
+}
+.album-timeline {
+    position: relative;
+    display: grid;
+    gap: 28px;
+}
+.album-timeline::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(156, 120, 83, 0.12), rgba(156, 120, 83, 0.55), rgba(93, 146, 173, 0.28));
+}
+.album-moment {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+.album-moment-panel {
+    border-radius: 28px;
+    padding: 20px;
+    background: rgba(255,255,255,0.82);
+    border: 1px solid rgba(255,255,255,0.62);
+    box-shadow: 0 14px 36px rgba(74, 58, 44, 0.08);
+}
+.album-moment-media { grid-column: 1; }
+.album-moment-axis { grid-column: 2; }
+.album-moment-copy { grid-column: 3; }
+.album-moment-media,
+.album-moment-axis,
+.album-moment-copy {
+    grid-row: 1;
+}
+.album-moment.is-reverse .album-moment-copy { grid-column: 1; }
+.album-moment.is-reverse .album-moment-axis { grid-column: 2; }
+.album-moment.is-reverse .album-moment-media { grid-column: 3; }
+.album-moment-axis {
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    align-self: start;
+}
+.axis-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #d69357, #d7c7b1);
+    border: 5px solid rgba(255,255,255,0.95);
+    box-shadow: 0 0 0 1px rgba(181, 143, 103, 0.22);
+}
+.axis-date {
+    writing-mode: vertical-rl;
+    color: #8d7a6b;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+}
+.album-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, rgba(254, 230, 186, 0.92), rgba(215, 234, 244, 0.92));
+    color: #7a5a43;
+    font-size: 0.78rem;
+    font-weight: 800;
+    margin-bottom: 12px;
+}
+.album-moment-title {
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", serif;
+    font-size: 1.55rem;
+    line-height: 1.18;
+    color: #2d2724;
+    margin-bottom: 10px;
+    font-weight: 700;
+}
+.album-moment-summary {
+    color: #635954;
+    line-height: 1.85;
+    margin-bottom: 14px;
+}
+.album-moment-meta,
+.album-reason-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.album-meta-pill,
+.album-reason-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(247, 242, 235, 0.96);
+    color: #6d6259;
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+.album-moment-media {
+    display: grid;
+    gap: 12px;
+}
+.memory-frame {
+    position: relative;
+    overflow: hidden;
+    background: #efe7dc;
+    border: 10px solid rgba(255,255,255,0.84);
+    box-shadow: 0 16px 36px rgba(71, 56, 43, 0.14);
+}
+.memory-frame img {
+    width: 100%;
+    display: block;
+    object-fit: cover;
+    aspect-ratio: 4 / 5;
+}
+.memory-frame.frame-circle { border-radius: 50%; }
+.memory-frame.frame-circle img { aspect-ratio: 1 / 1; }
+.memory-frame.frame-arch { border-radius: 200px 200px 28px 28px; }
+.memory-frame.frame-square { border-radius: 30px; }
+.memory-frame.frame-ticket {
+    border-radius: 26px;
+    clip-path: polygon(0 0, 90% 0, 100% 10%, 100% 100%, 10% 100%, 0 90%);
+}
+.memory-frame.frame-oval { border-radius: 48% 48% 44% 44% / 56% 56% 40% 40%; }
+.secondary-frame-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.secondary-frame-grid .memory-frame {
+    border-width: 7px;
+}
+.secondary-frame-grid .memory-frame img {
+    aspect-ratio: 1 / 1;
+}
+.album-empty {
+    position: relative;
+    z-index: 1;
+    text-align: center;
+    padding: 110px 18px;
+    border-radius: 32px;
+    background: rgba(255,255,255,0.7);
+    color: #6f655d;
+}
+.album-download-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(28, 24, 21, 0.4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+}
+.album-download-mask.show { display: flex; }
+.album-download-box {
+    padding: 18px 22px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.96);
+    color: #473a31;
+    box-shadow: 0 20px 48px rgba(42, 34, 28, 0.18);
+    font-weight: 700;
+}
+@media (max-width: 980px) {
+    .poster-head { grid-template-columns: 1fr; }
+    .album-timeline::before { left: 28px; }
+    .album-moment,
+    .album-moment.is-reverse {
+        grid-template-columns: 56px minmax(0, 1fr);
+        gap: 14px;
+        align-items: start;
+    }
+    .album-moment-media,
+    .album-moment-copy,
+    .album-moment.is-reverse .album-moment-media,
+    .album-moment.is-reverse .album-moment-copy {
+        order: initial;
+    }
+    .album-moment-axis {
+        grid-row: 1;
+        padding-top: 10px;
+    }
+    .axis-date { writing-mode: initial; }
+    .album-moment-media { grid-column: 2; }
+    .album-moment-copy { display: none; }
+}
+@media (max-width: 720px) {
+    .album-page { padding: 18px 10px 48px; }
+    .album-shell { padding: 16px; border-radius: 28px; }
+    .poster-title { font-size: 2.35rem; }
+    .poster-summary { padding: 20px; }
+    .album-stat-grid { grid-template-columns: 1fr; }
+    .poster-collage {
+        position: static;
+        width: 100%;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 18px;
+    }
+    .poster-overlay { position: relative; min-height: 440px; }
+    .poster-hero { min-height: 0; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="album-page">
+    <div class="album-toolbar">
+        <a href="/" class="album-back-link"><i class="fas fa-arrow-left"></i>返回首页</a>
+        <div class="album-toolbar-actions">
+            <button class="btn btn-primary" type="button" onclick="downloadAlbumPoster()">
+                <i class="fas fa-image me-1"></i>下载长图
+            </button>
+            <a class="btn btn-outline-secondary" href="/storybook/print" target="_blank">
+                <i class="fas fa-scroll me-1"></i>纯净长卷
+            </a>
+        </div>
+    </div>
+
+    <div class="album-shell">
+        {% if collection.moments %}
+        <div id="albumLongPoster">
+            <div class="poster-head">
+                <section class="poster-hero">
+                    {% if collection.cover_image %}
+                    <img class="hero-main" src="{{ collection.cover_album or collection.cover_image or collection.cover_thumb }}" alt="相册封面" crossorigin="anonymous" fetchpriority="high" decoding="async">
+                    {% endif %}
+                    <div class="poster-overlay">
+                        <div class="poster-kicker"><i class="fas fa-hourglass-half"></i>Time Album</div>
+                        <div class="poster-title">{{ collection.title }}</div>
+                        {% if collection.cover_title %}
+                        <div class="poster-cover-chip"><i class="fas fa-star"></i>{{ collection.cover_title }}</div>
+                        {% endif %}
+                        {% if collection.cover_collage %}
+                        <div class="poster-collage">
+                            {% for photo in collection.cover_collage %}
+                            <div class="poster-mini-frame"><img src="{{ photo.thumb or photo.photo }}" alt="拼贴 {{ loop.index }}" crossorigin="anonymous" loading="lazy" decoding="async"></div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </section>
+
+                <aside class="poster-summary">
+                    <div class="album-stat-grid">
+                        <div class="album-stat-card">
+                            <div class="album-stat-label">入册节点</div>
+                            <div class="album-stat-value">{{ collection.selected_count }} 个</div>
+                        </div>
+                        <div class="album-stat-card">
+                            <div class="album-stat-label">入册照片</div>
+                            <div class="album-stat-value">{{ collection.selected_photo_count }} 张</div>
+                        </div>
+                        <div class="album-stat-card">
+                            <div class="album-stat-label">时间跨度</div>
+                            <div class="album-stat-value">{{ collection.date_span }}</div>
+                        </div>
+                        <div class="album-stat-card">
+                            <div class="album-stat-label">照片底库</div>
+                            <div class="album-stat-value">{{ collection.total_photo_count }} 张</div>
+                        </div>
+                    </div>
+                    <div class="album-toolbar-actions">
+                        <a class="btn btn-outline-dark" href="/cards?category=album"><i class="fas fa-clone me-1"></i>看相册卡</a>
+                        <a class="btn btn-outline-dark" href="/cards?category=comic"><i class="fas fa-palette me-1"></i>看漫画卡</a>
+                    </div>
+                </aside>
+            </div>
+
+            <section class="album-section poster-canvas">
+                <div class="album-section-head">
+                    <div>
+                        <div class="album-section-title">时间轴长卷</div>
+                    </div>
+                </div>
+                <div class="album-timeline">
+                    {% for moment in collection.moments %}
+                    <article class="album-moment {% if loop.index is even %}is-reverse{% endif %}">
+                        <div class="album-moment-panel album-moment-media">
+                            <div class="memory-frame frame-{{ moment.frame_shape }}">
+                                <img src="{{ moment.album or moment.photo or moment.thumb }}" alt="{{ moment.title }}" crossorigin="anonymous" loading="{% if loop.first %}eager{% else %}lazy{% endif %}" decoding="async">
+                            </div>
+                            {% if moment.secondary_photos %}
+                            <div class="secondary-frame-grid">
+                                {% for secondary in moment.secondary_photos %}
+                                <div class="memory-frame frame-{{ secondary.frame_shape }}">
+                                    <img src="{{ secondary.album or secondary.photo or secondary.thumb }}" alt="辅助照片 {{ loop.index }}" crossorigin="anonymous" loading="lazy" decoding="async">
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="album-moment-axis">
+                            <div class="axis-dot"></div>
+                            <div class="axis-date">{{ moment.date_display }}</div>
+                        </div>
+
+                        <div class="album-moment-panel album-moment-copy">
+                            <div class="album-kicker">
+                                <i class="fas fa-star"></i>{{ moment.quality_label }}
+                                {% if moment.is_featured %}<span>· 当天精选</span>{% endif %}
+                            </div>
+                            <div class="album-moment-title">{{ moment.title }}</div>
+                            <div class="album-moment-summary">{{ moment.summary }}</div>
+                            <div class="album-moment-meta">
+                                {% if moment.scene %}<span class="album-meta-pill">{{ moment.scene }}</span>{% endif %}
+                                {% if moment.activity %}<span class="album-meta-pill">{{ moment.activity }}</span>{% endif %}
+                                <span class="album-meta-pill">第 {{ moment.index }} 节点</span>
+                            </div>
+                            {% if moment.reason_lines %}
+                            <div class="album-reason-list" style="margin-top:14px;">
+                                {% for reason in moment.reason_lines %}
+                                <span class="album-reason-pill">{{ reason }}</span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+        {% else %}
+        <div class="album-empty">
+            <div style="font-size:3rem; margin-bottom:16px;">🕰️</div>
+            <h3 style="font-family:'Iowan Old Style','Songti SC',serif; color:#2f2926; font-size:2rem; margin-bottom:10px;">时光相册还没装订起来</h3>
+            <p style="max-width:680px; margin:0 auto 18px; line-height:1.9;">先让系统积累更多照片描述和精选照片。相册不是把所有图铺满，而是先挑出更适合做时间节点、也更有分享欲的照片。</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="album-download-mask" id="albumDownloadMask">
+    <div class="album-download-box"><i class="fas fa-spinner fa-spin me-2"></i>正在生成长图，请稍等…</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/vendor/html2canvas/html2canvas.min.js"></script>
+<script>
+function toggleAlbumMask(show) {
+    const mask = document.getElementById('albumDownloadMask');
+    if (!mask) return;
+    mask.classList.toggle('show', !!show);
+}
+
+function canvasToJpegBlob(canvas, quality) {
+    return new Promise(function(resolve, reject) {
+        canvas.toBlob(function(blob) {
+            if (blob) {
+                resolve(blob);
+            } else {
+                reject(new Error('导出图片失败'));
+            }
+        }, 'image/jpeg', quality);
+    });
+}
+
+async function downloadAlbumPoster() {
+    const target = document.getElementById('albumLongPoster');
+    if (!target) return;
+    if (typeof html2canvas === 'undefined') {
+        alert('长图组件未加载，请刷新后重试');
+        return;
+    }
+
+    toggleAlbumMask(true);
+    try {
+        const canvas = await html2canvas(target, {
+            scale: window.innerWidth < 768 ? 1 : 1.2,
+            backgroundColor: '#fbf5ee',
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            imageTimeout: 20000,
+            onclone: function(clonedDoc) {
+                clonedDoc.querySelectorAll('img').forEach(function(img) {
+                    img.crossOrigin = 'anonymous';
+                });
+            }
+        });
+
+        const blob = await canvasToJpegBlob(canvas, 0.82);
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = '{{ baby_name }}-时光相册-' + Date.now() + '.jpg';
+        link.href = blobUrl;
+        link.click();
+        setTimeout(function() {
+            URL.revokeObjectURL(blobUrl);
+        }, 1000);
+    } catch (err) {
+        console.error('[Album] 生成长图失败', err);
+        alert('生成长图失败，请稍后重试');
+    } finally {
+        toggleAlbumMask(false);
+    }
+}
+</script>
+{% endblock %}

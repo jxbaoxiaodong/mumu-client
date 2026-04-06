@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ baby_name }}的小世界{% endblock %}
+{% block title %}AI眼中的{{ baby_name }}{% endblock %}
 {% block extra_css %}
 <style>
 /* 温馨风格基础样式 */
@@ -69,71 +69,6 @@
     font-size: 18px;
     color: #4A4A4A;
     line-height: 1.6;
-}
-
-/* AI特质卡片区域 */
-.traits-section {
-    background: white;
-    border-radius: 16px;
-    padding: 20px;
-    margin-bottom: 20px;
-}
-
-.traits-title {
-    font-size: 16px;
-    color: #666;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.traits-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 12px;
-}
-
-.trait-card {
-    background: linear-gradient(135deg, #FFF5F5 0%, #FFFAF0 100%);
-    border-radius: 12px;
-    padding: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.trait-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(255, 182, 193, 0.2);
-}
-
-.trait-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    flex-shrink: 0;
-}
-
-.trait-info {
-    flex: 1;
-}
-
-.trait-name {
-    font-weight: 600;
-    color: #4A4A4A;
-    font-size: 14px;
-}
-
-.trait-desc {
-    font-size: 12px;
-    color: #888;
-    margin-top: 2px;
 }
 
 /* 标签云区域 */
@@ -267,6 +202,25 @@
     margin: 15px 0;
 }
 
+.chart-notes {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.chart-note {
+    background: #FFF8F0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #666;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.chart-note strong {
+    color: #4A4A4A;
+}
+
 /* 时间轴 */
 .timeline-section {
     position: relative;
@@ -314,6 +268,37 @@
     border-radius: 8px;
     font-size: 14px;
     color: #555;
+}
+
+.advice-stack {
+    display: grid;
+    gap: 12px;
+}
+
+.advice-card {
+    background: #FFF8F0;
+    border-radius: 12px;
+    padding: 14px;
+    border: 1px solid rgba(255, 182, 193, 0.18);
+}
+
+.advice-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4A4A4A;
+    margin-bottom: 6px;
+}
+
+.advice-body {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.7;
+}
+
+.advice-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #999;
 }
 
 /* 反馈区域 */
@@ -453,10 +438,10 @@
         <!-- 头部 -->
         <div class="profile-header">
             <div class="profile-avatar">
-                <img src="{{ avatar_url or '/static/images/default-avatar.png' }}" alt="头像">
+                <img src="{{ avatar_url or '/api/default-avatar' }}" alt="头像">
             </div>
             <div class="profile-info">
-                <h1>🌟 {{ baby_name }}的小世界</h1>
+                <h1>🌟 AI眼中的{{ baby_name }}</h1>
                 <p class="age-text">
                     <i class="fas fa-birthday-cake me-1"></i>
                     <span id="currentAge">{{ age_text if age_text else '未设置生日' }}</span>
@@ -473,23 +458,6 @@
             <span style="color: #999;" id="highlightPlaceholder">加载中...</span>
         </div>
     </div>
-
-        <!-- AI发现的特质 -->
-        <div class="traits-section">
-            <div class="traits-title">
-                <i class="fas fa-heart" style="color: #FFB6C1;"></i>
-                <span>AI发现了宝宝的可爱特质</span>
-            </div>
-            <div class="traits-grid" id="traitsGrid">
-                <div class="trait-card">
-                    <div class="trait-icon" style="background: #FFF0F5;">💛</div>
-                    <div class="trait-info">
-                        <div class="trait-name">加载中...</div>
-                        <div class="trait-desc">AI正在分析</div>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- 标签云 -->
         <div class="tags-section">
@@ -525,11 +493,17 @@
                     <div class="radar-container">
                         <canvas id="radarChart"></canvas>
                     </div>
+                    <div id="personalityNotes" class="chart-notes">
+                        <div class="chart-note">AI 正在整理性格表现...</div>
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-star me-2"></i>兴趣偏好</h6>
                     <div class="radar-container">
                         <canvas id="interestChart"></canvas>
+                    </div>
+                    <div id="interestNotes" class="chart-notes">
+                        <div class="chart-note">AI 正在整理兴趣线索...</div>
                     </div>
                 </div>
             </div>
@@ -552,8 +526,8 @@
                     </div>
                 </div>
                 <div class="col-md-6">
-                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-history me-2"></i>成长轨迹</h6>
-                    <div id="timelineSection" class="timeline-section">
+                    <h6 style="color: #666; margin-bottom: 12px;"><i class="fas fa-heart me-2"></i>因势利导建议</h6>
+                    <div id="adviceSection" class="advice-stack">
                         <p class="text-muted">加载中...</p>
                     </div>
                 </div>
@@ -599,31 +573,6 @@ var gradients = [
     'linear-gradient(135deg, #F8B500 0%, #FF6B6B 100%)',
 ];
 
-var traitIcons = {
-    '爱笑': '💛',
-    '好奇': '🔍',
-    '活泼': '⚡',
-    '安静': '🌙',
-    '专注': '🎯',
-    '社交': '👥',
-    '独立': '🌟',
-    '创造': '🎨',
-    '音乐': '🎵',
-    '运动': '🏃',
-    '阅读': '📚',
-    '探索': '🧭',
-    'default': '✨'
-};
-
-function getTraitIcon(traitName) {
-    for (var key in traitIcons) {
-        if (traitName.indexOf(key) !== -1) {
-            return traitIcons[key];
-        }
-    }
-    return traitIcons['default'];
-}
-
 function loadProfileData() {
     Promise.all([
         fetch('/api/ai/profile').then(function(r) { return r.json(); }),
@@ -633,16 +582,18 @@ function loadProfileData() {
         var pData = results[0];
         var fData = results[1];
         if (pData.success) {
-            profileData = pData.profile;
+            profileData = pData.profile || {};
+            if (typeof pData.llm_valid === 'boolean') {
+                profileData.llm_valid = pData.llm_valid;
+            }
             
             document.getElementById('currentAge').textContent = (profileData && profileData.age) ? profileData.age : '暂无数据';
             document.getElementById('tagCount').textContent = (profileData && profileData.total_tags) ? profileData.total_tags : 0;
             document.getElementById('eventCount').textContent = (profileData && profileData.total_events) ? profileData.total_events : 0;
 
             renderHighlight(profileData);
-            renderTraits(profileData);
             renderTagsCloud((profileData && profileData.tags) ? profileData.tags : []);
-            renderTimeline((profileData && profileData.evolution && profileData.evolution.recent_changes) ? profileData.evolution.recent_changes : []);
+            renderAdviceSection(profileData);
             renderGrowthChart(profileData && profileData.knowledge_growth ? profileData.knowledge_growth : null);
         }
 
@@ -650,6 +601,11 @@ function loadProfileData() {
             var features = fData.features;
             renderRadarChart((features && features.personality) ? features.personality : {});
             renderInterests((features && features.interest) ? features.interest : {});
+            renderPersonalityNotes(profileData, (features && features.personality) ? features.personality : {});
+            renderInterestNotes(profileData, (features && features.interest) ? features.interest : {});
+        } else {
+            renderPersonalityNotes(profileData, {});
+            renderInterestNotes(profileData, {});
         }
     })
     .catch(function(err) {
@@ -658,80 +614,43 @@ function loadProfileData() {
     });
 }
 
-function renderHighlight(profile) {
-    var container = document.getElementById('highlightContent');
-    var placeholder = document.getElementById('highlightPlaceholder');
+function isPortraitFailed(profile) {
     var summary = (profile && profile.guidance && profile.guidance.summary) ? profile.guidance.summary : '';
-
-    // 判断是否有有效画像数据
-    var hasValidData = (summary && summary.indexOf('暂无足够数据') === -1 && summary.length > 20) 
-        || (profile && profile.evolution && profile.evolution.recent_changes && profile.evolution.recent_changes.length > 0)
-        || (profile && profile.tags && profile.tags.length > 0);
-
-    if (hasValidData) {
-        // 有数据，隐藏placeholder，显示内容
-        if (placeholder) {
-            placeholder.style.display = 'none';
-        }
-        if (summary && summary.indexOf('暂无足够数据') === -1) {
-            container.innerHTML = '"' + summary + '"';
-        } else if (profile && profile.evolution && profile.evolution.recent_changes && profile.evolution.recent_changes.length > 0) {
-            var recent = profile.evolution.recent_changes[0];
-            container.innerHTML = '"' + recent.change + '"';
-        } else {
-            container.innerHTML = '<span style="color: #999;">继续记录，AI会发现更多可爱瞬间~</span>';
-        }
-    } else {
-        // 没有数据，显示提示
-        if (placeholder) {
-            placeholder.textContent = '暂时没有生成画像，请点击上方刷新按钮';
-            placeholder.style.display = 'inline';
-        }
-    }
+    return (profile && profile.llm_valid === false) || summary.indexOf('分析失败:') === 0;
 }
 
-function renderTraits(profile) {
-    var container = document.getElementById('traitsGrid');
-    var tags = profile.tags || [];
-    
-    if (tags.length === 0) {
-        container.innerHTML = 
-            '<div class="trait-card">' +
-                '<div class="trait-icon" style="background: #FFF0F5;">🌱</div>' +
-                '<div class="trait-info">' +
-                    '<div class="trait-name">等待发现</div>' +
-                    '<div class="trait-desc">继续记录，AI会发现更多特质</div>' +
-                '</div>' +
-            '</div>';
+function renderHighlight(profile) {
+    var container = document.getElementById('highlightContent');
+    var summary = (profile && profile.guidance && profile.guidance.summary) ? profile.guidance.summary : '';
+    var recentChanges = (profile && profile.evolution && profile.evolution.recent_changes) ? profile.evolution.recent_changes : [];
+    var portraitFailed = isPortraitFailed(profile);
+
+    if (!container) {
         return;
     }
 
-    // 取前4个标签作为特质展示
-    var topTraits = tags.slice(0, 4);
-    container.innerHTML = topTraits.map(function(item, index) {
-        var tag = typeof item === 'object' ? item.tag : item;
-        var confidence = typeof item === 'object' ? item.confidence : 0.8;
-        var icon = getTraitIcon(tag);
-        var bgColors = ['#FFF0F5', '#F0FFF0', '#FFF8DC', '#F0F8FF'];
-        
-        var desc = '宝宝的小特点';
-        if (tag.indexOf('笑') !== -1) desc = '笑容治愈力满满';
-        else if (tag.indexOf('好奇') !== -1) desc = '对世界充满好奇';
-        else if (tag.indexOf('活泼') !== -1) desc = '活力四射';
-        else if (tag.indexOf('安静') !== -1) desc = '安静的小天使';
-        else if (tag.indexOf('专注') !== -1) desc = '做事很认真';
-        else if (tag.indexOf('音乐') !== -1) desc = '听到音乐就开心';
-        else if (tag.indexOf('运动') !== -1) desc = '运动小健将';
-        
-        return 
-            '<div class="trait-card">' +
-                '<div class="trait-icon" style="background: ' + bgColors[index % 4] + ';">' + icon + '</div>' +
-                '<div class="trait-info">' +
-                    '<div class="trait-name">' + tag + '</div>' +
-                    '<div class="trait-desc">' + desc + '</div>' +
-                '</div>' +
-            '</div>';
-    }).join('');
+    if (portraitFailed) {
+        container.innerHTML = '<span style="color: #C97A00;">画像生成失败，当前仅展示已积累标签和素材统计，请稍后重试刷新。</span>';
+        return;
+    }
+
+    var hasSummary = summary
+        && summary.indexOf('暂无足够数据') === -1
+        && summary.indexOf('画像尚未生成') === -1
+        && summary.indexOf('画像缓存暂时缺失') === -1
+        && summary.length > 20;
+
+    if (hasSummary) {
+        container.innerHTML = '"' + summary + '"';
+        return;
+    }
+
+    if (recentChanges && recentChanges.length > 0) {
+        container.innerHTML = '"' + recentChanges[0].change + '"';
+        return;
+    }
+
+    container.innerHTML = '<span style="color: #999;">暂时没有生成画像，请点击上方刷新按钮。</span>';
 }
 
 var allTags = [];
@@ -799,6 +718,97 @@ function toggleDataSection(el) {
     document.getElementById('dataContent').classList.toggle('show');
 }
 
+function escapeHtml(text) {
+    return String(text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function buildTopKeys(scores, limit) {
+    return Object.keys(scores || {})
+        .map(function(key) {
+            return { key: key, value: Number(scores[key] || 0) };
+        })
+        .sort(function(a, b) { return b.value - a.value; })
+        .slice(0, limit || 2);
+}
+
+function pickEvidenceSnippet(evidenceList, keywords) {
+    var list = Array.isArray(evidenceList) ? evidenceList : [];
+    var matched = list.find(function(item) {
+        return keywords.some(function(keyword) {
+            return String(item || '').indexOf(keyword) !== -1;
+        });
+    });
+    return matched || '';
+}
+
+function renderPersonalityNotes(profile, scores) {
+    var container = document.getElementById('personalityNotes');
+    if (!container) return;
+
+    var evidence = (((profile || {}).dimensions || {}).personality || {}).evidence || [];
+    var config = {
+        activity: { label: '活跃度', keywords: ['活泼', '活跃', '好动', '肢体'], fallback: '平时会用更多肢体动作参与互动和探索。' },
+        curiosity: { label: '好奇心', keywords: ['好奇', '探索', '张望', '新事物'], fallback: '面对新环境和新物品时，通常会表现出更明显的探索兴趣。' },
+        social: { label: '社交性', keywords: ['互动', '回应', '家人', '亲近'], fallback: '和照顾者互动时，通常会有比较稳定的回应和连接感。' },
+        focus: { label: '专注力', keywords: ['专注', '观察', '眼神', '认真'], fallback: '玩玩具或观察周围时，能持续把注意力放在同一件事上。' },
+        emotion_stability: { label: '情绪稳定', keywords: ['平静', '安详', '宁静', '情绪稳定'], fallback: '大多数记录里情绪比较平稳，比较容易保持舒展状态。' },
+        adaptability: { label: '适应力', keywords: ['适应', '配合', '环境', '外出'], fallback: '面对不同场景时，整体适应和配合度比较不错。' }
+    };
+
+    var topKeys = buildTopKeys(scores, 2);
+    if (!topKeys.length) {
+        container.innerHTML = '<div class="chart-note">继续积累更多素材后，这里会展示性格维度的具体观察依据。</div>';
+        return;
+    }
+
+    container.innerHTML = topKeys.map(function(item) {
+        var meta = config[item.key] || { label: item.key, keywords: [], fallback: '这里会显示对应的行为线索。' };
+        var snippet = pickEvidenceSnippet(evidence, meta.keywords);
+        var body = snippet
+            ? '常见表现：' + escapeHtml(snippet)
+            : escapeHtml(meta.fallback);
+        return '<div class="chart-note"><strong>' + escapeHtml(meta.label) + '较突出：</strong>' + body + '</div>';
+    }).join('');
+}
+
+function renderInterestNotes(profile, scores) {
+    var container = document.getElementById('interestNotes');
+    if (!container) return;
+
+    var interests = (((profile || {}).dimensions || {}).interests || {});
+    var evidence = interests.evidence || [];
+    var current = interests.current || [];
+    var config = {
+        music: { label: '音乐', keywords: ['音乐', '发音', '唱歌', '节奏'], fallback: '听声音和尝试发音时，常会表现出明显兴趣。' },
+        sports: { label: '运动', keywords: ['运动', '爬', '站', '肢体', '活动'], fallback: '更喜欢通过身体活动去接触和体验周围环境。' },
+        reading: { label: '阅读', keywords: ['阅读', '布书', '共读', '翻页'], fallback: '对图书、指认和安静共读类活动会更容易投入。' },
+        art: { label: '艺术', keywords: ['色彩', '装饰', '画', '拍照'], fallback: '会被颜色、装饰和视觉细节更容易吸引。' },
+        nature: { label: '自然', keywords: ['户外', '公园', '观景', '自然', '外出'], fallback: '外出观察环境、风景和自然变化时会更有兴趣。' },
+        technology: { label: '科技', keywords: ['玩具', '模仿', '电话', '屏幕', '机关'], fallback: '对有互动反馈的玩具和模仿类物件通常更感兴趣。' }
+    };
+
+    var topKeys = buildTopKeys(scores, 2);
+    if (!topKeys.length) {
+        container.innerHTML = '<div class="chart-note">继续积累更多素材后，这里会展示兴趣偏好的观察线索。</div>';
+        return;
+    }
+
+    container.innerHTML = topKeys.map(function(item, index) {
+        var meta = config[item.key] || { label: item.key, keywords: [], fallback: '这里会显示对应的兴趣线索。' };
+        var snippet = pickEvidenceSnippet(evidence, meta.keywords);
+        var currentHint = current[index] ? '当前常见兴趣是“' + escapeHtml(current[index]) + '”。' : '';
+        var body = snippet
+            ? '常见表现：' + escapeHtml(snippet)
+            : escapeHtml(meta.fallback);
+        return '<div class="chart-note"><strong>' + escapeHtml(meta.label) + '偏好更明显：</strong>' + body + (currentHint ? ' ' + currentHint : '') + '</div>';
+    }).join('');
+}
+
 function renderRadarChart(scores) {
     var ctx = document.getElementById('radarChart').getContext('2d');
     if (radarChart) radarChart.destroy();
@@ -857,19 +867,70 @@ function renderInterests(interest) {
     });
 }
 
-function renderTimeline(changes) {
-    var container = document.getElementById('timelineSection');
-    if (changes && changes.length > 0) {
-        var sorted = changes.slice().sort(function(a, b) { return new Date(b.date) - new Date(a.date); }).slice(0, 6);
-        container.innerHTML = sorted.map(function(c) {
-            return '<div class="timeline-item">' +
-                '<div class="timeline-date">' + (c.date || '') + '</div>' +
-                '<div class="timeline-content">' + c.change + '</div>' +
-            '</div>';
-        }).join('');
-    } else {
-        container.innerHTML = '<p class="text-muted">暂无成长轨迹</p>';
+function guessAdviceTitle(text) {
+    var value = String(text || '');
+    if (value.indexOf('语言') !== -1 || value.indexOf('发音') !== -1 || value.indexOf('说') !== -1 || value.indexOf('沟通') !== -1) return '语言引导';
+    if (value.indexOf('运动') !== -1 || value.indexOf('爬') !== -1 || value.indexOf('站') !== -1 || value.indexOf('走') !== -1 || value.indexOf('活动') !== -1) return '运动练习';
+    if (value.indexOf('饮食') !== -1 || value.indexOf('辅食') !== -1 || value.indexOf('进食') !== -1 || value.indexOf('喝水') !== -1) return '饮食习惯';
+    if (value.indexOf('睡') !== -1 || value.indexOf('作息') !== -1) return '作息观察';
+    if (value.indexOf('社交') !== -1 || value.indexOf('互动') !== -1 || value.indexOf('回应') !== -1 || value.indexOf('亲子') !== -1) return '互动陪伴';
+    if (value.indexOf('阅读') !== -1 || value.indexOf('共读') !== -1 || value.indexOf('认知') !== -1) return '认知启发';
+    if (value.indexOf('户外') !== -1 || value.indexOf('探索') !== -1 || value.indexOf('玩具') !== -1 || value.indexOf('感官') !== -1 || value.indexOf('兴趣') !== -1) return '兴趣培养';
+    return '因势利导建议';
+}
+
+function renderAdviceSection(profile) {
+    var container = document.getElementById('adviceSection');
+    if (!container) return;
+
+    var guidance = (profile && profile.guidance) ? profile.guidance : {};
+    var cards = [];
+
+    (guidance.suggestions || []).slice(0, 2).forEach(function(item) {
+        cards.push({
+            title: guessAdviceTitle(item),
+            body: item
+        });
+    });
+
+    (guidance.activities || []).slice(0, 2).forEach(function(item) {
+        if (!item) return;
+        var name = item.activity || item.name || '陪伴活动';
+        var body = item.purpose || item.description || '';
+        var meta = item.frequency || '';
+        cards.push({
+            title: name,
+            body: body,
+            meta: meta
+        });
+    });
+
+    if (guidance.areas_to_watch && guidance.areas_to_watch.length) {
+        cards.push({
+            title: '当前多留意',
+            body: guidance.areas_to_watch[0]
+        });
     }
+
+    if (!cards.length && guidance.development_notes) {
+        cards.push({
+            title: '因势利导建议',
+            body: guidance.development_notes
+        });
+    }
+
+    if (!cards.length) {
+        container.innerHTML = '<p class="text-muted">暂时还没有生成因势利导建议，请先点击刷新。</p>';
+        return;
+    }
+
+    container.innerHTML = cards.slice(0, 4).map(function(item) {
+        return '<div class="advice-card">' +
+            '<div class="advice-title">' + escapeHtml(item.title) + '</div>' +
+            '<div class="advice-body">' + escapeHtml(item.body || '继续观察宝宝近期状态。') + '</div>' +
+            (item.meta ? '<div class="advice-meta">建议频率：' + escapeHtml(item.meta) + '</div>' : '') +
+        '</div>';
+    }).join('');
 }
 
 function renderGrowthChart(data) {
@@ -909,7 +970,15 @@ function renderGrowthChart(data) {
 
 function showNotification(message, type) {
     var toast = document.createElement('div');
-    toast.className = 'alert alert-' + (type === 'success' ? 'success' : 'warning') + ' position-fixed';
+    var alertType = 'warning';
+    if (type === 'success') {
+        alertType = 'success';
+    } else if (type === 'error') {
+        alertType = 'danger';
+    } else if (type === 'info') {
+        alertType = 'info';
+    }
+    toast.className = 'alert alert-' + alertType + ' position-fixed';
     toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 150px; padding: 10px 16px; border-radius: 8px;';
     toast.innerHTML = message;
     document.body.appendChild(toast);
@@ -937,7 +1006,7 @@ function executeAIReview() {
     .then(function(r) { return r.json(); })
     .then(function(data) {
         if (data.success) {
-            showNotification('AI重新认识任务已启动，请稍候...', 'success');
+            showNotification('AI重新认识任务已启动，请稍候...', 'info');
             // 显示进度
             document.getElementById('aiProgressFooter').style.display = 'block';
             checkAIReviewProgress(data.task_id);
@@ -963,7 +1032,13 @@ function checkAIReviewProgress(taskId) {
                 if (status.message === '完全无变化') {
                     showNotification('完全无变化，无需更新', 'info');
                 } else {
-                    showNotification('AI重新认识完成！', 'success');
+                    if (status.portrait_refresh === 'failed' || status.portrait_llm_valid === false) {
+                        showNotification(status.portrait_message || status.message || '素材刷新完成，但画像生成失败，当前仅展示已积累标签。', 'error');
+                    } else if (status.portrait_refresh === 'completed' && status.portrait_llm_valid === true) {
+                        showNotification('AI重新认识完成，画像已刷新。', 'success');
+                    } else {
+                        showNotification(status.message || 'AI重新认识完成。', 'info');
+                    }
                     loadProfileData(); // 重新加载画像
                 }
             } else {

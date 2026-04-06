@@ -3,39 +3,6 @@
   处理页面交互和功能
 */
 
-// 全局变量
-let currentDate = new Date().toISOString().split('T')[0];
-
-// 页面加载完成
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('成长记录系统已加载');
-    
-    // 初始化工具提示
-    initTooltips();
-    
-    // 初始化瀑布流
-    initMasonry();
-    
-    // 初始化日历（如果函数存在）
-    if (typeof initCalendar === 'function') {
-        initCalendar();
-    }
-    
-    // 检查配额状态
-    checkQuotaStatus();
-    
-    // 显示欢迎消息
-    showWelcomeMessage();
-});
-
-// 初始化工具提示
-function initTooltips() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
-}
-
 // 初始化瀑布流布局
 function initMasonry() {
     const grid = document.querySelector('#masonry-grid');
@@ -71,65 +38,6 @@ function createMasonry() {
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(250px, 1fr))';
     grid.style.gap = '20px';
-}
-
-// 初始化日历占位（实际实现在 calendar.html 中）
-function initCalendarPlaceholder() {
-    console.log('日历功能已初始化');
-}
-
-// 检查配额状态
-function checkQuotaStatus() {
-    fetch('/api/quota/status')
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                updateQuotaDisplay(data);
-            }
-        })
-        .catch(error => {
-            console.error('获取配额状态失败:', error);
-        });
-}
-
-// 更新配额显示
-function updateQuotaDisplay(data) {
-    const quotaDetails = data.quota_details;
-    if (!quotaDetails) return;
-    
-    // 更新页面上的配额显示
-    const quotaElements = document.querySelectorAll('.quota-display');
-    quotaElements.forEach(element => {
-        element.textContent = `${quotaDetails.used_today}/${quotaDetails.daily_limit}`;
-        
-        // 根据使用率添加样式
-        const usageRate = quotaDetails.used_today / quotaDetails.daily_limit;
-        if (usageRate > 0.8) {
-            element.classList.add('text-warning');
-        }
-        if (usageRate > 0.95) {
-            element.classList.add('text-danger');
-        }
-    });
-}
-
-// 显示欢迎消息
-function showWelcomeMessage() {
-    const hour = new Date().getHours();
-    let greeting = '';
-    
-    if (hour < 6) {
-        greeting = '夜深了，还在记录宝宝的成长吗？';
-    } else if (hour < 12) {
-        greeting = '早上好！新的一天开始了！';
-    } else if (hour < 18) {
-        greeting = '下午好！今天有什么新发现吗？';
-    } else {
-        greeting = '晚上好！今天过得怎么样？';
-    }
-    
-    // 可以在这里显示通知
-    console.log(greeting);
 }
 
 // 显示通知
@@ -208,27 +116,6 @@ function shareContent(title, text, url) {
     }
 }
 
-// 照片操作
-function editPhotoCaption(photoId) {
-    const newCaption = prompt('请输入新的照片标注：');
-    if (newCaption !== null) {
-        fetch(`/api/photo/${photoId}/caption`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({caption: newCaption})
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showNotification('标注已更新', 'success');
-                setTimeout(() => location.reload(), 1000);
-            } else {
-                showNotification('更新失败: ' + data.message, 'error');
-            }
-        });
-    }
-}
-
 function deletePhoto(photoId) {
     if (confirm('确定要删除这张照片吗？此操作不可撤销。')) {
         fetch(`/api/photo/${photoId}`, {
@@ -294,35 +181,6 @@ function formatTime(dateStr) {
         hour: '2-digit',
         minute: '2-digit'
     });
-}
-
-// 加载更多内容
-function loadMoreContent(type) {
-    const loader = document.getElementById(`${type}-loader`);
-    if (loader) {
-        loader.style.display = 'block';
-        
-        // 模拟加载延迟
-        setTimeout(() => {
-            // 这里应该调用API加载更多数据
-            loader.style.display = 'none';
-            showNotification('已加载更多内容', 'success');
-        }, 1000);
-    }
-}
-
-// 搜索功能
-function searchContent(query) {
-    if (!query.trim()) return;
-    
-    showNotification(`正在搜索: ${query}`, 'info');
-    
-    // 这里应该实现搜索功能
-    // fetch(`/api/search?q=${encodeURIComponent(query)}`)
-    //   .then(response => response.json())
-    //   .then(data => {
-    //       // 处理搜索结果
-    //   });
 }
 
 // 键盘快捷键

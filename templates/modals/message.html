@@ -126,27 +126,6 @@
     </div>
 </div>
 
-<!-- 密码验证模态框 -->
-<div class="modal fade" id="passwordVerifyModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">🔐 家庭码验证</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted small">请先完成家庭码验证。</p>
-                <input type="password" class="form-control" id="verifyPassword" placeholder="输入家庭码">
-                <div id="passwordError" class="text-danger small mt-2" style="display: none;"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="confirmPassword()">确认</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 <style>
 .message-type-tabs .nav-link {
     border-radius: 25px;
@@ -274,21 +253,6 @@ function getSelectedRole() {
     
     const activeBtn = document.querySelector('.role-btn.active');
     return activeBtn ? activeBtn.dataset.role : '家人';
-}
-
-// 密码验证
-let pendingAction = null;
-
-function showPasswordVerify(action) {
-    // 已改为统一家庭码入口，保留函数名做兼容
-    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/family-access?next=${nextUrl}`;
-}
-
-function confirmPassword() {
-    // 旧弹窗入口兼容：统一走家庭码页面，不再做逐操作密码验证
-    const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/family-access?next=${nextUrl}`;
 }
 
 // 录音功能
@@ -479,7 +443,6 @@ function doDeleteMessage(messageId) {
 }
 
 // 暴露到全局作用域
-window.showPasswordVerify = showPasswordVerify;
 window.deleteMessage = deleteMessage;
 window.doDeleteMessage = doDeleteMessage;
 </script>

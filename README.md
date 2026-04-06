@@ -1,724 +1,321 @@
 # Mumu 成长记录系统
 
-## 概述
+Mumu 由三个进程组成：
 
-Mumu 是一个宝宝成长记录系统，包含三大服务：
+| 服务 | 入口文件 | 端口 | 说明 |
+|------|----------|------|------|
+| 客户端 | `client_public_final.py` | 3000 | 本地网页、照片索引、本地缓存 |
+| 服务端 | `server_public.py` | 8000 | 业务 API、鉴权、配额、数据聚合 |
+| 健康 AI | `baby_health_ai/app/main.py` | 8080 | 事件解析、成长画像、问答、画像历史 |
 
-| 服务 | 文件 | 端口 | 说明 |
-|------|------|------|------|
-| 客户端 | `client_public_final.py` | 3000 | 用户界面，运行在用户本地机器 |
-| 服务端 | `server_public.py` | 8000 | 后端API，运行在服务器 |
-| 健康AI | `baby_health_ai/app/main.py` | 8080 | AI画像服务，运行在服务器 |
+## 当前身份模型
 
----
+系统已经收口为单一身份模型：
 
-## 架构
+- 一个 `client_id` 对应一个宝宝
+- `client_id` 是唯一身份源
+- `health_ai` 内部接口仍然使用 `child_id` 这个字段名，但它表达的就是 `client_id`
+- `ai_child_id` 已经从运行时代码移除，不再参与业务判断
 
-### 数据流向
+## 三个存储边界
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   客户端    │────▶│   服务端    │────▶│   健康AI    │
-│  (用户本地) │◀────│  (服务器)   │◀────│  (服务器)   │
-└─────────────┘     └─────────────┘     └─────────────┘
-      │                   │                   │
-      │                   │  每15分钟定时同步   │
-      │                   │──────────────────▶│
-      │                   │                   │
-      │   /api/ai/* 代理  │                   │
-      │──────────────────▶│──────────────────▶│
-      │                   │                   │
-      │ /czrz/ai/proxy/*  │                   │
-      │──────────────────▶│───▶ 阿里云API ───▶│
-      │                   │   (Token在服务端) │
-      ▼                   ▼                   ▼
-  本地存储            服务端存储            画像数据
-  (用户文档目录)      (SQLite数据库)        (SQLite数据库)
-```
+### 1. 客户端缓存
 
-### 安全架构
+路径：`~/Documents/CZRZ/`
 
-**API Token 安全**：
-- API Token 只存储在服务端 `data/api_config.json`
-- 客户端不持有任何敏感凭证
-- 所有 AI 调用通过服务端代理 API
+用途：
 
-**HMAC 签名验证**：
-- 每个客户端拥有独立的 `secret_key`
-- 所有 API 请求必须携带签名（注册、心跳除外）
-- 签名内容：`timestamp + method + path + body`
-- 时间戳有效期：5 分钟
-- 管理后台支持实时开关（默认启用，建议保持开启）
+- 客户端配置
+- 客户端照片索引
+- 客户端日志、缩略图、故事缓存
+- 客户端 tunnel 配置
 
-**连接异常可观测性**：
-- 客户端会把 `timeout`/`401` 连接错误放入队列，并在心跳时上报
-- 服务端会聚合为异常告警，可在管理后台仪表盘查看
+约束：
 
-**安装密钥**：
-- 基于 UTC 日期生成，每天变化
-- 防止扫描器随意注册
-- 格式：`xxxx-xxxx-xxxx`
+- 只允许客户端自己读写
+- 服务端和 `health_ai` 不应把这里当真相源
 
-**签名请求头**：
-| 请求头 | 说明 |
-|--------|------|
-| `X-Client-ID` | 客户端 ID |
-| `X-Timestamp` | 时间戳（秒） |
-| `X-Signature` | HMAC-SHA256 签名 |
+### 2. 服务端数据
 
-**代理 API 端点**：
-| 端点 | 说明 |
-|------|------|
-| `POST /czrz/ai/proxy/vision` | 视觉模型代理（照片分析） |
-| `POST /czrz/ai/proxy/text` | 文本模型代理（日志生成） |
-| `POST /czrz/ai/proxy/speech` | 语音识别代理 |
+路径：`mumu/data/`
 
-**代理功能**：
-1. 检查客户端是否禁用
-2. 检查 Token 配额
-3. 调用阿里云 API（Token 在服务端）
-4. 记录 Token 使用量
-5. 返回结果
+核心内容：
 
-### 三大原则
+- `index.db`：全局索引数据库
+- `users/{client_id}.db`：每个客户端自己的业务库
+- `model_config.json`：文本/视觉/语音/画像模型配置
+- `api_config.json`：Cloudflare 与图片模型相关兼容配置
+- `server_config.json`：服务端配置与内部 token
 
-1. **API Token 不离开服务端** - 所有 AI 调用通过服务端代理 (`/czrz/ai/proxy/*`)
-2. **客户端不直接连接健康AI** - 所有通信通过服务端代理 (`/api/ai/*`)
-3. **服务端自动同步数据到健康AI** - 每15分钟定时同步，无需用户干预
+### 3. 健康 AI 数据
 
----
+路径：`baby_health_ai/data/`
 
-## 存储架构
+核心内容：
 
-### 服务端存储
+- `index.db`：宝宝索引
+- `children/{client_id}.db`：单宝宝画像与事件数据库
 
-```
-mumu/data/
-├── index.db                    # 全局索引数据库
-│   ├── clients                 # 用户列表
-│   ├── tunnels                 # Tunnel池
-│   ├── news                    # 新闻池
-│   └── server_config           # 服务端配置
-│
-├── users/                      # 用户数据目录
-│   ├── {client_id_1}.db        # 用户1的所有数据
-│   │   ├── logs                # 日志
-│   │   ├── messages            # 留言
-│   │   ├── ai_sessions         # AI会话记录
-│   │   ├── token_usage         # Token使用记录
-│   │   ├── featured_photos     # 精选照片
-│   │   └── photo_descriptions  # 照片描述
-│   └── {client_id_2}.db
-│
-├── api_config.json             # AI API配置
-├── server_config.json          # 服务端配置
-├── themes/                     # 主题文件
-└── client_tunnels/             # 客户端Tunnel凭证
+## 当前真实数据流
+
+```text
+客户端(3000)
+  -> 服务端(8000)
+  -> 健康AI(8080)
+
+客户端本地缓存
+  仅客户端使用
+
+服务端数据库
+  作为业务真相源
+
+健康AI数据库
+  作为画像与事件真相源
 ```
 
-### 客户端存储
-
-```
-~/Documents/CZRZ/
-├── config.json                 # 客户端配置
-├── baby_logs/                  # 本地日志缓存
-├── photo_index/                # 照片索引
-├── avatars/                    # 头像
-├── thumbnails/                 # 缩略图
-└── compressed/                 # 压缩版媒体
-```
-
-### 数据库表结构
-
-#### 全局索引数据库 (index.db)
-
-**clients 表 - 客户端信息**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| client_id | TEXT | 客户端唯一ID（主键） |
-| baby_name | TEXT | 宝宝姓名 |
-| baby_gender | TEXT | 性别 |
-| baby_birthday | TEXT | 出生日期 |
-| user_city | TEXT | 城市 |
-| ip | TEXT | IP地址 |
-| subdomain | TEXT | 子域名 |
-| public_url | TEXT | 公网地址 |
-| status | TEXT | 状态 (online/offline/disabled) |
-| is_paid | BOOLEAN | 是否付费用户 |
-| token_total | INTEGER | Token总使用量 |
-| registered_at | DATETIME | 注册时间 |
-| last_active | DATETIME | 最后活跃时间 |
-
-**tunnels 表 - Tunnel池**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| tunnel_id | TEXT | Cloudflare Tunnel ID |
-| tunnel_secret | TEXT | Tunnel密钥 |
-| subdomain | TEXT | 子域名 |
-| status | TEXT | 状态 (available/allocated) |
-| client_id | TEXT | 分配的客户端ID |
-
-**news 表 - 新闻池**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| title | TEXT | 新闻标题 |
-| source | TEXT | 来源 |
-| date | TEXT | 日期 |
-| created_at | DATETIME | 创建时间 |
-
-#### 用户数据库 (users/{client_id}.db)
-
-**logs 表 - 日志**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| date | TEXT | 日期 |
-| content | TEXT | 日志内容 |
-| weather_city | TEXT | 天气-城市 |
-| weather_temperature | REAL | 天气-温度 |
-| weather_condition | TEXT | 天气-状况 |
-| weekday | TEXT | 星期 |
-| lunar | TEXT | 农历 |
-| news | TEXT | 新闻 |
-| is_ai_generated | BOOLEAN | 是否AI生成 |
-| generated_at | DATETIME | 生成时间 |
-
-**messages 表 - 留言**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| date | TEXT | 日期 |
-| content | TEXT | 留言内容 |
-| author | TEXT | 作者 |
-| type | TEXT | 类型 (text/audio) |
-| created_at | DATETIME | 创建时间 |
-
-**ai_sessions 表 - AI会话记录**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| session_id | TEXT | 会话ID |
-| operation | TEXT | 操作类型 |
-| prompt | TEXT | 输入提示 |
-| response | TEXT | 输出内容 |
-| prompt_tokens | INTEGER | 输入Token数 |
-| completion_tokens | INTEGER | 输出Token数 |
-| total_tokens | INTEGER | 总Token数 |
-| model | TEXT | 模型名称 |
-| success | BOOLEAN | 是否成功 |
-| context | JSON | 上下文元数据（日期、照片名等） |
-| created_at | DATETIME | 创建时间 |
-
-**token_usage 表 - Token使用记录**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| date | TEXT | 日期 |
-| operation | TEXT | 操作类型 |
-| prompt_tokens | INTEGER | 输入Token数 |
-| completion_tokens | INTEGER | 输出Token数 |
-| total_tokens | INTEGER | 总Token数 |
-| created_at | DATETIME | 创建时间 |
-
-**speech_records 表 - 语音记录**
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | INTEGER | 主键 |
-| date | TEXT | 日期 |
-| video_path | TEXT | 视频路径 |
-| transcript | TEXT | 语音转写文字 |
-| duration | REAL | 音频时长（秒） |
-| language_analysis | TEXT | 语言能力分析（JSON） |
-| created_at | DATETIME | 创建时间 |
-
----
-
-## API 端点
-
-### 客户端管理
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/czrz/register` | 注册客户端 |
-| POST | `/czrz/client/heartbeat` | 客户端心跳 |
-| GET | `/czrz/client/token-usage` | 获取Token使用量 |
-| POST | `/czrz/client/reset-token` | 重置Token使用量 |
-
-### 日志
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/czrz/baby/log` | 获取日志 |
-| POST | `/czrz/log/save` | 保存日志 |
-| POST | `/czrz/ai/generate-log` | AI生成日志 |
-| GET | `/czrz/ai/log-status` | 检查日志状态 |
-
-**日志获取逻辑**：
-```
-有日志 → 返回日志 + weather + calendar + news
-无日志 + 今天 → 返回实时天气（不保存）
-无日志 + 非今天 → 返回空
-```
-
-**日志保存时机**：
-- AI生成日志后自动保存
-- 用户编辑日志后保存
-- 保存时记录当天的天气、农历、新闻
-
-### 留言
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/czrz/messages` | 提交留言 |
-| GET | `/czrz/messages/{client_id}/{date}` | 获取指定日期留言 |
-| GET | `/czrz/messages/all/{client_id}` | 获取所有留言 |
-| DELETE | `/czrz/messages/{client_id}/{message_id}` | 删除留言 |
-
-### 天气
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/czrz/weather` | 获取天气 |
-
-**天气来源**：
-1. Open-Meteo API（免费无需key）
-2. AI联网查询（备选）
-
-**天气存储**：仅当日志生成时保存，不单独存储
-
-### 新闻
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/czrz/news` | 获取新闻 |
-| GET | `/czrz/today-news` | 获取今日新闻 |
-
-### 主题
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/theme` | 获取当前主题 |
-| POST | `/api/theme/update` | 更新主题 |
-
-### Tunnel
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/czrz/cloudflare/credentials` | 获取Tunnel凭证 |
-| GET | `/admin/tunnel-pool` | 管理Tunnel池 |
-
-**Tunnel分配流程**：
-```
-客户端心跳 → 检查是否有Tunnel → 无则自动创建 → 分配子域名 → 返回凭证
-```
-
-### 管理后台
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/admin` | 管理后台首页 |
-| GET | `/admin/clients` | 设备列表 |
-| GET | `/admin/clients/{client_id}/ai-status` | AI状态 |
-| POST | `/admin/clients/{client_id}/reassign-tunnel` | 重新分配Tunnel |
-| POST | `/admin/clients/{client_id}/reset-quota` | 重置Token配额 |
-| GET | `/admin/credentials` | CF凭证设置 |
-| POST | `/admin/credentials/refresh` | 刷新凭证 |
-
-**移动端适配**：
-- 侧边栏在移动端自动隐藏
-- 点击汉堡菜单按钮滑出侧边栏
-- 支持触摸操作
-
-### 健康AI同步
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/czrz/ai/sync-status` | 获取同步状态 |
-| POST | `/czrz/ai/sync-trigger` | 手动触发同步 |
-| ANY | `/api/ai/*` | 代理健康AI请求 |
-
-**同步机制**：
-- 服务端每15分钟自动扫描未同步数据
-- 查询健康AI已有事件，智能去重
-- 单一线程处理，避免并发问题
-
-### 语音记录
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/czrz/speech/record` | 保存语音记录 |
-| GET | `/czrz/speech/records` | 获取语音记录列表 |
-
-**语音处理流程**：
-```
-视频 → 提取音频 → 去除静音 → 限制60秒 → 语音转文字 → LLM分析语言能力
-```
-
----
-
-## 数据交互流程
-
-### 客户端注册
-
-```
-1. 客户端启动
-2. 读取本地配置 → 无则显示设置页面
-3. 发送心跳到服务端
-4. 服务端检查客户端是否存在
-   - 存在 → 更新活跃时间
-   - 不存在 → 自动注册
-5. 服务端分配Tunnel（如果没有）
-6. 返回客户端信息和凭证
-```
-
-### 日志生成
-
-```
-1. 用户点击"生成日志" 或 每天18:00自动触发
-2. 客户端收集当日媒体
-   - 照片：最多10张，AI分析内容
-   - 视频：最多5个，提取语音(≤60秒)，语音识别
-3. 上传分析结果到服务端
-4. 服务端获取当日天气、农历
-5. 服务端调用 LLM 生成日志
-6. 保存日志到数据库（含天气、农历、新闻）
-7. 同步到健康AI
-```
-
-**自动化流程**：
-- 每天 18:00 客户端自动处理素材并上传
-- 每天 19:00 服务端自动生成日志（有素材才生成）
-- 无素材时跳过日志生成
-
-### 日志查看
-
-```
-1. 用户切换日期
-2. 客户端请求服务端 API
-3. 服务端查询数据库
-   - 有日志 → 返回完整数据
-   - 无日志 + 今天 → 返回实时天气
-   - 无日志 + 非今天 → 返回空
-4. 客户端显示：
-   - 有日志：天气 + 农历 + 日志 + 新闻
-   - 无日志 + 今天：实时天气 + 农历 + 功能按钮
-   - 无日志 + 非今天：只有日期 + 功能按钮
-```
-
-### Token 统计
-
-```
-客户端AI调用 → 服务端 → ai_sessions 表
-健康AI LLM调用 → 服务端 /czrz/client/token-record → ai_sessions 表
-                                              ↓
-                              使用明细页面统一显示
-```
-
-**Token来源**：
-- 客户端：日志生成、照片分析、语音识别等
-- 健康AI：画像生成、问答、预警、事件解析等
-
----
-
-## 配置文件
-
-### 服务端配置 (data/server_config.json)
-
-```json
-{
-  "domain": {
-    "public_domain": "example.com",
-    "public_url": "https://example.com"
-  },
-  "cloudflare": {
-    "zone_id": "",
-    "account_id": "",
-    "api_token": ""
-  },
-  "admin": {
-    "default_password": "admin123",
-    "site_title": "成长记录系统"
-  },
-  "features": {
-    "enable_tunnel_pool": true,
-    "enable_client_updates": true,
-    "enable_ai_log": true
-  }
-}
-```
-
-### API配置 (data/api_config.json)
-
-```json
-{
-  "cf_api_token": "xxx",
-  "cf_account_id": "xxx",
-  "text_model": {
-    "api_token": "xxx",
-    "api_url": "https://api.example.com/v1/chat/completions",
-    "model_name": "qwen3.5-plus"
-  },
-  "vision_model": {
-    "api_token": "xxx",
-    "api_url": "https://api.example.com/v1/chat/completions",
-    "model_name": "qwen3-vl-flash"
-  },
-  "speech_model": {
-    "api_token": "xxx",
-    "api_url": "https://api.openai.com/v1",
-    "model_name": "whisper-1"
-  }
-}
-```
-
-### 客户端配置 (~/Documents/CZRZ/config.json)
-
-```json
-{
-  "server_domain": "example.com",
-  "server_url": "https://example.com",
-  "client_id": "uuid",
-  "secret_key": "32字符密钥",
-  "baby_name": "宝宝",
-  "baby_gender": "female",
-  "baby_birthday": "2025-01-01",
-  "user_city": "北京",
-  "log_style": "简练",
-  "media_folders": ["/path/to/photos"]
-}
-```
-
----
-
-## 启动命令
+补充：
+
+- 客户端不直接管理模型密钥
+- `health_ai` 会从 `mumu/data/model_config.json` 读取模型配置
+- 服务间 token 记账通过内部 `X-Internal-Token` 上报到服务端
+
+## 当前画像刷新链路
+
+现在有两条不同的画像刷新路径，语义不要混淆：
+
+### 1. `health_ai` 本地画像刷新
+
+接口：
+
+- `POST /api/children/{child_id}/profile/refresh`
+
+行为：
+
+- 只处理已经在 `health_ai` 数据库里的未解析事件
+- 然后直接生成画像
+- 不会回头找客户端原始素材
+
+用途：
+
+- 供服务端 `/czrz/profile/generate-trigger` 在“素材已同步完成”后调用
+
+### 2. `health_ai` 全链路刷新画像
+
+接口：
+
+- `POST /api/children/{child_id}/profile/full-refresh`
+
+行为：
+
+1. `health_ai` 请求服务端 `/czrz/client/auto-review-trigger`
+2. 服务端把 `auto_review` 命令写入客户端命令队列，不再反向访问客户端公网域名或私网 IP
+3. 客户端通过 `/czrz/client/heartbeat` 主动拉取待执行命令
+4. 客户端本地启动 `/api/ai/auto-review`
+5. 客户端补读未读取图片
+6. 客户端补读未读取视频，并执行“提取语音 -> 转文字”
+7. 客户端把照片描述、视频转写、日志、精选照片等结果上传到服务端
+8. 客户端通过 `/czrz/client/command-status` 主动回报进度与最终结果
+9. 客户端触发服务端同步到 `health_ai`
+10. 客户端再触发服务端 `/czrz/profile/generate-trigger`
+11. 服务端调用 `health_ai /profile/refresh` 完成最终画像生成
+
+用途：
+
+- 供 `health_ai` 页面“刷新画像”按钮使用
+- 目标是与客户端手动刷新尽量保持一致
+
+补充：
+
+- 当前画像模型由 `health_ai` 从 `mumu/data/model_config.json` 读取
+- 当前运行中的画像模型配置为 `qwen3-max`
+- 不能把 `/profile/refresh` 直接改成远程触发客户端，否则会和服务端 `/czrz/profile/generate-trigger` 形成递归
+- `server -> client` 的反向调用已不再作为完整刷新链路依赖项
+- 客户端心跳当前为 `30` 秒一轮，用于拉取服务端命令；服务端不应再回退到客户端私网地址
+
+### 相关鉴权
+
+- 客户端完整刷新链路改为客户端主动拉取命令，服务端不再依赖：
+  - `POST /api/ai/auto-review`
+  - `GET /api/ai/auto-review/status/{task_id}`
+- 新增客户端主动回报接口：
+  - `POST /czrz/client/command-status`
+- `health_ai` 调服务端全链路刷新时：
+  - 默认可走 `127.0.0.1` 本机免签
+  - 也支持额外配置环境变量 `MUMU_INTERNAL_TOKEN`
+
+## 当前签名处置方式
+
+服务端当前没有彻底关闭验签，而是采用“可用优先、逐步收紧”的过渡策略。
+
+- 正常优先路径仍然是：
+  - HMAC 请求头：`X-Client-ID`、`X-Timestamp`、`X-Signature`
+  - 本机服务间调用：`X-Internal-Token`
+- 当前合法调用端统一带固定 `User-Agent`：
+  - 客户端：`CZRZ-Client/2.0`
+  - 健康 AI 后端：`Mumu-Health-AI/1.0`
+  - 服务端配置里仍兼容旧前缀：`Baby-Health-AI`
+- 如果请求来自上述已知调用端，且服务端能从 path/query/body 中唯一解析出有效 `client_id`，那么即使验签失败，也会：
+  - 记录 `signature_soft_bypass`
+  - 临时放行，不直接返回 `401`
+- 仍会继续拦截：
+  - 未带受信 `User-Agent` 的请求
+  - 无法解析出唯一 `client_id` 的请求
+  - `client_id` 对应客户端不存在的请求
+- `health_ai` 页面上的关键同步/刷新动作不再由浏览器直接请求服务端，而是先走 `health_ai` 本地后端代理，再由后端统一补：
+  - `User-Agent: Mumu-Health-AI/1.0`
+  - 可选 `X-Internal-Token`
+
+这只是当前线上保可用方案。后续应基于日志中的 `signature_soft_bypass` 记录，逐条修复真实签名失配原因，再逐步收紧放行范围。
+
+## 主要数据库
+
+### `mumu/data/index.db`
+
+重要表：
+
+- `clients`
+- `tunnels`
+- `news`
+- `server_config`
+
+说明：
+
+- `clients.token_total / token_prompt / token_completion` 是配额聚合字段
+- 历史遗留 `clients.ai_child_id` 列已不再参与业务逻辑
+
+### `mumu/data/users/{client_id}.db`
+
+当前主要表：
+
+- `logs`
+- `messages`
+- `featured_photos`
+- `photo_descriptions`
+- `photo_tags`
+- `speech_records`
+- `profile_feedbacks`
+- `daily_cards`
+- `ai_sessions`
+
+说明：
+
+- Token 调用明细现在统一记在 `ai_sessions`
+- 历史 `token_usage` 表已删除
+
+### `baby_health_ai/data/children/{client_id}.db`
+
+当前主要表：
+
+- `events`
+- `ai_interpretations`
+- `portrait_tags`
+- `display_tags`
+- `profile_history`
+- `feedback`
+- `health_metrics`
+
+## Token 记账
+
+当前实现：
+
+- 写入明细：`ai_sessions`
+- 配额判断：`clients.token_total`
+- 前端展示：服务端从 `ai_sessions` 聚合返回
+
+不再使用：
+
+- `token_usage` 表
+
+## 关键约束
+
+### 身份约束
+
+- 一切以 `client_id` 为准
+- 新代码不允许重新引入第二套宝宝 ID 体系
+
+### 路径约束
+
+- `~/Documents/CZRZ` 只属于客户端
+- 服务端真相源在 `mumu/data`
+- `health_ai` 真相源在 `baby_health_ai/data`
+
+### AI 约束
+
+- 模型密钥不下发给客户端
+- 客户端所有 AI 请求都应经服务端
+- `health_ai` 的 LLM 使用量必须回传服务端
+
+## 启动方式
+
+推荐：
 
 ```bash
-# 启动所有服务
-./restart_all.sh
-
-# 单独启动
-python3 server_public.py      # 服务端
-python3 client_public_final.py # 客户端
-python3 baby_health_ai/app/main.py # 健康AI
-```
-
----
-
-## 开发说明
-
-### 发布客户端新版本
-
-> **📚 详细操作流程请阅读 `GITEE_SYNC_GUIDE.md`**
-> 
-> 该文档包含：项目结构说明、环境配置（GitHub/Gitee Token）、一键发布和分步操作、常见问题解决
-
-**快速命令：**
-
-```bash
-# 一键发布（推荐）
 cd /home/bob/projects/mumu
-./release.sh v37 "feat: 新功能描述"
+./restart_all.sh
 ```
 
-### 添加新的数据表
-
-1. 在 `models.py` 中定义模型
-2. 在 `database.py` 中添加操作函数
-3. 在 `server_public.py` 中调用
-
-### 添加新的API
-
-1. 在 `server_public.py` 中添加端点
-2. 使用 `database.py` 中的函数操作数据
-3. 更新此文档
-
----
-
-## 移动端优化
-
-### 导航结构
-
-主站使用 **Bootstrap 5 响应式导航栏**，支持移动端折叠：
-
-```
-📱 移动端顶部导航栏
-├─ 品牌栏（固定顶部）
-│   ├─ 头像 + 宝宝名称
-│   └─ 汉堡菜单按钮（移动端展开/收起）
-│
-└─ 折叠菜单（点击展开）
-    ├─ 🏠 首页
-    ├─ 📤 上传（弹出模态框）
-    ├─ 📅 日历（弹出模态框）
-    ├─ 🤖 成长画像
-    ├─ 🏷️ 标签照片
-    ├─ 🎨 主题（弹出模态框）
-    ├─ ⚙️ 设置（弹出模态框）
-    └─ 📜 说明（弹出模态框）
-```
-
-### 移动端特殊处理
-
-| 功能 | 桌面端 | 移动端 |
-|------|--------|--------|
-| 照片上传 | `multiple` 多选 | 检测浏览器支持，不支持则显示"继续添加"按钮 |
-| 导航栏 | 水平展开 | 汉堡菜单 + 垂直折叠 |
-| 操作按钮 | 悬停提示 | 触摸优化 |
-
-**文件上传兼容性**：
-- vivo/OPPO等国产浏览器可能不支持 `multiple` 属性
-- 自动检测 UA，显示用户提示："当前浏览器不支持多选，请分多次选择"
-- 提供 "继续添加" 按钮支持分批选择
-
----
-
-## 未来规划
-
-### 微信小程序（已调研）
-
-**架构对比**：
-
-| 特性 | 当前网页版 | 微信小程序 |
-|------|-----------|-----------|
-| 部署 | 用户本地运行客户端 | 微信托管 |
-| AI调用 | 服务端代理 | 服务端代理 |
-| 存储 | 本地 + 服务端 | 服务端 |
-| 照片访问 | 本地文件夹 | 微信相册 |
-| 视频处理 | 本地提取音频 | 小程序限制多 |
-| 离线使用 | ✅ 完全支持 | ❌ 需联网 |
-| 自动备份 | ✅ 客户端定时 | ❌ 需手动 |
-
-**可行性评估**：
-- ❌ **不建议优先开发小程序**
-- 微信对AI调用、视频处理、本地存储限制较多
-- 当前网页版已经通过Cloudflare Tunnel实现公网访问
-- 移动端浏览器访问体验已优化
-
-**可能的小程序功能**（简化版）：
-- 查看日志和照片
-- 手动上传照片
-- 查看成长画像
-- 发送留言
-
-### App开发（长期规划）
-
-**技术选型建议**：
-
-| 方案 | 优点 | 缺点 |
-|------|------|------|
-| **Flutter** | 跨平台、性能好 | 需要重写UI |
-| **React Native** | 生态丰富 | 性能略逊 |
-| **PWA** | 成本低、可离线 | 功能受限 |
-
-**建议**：当前网页版已经是PWA（可添加到主屏），满足基本需求。如需原生功能（推送、离线处理），再考虑Flutter。
-
-### 近期优化方向
-
-1. **照片管理优化**
-   - 支持照片编辑（旋转、裁剪）
-   - 智能相册分类（按场景、人物）
-   - 照片搜索（AI语义搜索）
-
-2. **日志功能增强**
-   - 支持语音输入日志
-   - 多模板选择（日记、里程碑、对比）
-   - 日志导出（PDF、长图）
-
-3. **画像准确度提升**
-   - 家长反馈闭环优化
-   - 多维度标签聚类
-   - 成长趋势预测
-
----
-
-## 文件清单
-
-| 文件 | 说明 |
-|------|------|
-| `server_public.py` | 服务端主程序 |
-| `client_public_final.py` | 客户端主程序 |
-| `models.py` | 数据库模型定义 |
-| `database.py` | 数据库操作模块 |
-| `calendar_utils.py` | 农历、节日工具 |
-| `theme_generator.py` | 主题生成 |
-| `select_best_photo.py` | 照片精选 |
-| `photo_tools.py` | 照片工具 |
-| `video_audio_processor.py` | 视频语音处理 |
-| `baby_log_generator.py` | 日志生成 |
-| `restart_all.sh` | 一键重启脚本 |
-
----
-
-## Git 上传和 Release 构建流程
-
-> **📚 详细操作流程请阅读 `GITEE_SYNC_GUIDE.md`**
-> 
-> 该文档包含：项目结构、环境配置（Token设置）、分步操作说明、常见问题解决方案
-
-### 方式一：使用脚本（推荐）
+如果在系统服务里运行：
 
 ```bash
-cd /home/bob/projects/mumu-client
-
-# 修改代码后，执行发布
-./release.sh v31 "fix: 修复xxx问题"
+systemctl restart mumu-all.service
+systemctl status mumu-all.service
 ```
 
-脚本会自动完成：
-1. 提交代码更改并推送 tag
-2. 等待 GitHub Actions 构建完成
-3. 下载三个平台的安装包
-4. 重命名并覆盖到官网下载目录
+## 常用排查
 
-### 方式二：手动执行
-
-#### 1. 提交代码到 mumu-client 仓库
+### 查看服务状态
 
 ```bash
-cd /home/bob/projects/mumu-client
-
-# 查看修改状态
-git status
-
-# 添加修改的文件
-git add -A
-# 或只添加特定文件
-git add .github/workflows/build-release.yml
-
-# 提交
-git commit -m "fix: 修复xxx问题"
-
-# 创建并推送 tag（触发构建）
-git tag v31
-git push origin v31
+systemctl status mumu-all.service --no-pager
 ```
 
-#### 2. 等待构建完成
-
-访问 https://github.com/jxbaoxiaodong/mumu-client/actions 查看构建状态
-
-#### 3. 下载并覆盖到官网
+### 查看健康 AI 配置是否已从 `model_config.json` 生效
 
 ```bash
-cd /home/bob/projects/mumu/landing_page/download/
-
-# 下载 Windows
-curl -L -o mumu-windows.exe "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-windows.exe"
-
-# 下载 Linux 并打包
-curl -L -o mumu-linux "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-linux"
-tar -czvf mumu-linux-x64.tar.gz mumu-linux
-rm mumu-linux
-
-# 下载 macOS 并重命名
-curl -L -o mumu-macos "https://github.com/jxbaoxiaodong/mumu-client/releases/download/v31/mumu-macos"
-mv mumu-macos mumu-macos.dmg
+curl http://127.0.0.1:8080/api/config/ai
 ```
 
-### 注意事项
+### 查看服务端 token 记账明细
 
-1. **workflow 文件不需要每次修改** - `.github/workflows/build-release.yml` 已固定正确
-2. **备份位置** - 如需恢复 workflow：`/media/bob/System/LINUX_FILES/projects_backup/mumu-client-workflows.tar.gz`
-3. **GitHub Token** - 已从 `.env` 文件读取，不再硬编码
+```bash
+sqlite3 /home/bob/projects/mumu/data/users/<client_id>.db \
+  "select id,operation,total_tokens,created_at from ai_sessions order by id desc limit 20;"
+```
+
+### 查看客户端聚合配额
+
+```bash
+sqlite3 /home/bob/projects/mumu/data/index.db \
+  "select client_id,token_total,token_prompt,token_completion from clients;"
+```
+
+## 发布与备份
+
+发布客户端：
+
+```bash
+./release.sh vXX "feat: message"
+```
+
+执行项目备份：
+
+```bash
+./backup.sh
+```
+
+## 相关文件
+
+- `client_public_final.py`
+- `server_public.py`
+- `server_card_generator.py`
+- `database.py`
+- `models.py`
+- `select_best_photo.py`
+- `baby_health_ai/app/main.py`
+- `baby_health_ai/app/config.py`
+- `AGENT.md`
+
+## 当前文档目标
+
+这份 README 只描述当前真实实现，不保留已经废弃的旧链路说明。  
+如果代码继续收口，优先更新这份文档，而不是追加“兼容旧逻辑”的说明。

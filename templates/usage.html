@@ -42,6 +42,25 @@
         .usage-item.photo { border-left-color: #FF9800; }
         .usage-item.speech { border-left-color: #9C27B0; }
         .usage-item.profile { border-left-color: #E91E63; }
+        .usage-item.image { border-left-color: #FF7043; }
+        .usage-item.qa { border-left-color: #26A69A; }
+        .usage-item.alert { border-left-color: #EF5350; }
+        .usage-item.interpret { border-left-color: #5C6BC0; }
+        .usage-item.metrics { border-left-color: #8D6E63; }
+        .summary-card {
+            padding: 16px;
+            text-align: center;
+        }
+        .summary-label {
+            color: #6c757d;
+            font-size: 0.82rem;
+            margin-bottom: 6px;
+        }
+        .summary-value {
+            font-size: 1.55rem;
+            font-weight: 700;
+            line-height: 1.1;
+        }
         .time-badge {
             font-size: 0.75rem;
             color: #6c757d;
@@ -53,6 +72,36 @@
             border-radius: 12px;
             font-size: 0.85rem;
             font-weight: 500;
+        }
+        .images-badge {
+            background: linear-gradient(135deg, #ffb199 0%, #ff7043 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        .status-error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        .usage-meta {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+            color: #6c757d;
+            font-size: 0.8rem;
         }
         .empty-state {
             text-align: center;
@@ -78,17 +127,29 @@
         </div>
 
         <!-- 统计卡片 -->
-        <div class="row mb-4">
-            <div class="col-6">
-                <div class="card p-3 text-center">
-                    <div class="text-muted small">今日消耗</div>
-                    <div class="h4 text-primary mb-0" id="todayTokens">0</div>
+        <div class="row mb-4 g-3">
+            <div class="col-6 col-md-3">
+                <div class="card summary-card">
+                    <div class="summary-label">今日 Token</div>
+                    <div class="summary-value text-primary mb-0" id="todayTokens">0</div>
                 </div>
             </div>
-            <div class="col-6">
-                <div class="card p-3 text-center">
-                    <div class="text-muted small">总消耗</div>
-                    <div class="h4 text-success mb-0" id="totalTokens">0</div>
+            <div class="col-6 col-md-3">
+                <div class="card summary-card">
+                    <div class="summary-label">累计 Token</div>
+                    <div class="summary-value text-success mb-0" id="totalTokens">0</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card summary-card">
+                    <div class="summary-label">今日图片</div>
+                    <div class="summary-value text-warning mb-0"><span id="todayImages">0</span><small class="ms-1">张</small></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card summary-card">
+                    <div class="summary-label">累计图片</div>
+                    <div class="summary-value text-danger mb-0"><span id="totalImages">0</span><small class="ms-1">张</small></div>
                 </div>
             </div>
         </div>
@@ -125,6 +186,8 @@
                     if (data.success) {
                         document.getElementById('todayTokens').textContent = data.today_tokens.toLocaleString();
                         document.getElementById('totalTokens').textContent = data.total_tokens.toLocaleString();
+                        document.getElementById('todayImages').textContent = (data.today_image_count || 0).toLocaleString();
+                        document.getElementById('totalImages').textContent = (data.total_image_count || 0).toLocaleString();
                         
                         const list = document.getElementById('usageList');
                         
@@ -141,15 +204,35 @@
                         let html = '';
                         data.records.forEach(record => {
                             const typeClass = record.type || 'log';
-                            const detail = record.detail ? `<span class="text-muted small ms-2">${record.detail}</span>` : '';
+                            const statusBadge = record.success === false
+                                ? `<span class="status-badge status-error">失败</span>`
+                                : `<span class="status-badge status-success">成功</span>`;
+                            const isImageRecord = typeClass === 'image';
+                            const rightBadge = isImageRecord
+                                ? `<span class="images-badge">${(record.images || 0).toLocaleString()} 张</span>`
+                                : `<span class="tokens-badge">${(record.tokens || 0).toLocaleString()} tokens</span>`;
+                            const metaParts = [];
+                            if (record.model_name) {
+                                metaParts.push(`<span><i class="fas fa-microchip me-1"></i>${record.model_name}</span>`);
+                            }
+                            if ((record.images || 0) > 0) {
+                                metaParts.push(`<span><i class="fas fa-images me-1"></i>生成 ${(record.images || 0).toLocaleString()} 张</span>`);
+                            }
+                            const metaHtml = metaParts.length
+                                ? `<div class="usage-meta">${metaParts.join('')}</div>`
+                                : '';
                             html += `
                                 <div class="usage-item ${typeClass}">
                                     <div class="d-flex justify-content-between align-items-start">
                                         <div>
-                                            <div class="mb-1">${record.content}${detail}</div>
+                                            <div class="mb-1 d-flex align-items-center gap-2 flex-wrap">
+                                                <span>${record.content}</span>
+                                                ${statusBadge}
+                                            </div>
+                                            ${metaHtml}
                                             <span class="time-badge"><i class="fas fa-clock me-1"></i>${record.time}</span>
                                         </div>
-                                        <span class="tokens-badge">${record.tokens.toLocaleString()}</span>
+                                        ${rightBadge}
                                     </div>
                                 </div>
                             `;

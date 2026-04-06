@@ -7,27 +7,49 @@
 import os
 import sys
 import json
+import io
 import uuid
+import shutil
 import socket
 import ctypes
 import logging
 import logging.handlers
-import warnings
 import tempfile
 import hashlib
 import hmac
 import ipaddress
 import atexit
+import re
 import signal
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 import threading
 import time
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, redirect, send_file, session
+from flask import (
+    Flask,
+    render_template,
+    request,
+    jsonify,
+    redirect,
+    send_file,
+    send_from_directory,
+    session,
+)
 from werkzeug.utils import secure_filename
 import requests
 import urllib3
-from urllib.parse import quote
+from functools import lru_cache, wraps
+from urllib.parse import quote, unquote
+from auth_utils import verify_signature as verify_hmac_signature
+from card_protocol import normalize_cards
+from photo_status import (
+    PHOTO_STATUS_BLOCKED,
+    PHOTO_STATUS_OK,
+    PHOTO_STATUS_OTHER_ERROR,
+    classify_terminal_photo_error,
+    is_semantic_skip_photo_record,
+)
 
 # 抑制特定域名的 SSL 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -36,13 +58,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 # ==================== 日志配置 ====================
 def setup_logging():
     """配置客户端日志系统（兼容 PyInstaller 和普通运行）"""
-    # 检测是否在 PyInstaller 打包环境中
-    if hasattr(sys, "_MEIPASS"):
-        # PyInstaller 打包环境 - 使用用户文档目录
-        log_dir = Path.home() / "Documents" / "CZRZ" / "logs"
-    else:
-        # 普通运行环境 - 使用当前目录下的 logs
-        log_dir = Path(__file__).parent / "logs"
+    log_dir = Path.home() / "Documents" / "CZRZ" / "logs"
 
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -86,9 +102,21 @@ logger.info("客户端日志系统初始化完成")
 
 
 DEFAULT_SERVER_DOMAIN = "xiaohexia.ftir.fun"
+HEARTBEAT_INTERVAL_SECONDS = 30
 
 USER_DATA_DIR = Path.home() / "Documents" / "CZRZ"
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+GENERATED_ASSETS_DIR = USER_DATA_DIR / "generated_assets"
+GENERATED_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+LOCAL_MANUAL_CARD_FILE = GENERATED_ASSETS_DIR / "manual_cards.json"
+RUNTIME_WEB_DIR = USER_DATA_DIR / "runtime_web"
+RUNTIME_WEB_DIR.mkdir(parents=True, exist_ok=True)
+DAILY_STORY_DIR = USER_DATA_DIR / "daily_stories"
+DAILY_STORY_DIR.mkdir(parents=True, exist_ok=True)
+DEFAULT_STORY_IMAGE_MODEL = "qwen-image-2.0-pro"
+DEFAULT_STORY_IMAGE_SIZE = "1024*1024"
+DEFAULT_AVATAR_URL = "/api/default-avatar"
+DEFAULT_VIDEO_THUMB_URL = "/api/default-video-thumb"
 
 USER_CONFIG_FILE = USER_DATA_DIR / "config.json"
 
@@ -112,7 +140,6 @@ def load_user_config():
         "public_url": None,
         "avatar_url": None,
         "client_version": "2.0.0",
-        "ai_child_id": None,
     }
 
     if USER_CONFIG_FILE.exists():
@@ -135,6 +162,24 @@ def load_user_config():
 
 USER_CONFIG = load_user_config()
 
+TEMPLATE_REMOTE_TIMEOUT = 2
+DATE_API_REMOTE_TIMEOUT = 8
+TEMPLATE_QUOTA_CACHE_TTL = 60
+TEMPLATE_QUOTA_CACHE = {
+    "expires_at": 0.0,
+    "data": None,
+}
+ALBUM_COLLECTION_CACHE_TTL = 180
+ALBUM_COLLECTION_CACHE = {}
+ALBUM_COLLECTION_CACHE_LOCK = threading.Lock()
+VIRTUAL_ROLE_GEN_LOCK = threading.Lock()
+VIRTUAL_ROLE_PM_CACHE = {"media_folders": None, "manager": None}
+ALBUM_INDEX_CACHE = {
+    "data_dir": None,
+    "index_manager": None,
+    "index_mtime_ns": 0,
+}
+
 
 def save_user_config():
     try:
@@ -142,6 +187,625 @@ def save_user_config():
             json.dump(USER_CONFIG, f, indent=2, ensure_ascii=False)
     except Exception as e:
         logger.error(f"保存用户配置失败: {e}")
+
+
+def get_ai_identity_client_id(default: str = "") -> str:
+    """健康 AI 使用的唯一身份 ID：统一回到 client_id。"""
+    client_id = USER_CONFIG.get("client_id") or ""
+    client = globals().get("public_client")
+    if not client_id and client is not None:
+        client_id = getattr(client, "client_id", "") or ""
+    return client_id or default
+
+
+def _story_base_dir(client_id: str = None) -> Path:
+    cid = client_id or getattr(public_client, "client_id", None) or "default"
+    base_dir = DAILY_STORY_DIR / cid
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+def _story_dir(date_str: str, client_id: str = None) -> Path:
+    story_dir = _story_base_dir(client_id) / date_str
+    story_dir.mkdir(parents=True, exist_ok=True)
+    return story_dir
+
+
+def _story_series_seed_file(client_id: str = None) -> Path:
+    return _story_base_dir(client_id) / "series_profile_seed.json"
+
+
+def _story_meta_file(date_str: str, client_id: str = None) -> Path:
+    return _story_dir(date_str, client_id) / "story.json"
+
+
+def _story_asset_url(date_str: str, filename: str) -> str:
+    return f"/story-assets/{quote(date_str)}/{quote(filename)}"
+
+
+def _generated_asset_dir(category: str) -> Path:
+    safe_category = secure_filename(category or "misc") or "misc"
+    target = GENERATED_ASSETS_DIR / safe_category
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _generated_asset_url(category: str, filename: str) -> str:
+    return f"/generated-assets/{quote(category)}/{quote(filename)}"
+
+
+@lru_cache(maxsize=1)
+def _get_comic_style_library() -> tuple:
+    try:
+        from server_card_generator import ServerCardGenerator
+
+        return tuple(dict(item) for item in ServerCardGenerator.ART_STYLE_LIBRARY)
+    except Exception as e:
+        logger.warning(f"[Comic] 加载风格库失败: {e}")
+        return tuple()
+
+
+def get_comic_style_presets() -> list:
+    presets = [
+        {
+            "key": "auto",
+            "name": "自动匹配",
+            "tagline": "根据照片气质自动选最合适的画法",
+            "palette": ["#f6c36a", "#93c9b7", "#fff8ef"],
+        }
+    ]
+    for item in _get_comic_style_library():
+        presets.append(
+            {
+                "key": item.get("theme") or item.get("name") or "style",
+                "name": item.get("name") or "艺术风格",
+                "tagline": item.get("tagline") or "",
+                "palette": list(item.get("palette") or []),
+            }
+        )
+    return presets
+
+
+def _read_local_manual_card_store() -> list:
+    if not LOCAL_MANUAL_CARD_FILE.exists():
+        return []
+    try:
+        payload = json.loads(LOCAL_MANUAL_CARD_FILE.read_text(encoding="utf-8"))
+        raw_cards = payload.get("cards", []) if isinstance(payload, dict) else payload
+        return normalize_cards(raw_cards or [])
+    except Exception as e:
+        logger.warning(f"[Comic] 读取本地手动漫画卡失败: {e}")
+        return []
+
+
+def _write_local_manual_card_store(cards: list) -> None:
+    try:
+        LOCAL_MANUAL_CARD_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cards": normalize_cards(cards or []),
+            "updated_at": datetime.now().isoformat(),
+        }
+        LOCAL_MANUAL_CARD_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.warning(f"[Comic] 写入本地手动漫画卡失败: {e}")
+
+
+def load_local_manual_cards(card_type: str = "") -> list:
+    cards = _read_local_manual_card_store()
+    if card_type:
+        return [card for card in cards if (card.get("type") or "") == card_type]
+    return cards
+
+
+def append_local_manual_cards(new_cards: list, keep: int = 48) -> list:
+    existing = _read_local_manual_card_store()
+    merged = []
+    seen_ids = set()
+    for card in list(new_cards or []) + list(existing or []):
+        card_id = str(card.get("id") or card.get("card_id") or "").strip()
+        if not card_id or card_id in seen_ids:
+            continue
+        seen_ids.add(card_id)
+        merged.append(card)
+
+    merged.sort(
+        key=lambda item: str(item.get("generated_at") or item.get("created_at") or ""),
+        reverse=True,
+    )
+    merged = merged[: max(1, keep)]
+    _write_local_manual_card_store(merged)
+    return merged
+
+
+def _get_cached_photo_manager():
+    media_folders = tuple(
+        str(Path(folder))
+        for folder in (getattr(public_client, "media_folders", []) or [])
+        if str(folder or "").strip() and Path(folder).exists()
+    )
+    if not media_folders:
+        return None
+
+    cached_folders = VIRTUAL_ROLE_PM_CACHE.get("media_folders")
+    cached_manager = VIRTUAL_ROLE_PM_CACHE.get("manager")
+    if cached_manager is not None and cached_folders == media_folders:
+        return cached_manager
+
+    try:
+        from photo_manager import PhotoManager
+
+        manager = PhotoManager(list(media_folders), public_client.data_dir)
+    except Exception as e:
+        logger.warning(f"[VirtualRole] 初始化 PhotoManager 失败: {e}")
+        return None
+
+    VIRTUAL_ROLE_PM_CACHE["media_folders"] = media_folders
+    VIRTUAL_ROLE_PM_CACHE["manager"] = manager
+    return manager
+
+
+def _extract_card_photo_filename(candidate) -> str:
+    text = str(candidate or "").strip()
+    if not text:
+        return ""
+    if text.startswith("/photo/thumb/"):
+        return Path(unquote(text.split("/photo/thumb/", 1)[1].split("?", 1)[0])).name
+    if text.startswith("/photo/"):
+        return Path(unquote(text.split("/photo/", 1)[1].split("?", 1)[0])).name
+    return Path(unquote(text)).name
+
+
+def _generated_asset_local_path(asset_url: str) -> Path | None:
+    text = str(asset_url or "").strip()
+    prefix = "/generated-assets/"
+    if not text.startswith(prefix):
+        return None
+    return GENERATED_ASSETS_DIR / unquote(text[len(prefix) :])
+
+
+def _resolve_virtual_role_source_record(card: dict) -> dict | None:
+    assets = (card or {}).get("assets") or {}
+    candidates = [
+        assets.get("source_photo"),
+        card.get("source_photo"),
+        assets.get("cover_photo"),
+        card.get("cover_photo"),
+    ]
+    candidates.extend((card or {}).get("photo_paths") or [])
+
+    photo_manager = _get_cached_photo_manager()
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if not text or text.startswith("/generated-assets/"):
+            continue
+        path_obj = Path(text)
+        if path_obj.exists():
+            return {
+                "path": str(path_obj),
+                "filename": path_obj.name,
+                "date": (card or {}).get("photo_date") or "",
+            }
+
+        filename = _extract_card_photo_filename(text)
+        if not filename or photo_manager is None:
+            continue
+        entry = photo_manager.get_photo_by_filename(filename)
+        if entry and entry.get("path") and Path(entry["path"]).exists():
+            return entry
+    return None
+
+
+def _get_virtual_role_visual_hint(role_name: str) -> str:
+    hints = {
+        "小徐霞客": "travel diary illustration, gentle explorer outfit accents, map fragments, long road, breeze, mountain light",
+        "小诸葛亮": "warm strategist portrait, bamboo scroll mood, layered study light, calm and observant energy",
+        "小达芬奇": "inventive sketchbook atmosphere, handmade workshop details, curious tools, creative child inventor vibe",
+        "小木兰": "soft heroic portrait, light armor accents, wind and open field, gentle but brave momentum",
+        "小李白": "poetic dreamlike scene, moonlit breeze, lyrical brushwork, soft romantic atmosphere",
+        "小梅兰芳": "stage-inspired portrait, elegant costume accents, refined gesture, theatrical light",
+        "小居里": "quiet research portrait, soft scientific glow, curious instruments, calm focus",
+    }
+    return hints.get(str(role_name or "").strip(), "editorial character illustration, cinematic child portrait, refined environment storytelling")
+
+
+def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
+    baby_name = getattr(public_client, "baby_name", "宝宝")
+    assets = (card or {}).get("assets") or {}
+    role_name = assets.get("role_name") or card.get("role_name") or "虚拟角色"
+    role_subtitle = assets.get("role_subtitle") or card.get("role_subtitle") or ""
+    role_storyline = assets.get("role_storyline") or card.get("role_storyline") or ""
+    role_signature = assets.get("role_signature") or card.get("role_signature") or ""
+    scene_label = assets.get("scene_label") or card.get("scene_label") or source_record.get("scene") or ""
+    activity_label = assets.get("activity_label") or card.get("activity_label") or source_record.get("activity") or ""
+    emotion_label = assets.get("emotion_label") or card.get("emotion_label") or ""
+    description = (source_record.get("description") or "").strip()
+
+    style_prompt = ""
+    try:
+        from server_card_generator import ServerCardGenerator
+
+        style, _reasons = ServerCardGenerator()._match_art_style(source_record or {})
+        style_prompt = style.get("prompt") or ""
+    except Exception as e:
+        logger.warning(f"[VirtualRole] 读取角色画风失败: {e}")
+
+    prompt = (
+        f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅角色肖像海报。"
+        f"主角固定为{baby_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色和真实场景线索，不能换脸，不能变成陌生孩子。"
+        f"把她自然映射成“{role_name}”这一类人物气质，让人一眼看出还是{baby_name}本人，同时又能联想到这个角色。"
+        f"允许加入少量与角色气质相符的服饰、道具或环境元素，但不要做夸张 cosplay。"
+    )
+    if role_subtitle:
+        prompt += f" 角色气质：{role_subtitle}。"
+    if role_storyline:
+        prompt += f" 角色说明：{role_storyline}。"
+    if role_signature:
+        prompt += f" 角色识别句：{role_signature}。"
+    if scene_label:
+        prompt += f" 当前场景线索：{scene_label}。"
+    if activity_label:
+        prompt += f" 当前动作主线：{activity_label}。"
+    if emotion_label:
+        prompt += f" 当前情绪底色：{emotion_label}。"
+    if description:
+        prompt += f" 真实素材摘要：{description}。"
+    if style_prompt:
+        prompt += f" 画面笔触与光线参考：{style_prompt}。"
+    prompt += f" 视觉氛围可参考：{_get_virtual_role_visual_hint(role_name)}。"
+    prompt += (
+        " 只输出画面，不要出现任何中文、英文、数字、对白气泡、标题、logo、水印。"
+        " 画面要温暖、有层次、有分享欲，像一张精心设计的角色海报。"
+    )
+    return prompt
+
+
+def ensure_virtual_role_card_images(cards: list) -> bool:
+    target_cards = [
+        card for card in (cards or []) if (card.get("type") or card.get("card_type")) == "virtual_role_card"
+    ]
+    if not target_cards:
+        return False
+
+    changed = False
+    with VIRTUAL_ROLE_GEN_LOCK:
+        for card in target_cards:
+            assets = card.setdefault("assets", {}) if isinstance(card, dict) else {}
+            existing_image = (
+                assets.get("generated_image")
+                or card.get("generated_image")
+                or card.get("generated_image_url")
+                or ""
+            )
+            local_generated_path = _generated_asset_local_path(existing_image)
+            if existing_image and (local_generated_path is None or local_generated_path.exists()):
+                continue
+
+            source_record = _resolve_virtual_role_source_record(card)
+            if not source_record or not source_record.get("path"):
+                continue
+
+            prompt = _build_virtual_role_image_prompt(card, source_record)
+            remote_url = _generate_image_with_reference(
+                prompt,
+                source_record["path"],
+                operation="photo_to_comic",
+                model_name=DEFAULT_STORY_IMAGE_MODEL,
+                size=DEFAULT_STORY_IMAGE_SIZE,
+            )
+            if not remote_url:
+                logger.warning("[VirtualRole] 角色形象图生成失败: 返回空结果")
+                continue
+
+            role_name = assets.get("role_name") or card.get("role_name") or "role"
+            filename_seed = f"{role_name}|{source_record.get('path')}"
+            filename = (
+                f"virtual_role_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+                f"{hashlib.md5(filename_seed.encode('utf-8')).hexdigest()[:8]}.jpg"
+            )
+            target_path = _generated_asset_dir("virtual_roles") / filename
+            if not _save_generated_asset_image(remote_url, target_path):
+                logger.warning("[VirtualRole] 角色形象图保存失败")
+                continue
+
+            source_filename = source_record.get("filename") or Path(source_record["path"]).name
+            generated_url = _generated_asset_url("virtual_roles", filename)
+            source_url = f"/photo/{quote(source_filename)}"
+            card["generated_image"] = generated_url
+            card["source_photo"] = source_url
+            card["generation_mode"] = "auto"
+            card["generation_model"] = DEFAULT_STORY_IMAGE_MODEL
+            assets["generated_image"] = generated_url
+            assets["source_photo"] = source_url
+            assets["generation_mode"] = "auto"
+            changed = True
+            logger.info(f"[VirtualRole] 已生成角色形象图: {role_name} <- {source_filename}")
+    return changed
+
+
+def _extract_json_payload(text: str):
+    if not text:
+        return None
+
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```(?:json)?\s*", "", stripped)
+        stripped = re.sub(r"\s*```$", "", stripped)
+
+    try:
+        return json.loads(stripped)
+    except Exception:
+        pass
+
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(stripped[start : end + 1])
+        except Exception:
+            return None
+    return None
+
+
+def _story_load_series_seed(client_id: str = None) -> dict:
+    path = _story_series_seed_file(client_id)
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    hero_archetype = _story_trim_text(payload.get("hero_archetype") or payload.get("title"), 18)
+    world_name = _story_trim_text(payload.get("world_name") or payload.get("world"), 16)
+    if not hero_archetype or not world_name:
+        return {}
+    return {
+        "id": payload.get("id") or "series_seed",
+        "title": hero_archetype,
+        "world": world_name,
+        "core": _story_trim_text(payload.get("core", ""), 48),
+        "motifs": _story_dedup_texts(payload.get("motifs", []), limit=4, max_len=12),
+        "signature_line": _story_trim_text(payload.get("signature_line", ""), 34),
+        "catchphrase": _story_trim_text(payload.get("catchphrase", ""), 48),
+    }
+
+
+def _story_save_series_seed(client_id: str, seed_profile: dict) -> None:
+    payload = {
+        "id": seed_profile.get("id") or "series_seed",
+        "hero_archetype": _story_trim_text(
+            seed_profile.get("hero_archetype") or seed_profile.get("title"), 18
+        ),
+        "world_name": _story_trim_text(
+            seed_profile.get("world_name") or seed_profile.get("world"), 16
+        ),
+        "core": _story_trim_text(seed_profile.get("core", ""), 48),
+        "signature_line": _story_trim_text(seed_profile.get("signature_line", ""), 34),
+        "catchphrase": _story_trim_text(seed_profile.get("catchphrase", ""), 48),
+        "motifs": _story_dedup_texts(seed_profile.get("motifs", []), limit=4, max_len=12),
+    }
+    if not payload["hero_archetype"] or not payload["world_name"]:
+        return
+    try:
+        _story_series_seed_file(client_id).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        logger.info(f"[Story] 保存角色种子失败: {e}")
+
+
+def _story_panel_image_url(date_str: str, panel: dict) -> str:
+    image_file = panel.get("image_file") or ""
+    if image_file:
+        return _story_asset_url(date_str, image_file)
+
+    source_filename = panel.get("source_filename") or ""
+    if source_filename:
+        if panel.get("is_video"):
+            return f"/video/thumb/{quote(source_filename)}"
+        return f"/photo/thumb/{quote(source_filename)}"
+
+    return ""
+
+
+def _normalize_story_payload(story: dict) -> dict:
+    if not story:
+        return None
+
+    normalized = dict(story)
+    date_str = normalized.get("date", "")
+    panels = []
+    for index, panel in enumerate(normalized.get("panels", []) or []):
+        p = dict(panel or {})
+        p.setdefault("index", index + 1)
+        p["image_url"] = _story_panel_image_url(date_str, p)
+        panels.append(p)
+    normalized["panels"] = panels
+    return normalized
+
+
+def load_daily_story(date_str: str, client_id: str = None):
+    meta_file = _story_meta_file(date_str, client_id)
+    if not meta_file.exists():
+        return None
+
+    try:
+        with open(meta_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return _normalize_story_payload(data)
+    except Exception as e:
+        logger.warning(f"[Story] 读取故事缓存失败 {date_str}: {e}")
+        return None
+
+
+def save_daily_story(date_str: str, story: dict, client_id: str = None):
+    story_dir = _story_dir(date_str, client_id)
+    story = dict(story or {})
+    story["date"] = date_str
+    story["updated_at"] = datetime.now().isoformat()
+    meta_file = story_dir / "story.json"
+    with open(meta_file, "w", encoding="utf-8") as f:
+        json.dump(story, f, ensure_ascii=False, indent=2)
+    return _normalize_story_payload(story)
+
+
+STORY_JOB_LOCK = threading.Lock()
+STORY_GENERATION_JOBS = {}
+STORY_JOB_RETENTION_SECONDS = 6 * 60 * 60
+
+
+def _story_job_key(date_str: str, client_id: str = None) -> str:
+    target_client = client_id or getattr(public_client, "client_id", None) or "default"
+    return f"{target_client}:{date_str}"
+
+
+def _prune_story_jobs():
+    now_ts = time.time()
+    expired = []
+    with STORY_JOB_LOCK:
+        for key, job in STORY_GENERATION_JOBS.items():
+            updated_ts = job.get("updated_ts", now_ts)
+            if now_ts - updated_ts > STORY_JOB_RETENTION_SECONDS:
+                expired.append(key)
+        for key in expired:
+            STORY_GENERATION_JOBS.pop(key, None)
+
+
+def _set_story_job(date_str: str, client_id: str = None, **updates) -> dict:
+    key = _story_job_key(date_str, client_id)
+    now_iso = datetime.now().isoformat()
+    now_ts = time.time()
+    with STORY_JOB_LOCK:
+        job = dict(STORY_GENERATION_JOBS.get(key) or {})
+        if not job:
+            job = {
+                "date": date_str,
+                "client_id": client_id or getattr(public_client, "client_id", None),
+                "status": "idle",
+                "stage": "idle",
+                "message": "",
+                "progress": 0,
+                "started_at": now_iso,
+            }
+        job.update(updates)
+        job["date"] = date_str
+        job["updated_at"] = now_iso
+        job["updated_ts"] = now_ts
+        STORY_GENERATION_JOBS[key] = job
+        return dict(job)
+
+
+def get_story_job(date_str: str, client_id: str = None) -> dict:
+    _prune_story_jobs()
+    key = _story_job_key(date_str, client_id)
+    with STORY_JOB_LOCK:
+        job = STORY_GENERATION_JOBS.get(key)
+        return dict(job) if job else None
+
+
+def _story_job_progress_callback(date_str: str, client_id: str = None):
+    def callback(stage: str, message: str, progress: int = None):
+        payload = {
+            "status": "running",
+            "stage": stage,
+            "message": message,
+        }
+        if progress is not None:
+            payload["progress"] = progress
+        _set_story_job(date_str, client_id, **payload)
+
+    return callback
+
+
+def _run_story_generation_job(date_str: str, regenerate: bool = False, client_id: str = None):
+    target_client = client_id or getattr(public_client, "client_id", None)
+    try:
+        _set_story_job(
+            date_str,
+            target_client,
+            status="running",
+            stage="preparing",
+            message="正在准备故事素材...",
+            progress=5,
+            regenerate=bool(regenerate),
+            started_at=datetime.now().isoformat(),
+            finished_at=None,
+        )
+        story = build_daily_story(
+            date_str,
+            regenerate=regenerate,
+            progress_callback=_story_job_progress_callback(date_str, target_client),
+        )
+        _set_story_job(
+            date_str,
+            target_client,
+            status="success",
+            stage="done",
+            message="故事生成完成",
+            progress=100,
+            finished_at=datetime.now().isoformat(),
+            source_mode=story.get("source_mode"),
+            panel_count=len(story.get("panels") or []),
+            updated_story_at=story.get("updated_at"),
+        )
+    except Exception as e:
+        logger.error(f"[StoryJob] 后台生成失败 {date_str}: {e}")
+        _set_story_job(
+            date_str,
+            target_client,
+            status="error",
+            stage="error",
+            message=str(e),
+            finished_at=datetime.now().isoformat(),
+        )
+
+
+def ensure_story_generation_job(date_str: str, regenerate: bool = False, client_id: str = None):
+    target_client = client_id or getattr(public_client, "client_id", None)
+    if not regenerate:
+        cached_story = load_daily_story(date_str, target_client)
+        if cached_story:
+            job = _set_story_job(
+                date_str,
+                target_client,
+                status="success",
+                stage="done",
+                message="故事已存在",
+                progress=100,
+                finished_at=datetime.now().isoformat(),
+                source_mode=cached_story.get("source_mode"),
+                panel_count=len(cached_story.get("panels") or []),
+                updated_story_at=cached_story.get("updated_at"),
+            )
+            return job, False
+
+    existing = get_story_job(date_str, target_client)
+    if existing and existing.get("status") in {"queued", "running"}:
+        return existing, False
+
+    queued_job = _set_story_job(
+        date_str,
+        target_client,
+        status="queued",
+        stage="queued",
+        message="已开始生成故事任务",
+        progress=0,
+        regenerate=bool(regenerate),
+        started_at=datetime.now().isoformat(),
+        finished_at=None,
+    )
+    thread = threading.Thread(
+        target=_run_story_generation_job,
+        args=(date_str, regenerate, target_client),
+        daemon=True,
+    )
+    thread.start()
+    return queued_job, True
 
 
 INSTALL_KEY_SEED = "czrz-installer-v2"
@@ -206,7 +870,7 @@ class ClientConfig:
     def get(self, key, default=None):
         if key == "ai_service":
             result = self._data.get("ai_service", {}).copy()
-            result["child_id"] = USER_CONFIG.get("ai_child_id", "")
+            result["child_id"] = get_ai_identity_client_id()
             return result
         return self._data.get(key, default)
 
@@ -218,17 +882,6 @@ class ClientConfig:
 
 
 CLIENT_CONFIG = ClientConfig()
-
-
-# ==================== 权限控制装饰器 ====================
-from functools import wraps
-
-
-def require_local_or_password_real(f):
-    """
-    兼容旧名称：统一走家庭码会话校验。
-    """
-    return require_local_or_password(f)
 
 
 def get_family_code() -> str:
@@ -246,13 +899,12 @@ def get_family_code() -> str:
 
 def is_family_code_verified() -> bool:
     """当前会话是否已通过家庭码校验"""
-    return bool(session.get("family_code_verified") or session.get("password_verified"))
+    return bool(session.get("family_code_verified"))
 
 
 def mark_family_code_verified() -> None:
-    """标记会话已完成家庭码验证（兼容旧 password_verified）"""
+    """标记会话已完成家庭码验证"""
     session["family_code_verified"] = True
-    session["password_verified"] = True
     session.permanent = True
 
 
@@ -304,26 +956,66 @@ def require_local_or_password(f):
     return decorated_function
 
 
+def is_server_signed_request() -> bool:
+    """允许服务端使用客户端 secret_key 远程触发少量内部接口。"""
+    secret_key = USER_CONFIG.get("secret_key") or getattr(
+        globals().get("public_client"), "secret_key", ""
+    )
+    client_id = USER_CONFIG.get("client_id") or getattr(
+        globals().get("public_client"), "client_id", ""
+    )
+    provided_client_id = (request.headers.get("X-Client-ID") or "").strip()
+    provided_signature = (request.headers.get("X-Signature") or "").strip()
+    timestamp_str = (request.headers.get("X-Timestamp") or "").strip()
+
+    if not (secret_key and client_id and provided_client_id and provided_signature and timestamp_str):
+        return False
+    if provided_client_id != client_id:
+        return False
+
+    try:
+        timestamp = int(timestamp_str)
+    except Exception:
+        return False
+
+    path = request.path
+    if request.query_string:
+        path = f"{path}?{request.query_string.decode('utf-8', errors='ignore')}"
+
+    body = ""
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        body = request.get_data(cache=True, as_text=True) or ""
+
+    result = verify_hmac_signature(
+        secret_key=secret_key,
+        provided_signature=provided_signature,
+        method=request.method,
+        path=path,
+        timestamp=timestamp,
+        body=body,
+    )
+    if not result.get("valid"):
+        logger.warning(f"[SECURITY] 服务端签名验证失败: {result.get('error')}")
+        return False
+    return True
+
+
+def require_local_password_or_signature(f):
+    """局域网/家庭码会话或服务端签名二选一。"""
+
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if is_server_signed_request():
+            return f(*args, **kwargs)
+        return require_local_or_password(f)(*args, **kwargs)
+
+    return decorated_function
+
+
 def is_local_request():
     """检查是否为本地请求"""
     source_ip = get_request_source_ip()
     return _is_private_or_loopback_ip(source_ip)
-
-
-def check_local_or_password():
-    """
-    检查本地或密码验证（用于函数内部调用，而非装饰器）
-    本地连接免密码，远程连接需要密码验证（session 记住验证状态）
-    返回 None 表示验证通过，返回 Response 表示验证失败
-    """
-    source_ip = get_request_source_ip()
-    if _is_private_or_loopback_ip(source_ip):
-        return None
-
-    if is_family_code_verified():
-        return None
-
-    return _build_family_gate_response()
 
 
 def _is_private_or_loopback_ip(ip_text: str) -> bool:
@@ -390,7 +1082,7 @@ class PublicClient:
         self.subdomain = USER_CONFIG.get("subdomain")
         self.public_url = USER_CONFIG.get("public_url")
         self.avatar_url = (
-            USER_CONFIG.get("avatar_url") or "/static/images/default-avatar.png"
+            USER_CONFIG.get("avatar_url") or DEFAULT_AVATAR_URL
         )
         self.client_version = USER_CONFIG.get("client_version", "2.0.0")
         self.index_after_date = USER_CONFIG.get("index_after_date", "")
@@ -427,9 +1119,6 @@ class PublicClient:
             or self.baby_name == "宝宝"
             or not self.media_folders
         )
-
-    def load_config(self):
-        pass
 
     def save_config(self):
         USER_CONFIG["client_id"] = self.client_id
@@ -648,7 +1337,6 @@ class PublicClient:
 
         try:
             from photo_manager import PhotoManager
-            from flask import current_app as app
 
             pm = PhotoManager(media_folders, self.data_dir)
             print("🔍 开始建立照片索引，这可能需要一些时间...")
@@ -681,562 +1369,6 @@ class PublicClient:
         except Exception as e:
             print(f"[WARN] 清理日历缓存失败: {e}")
 
-    def show_first_run_setup(self):
-        """初次启动配置向导 - 设置宝宝名字和城市"""
-        import tkinter as tk
-        from tkinter import ttk, messagebox
-
-        print("\n" + "=" * 50)
-        print("🎉 欢迎使用成长记录系统")
-        print("=" * 50)
-        print("\n为了更好地生成宝宝成长日志，请完成以下设置：\n")
-
-        # 中国省市数据
-        china_cities = {
-            "自动检测": ["自动检测"],
-            "北京": ["北京"],
-            "天津": ["天津"],
-            "河北": [
-                "石家庄",
-                "唐山",
-                "秦皇岛",
-                "邯郸",
-                "邢台",
-                "保定",
-                "张家口",
-                "承德",
-                "沧州",
-                "廊坊",
-                "衡水",
-            ],
-            "山西": [
-                "太原",
-                "大同",
-                "阳泉",
-                "长治",
-                "晋城",
-                "朔州",
-                "晋中",
-                "运城",
-                "忻州",
-                "临汾",
-                "吕梁",
-            ],
-            "内蒙古": [
-                "呼和浩特",
-                "包头",
-                "乌海",
-                "赤峰",
-                "通辽",
-                "鄂尔多斯",
-                "呼伦贝尔",
-                "巴彦淖尔",
-                "乌兰察布",
-            ],
-            "辽宁": [
-                "沈阳",
-                "大连",
-                "鞍山",
-                "抚顺",
-                "本溪",
-                "丹东",
-                "锦州",
-                "营口",
-                "阜新",
-                "辽阳",
-                "盘锦",
-                "铁岭",
-                "朝阳",
-                "葫芦岛",
-            ],
-            "吉林": [
-                "长春",
-                "吉林",
-                "四平",
-                "辽源",
-                "通化",
-                "白山",
-                "松原",
-                "白城",
-                "延边",
-            ],
-            "黑龙江": [
-                "哈尔滨",
-                "齐齐哈尔",
-                "鸡西",
-                "鹤岗",
-                "双鸭山",
-                "大庆",
-                "伊春",
-                "佳木斯",
-                "七台河",
-                "牡丹江",
-                "黑河",
-                "绥化",
-                "大兴安岭",
-            ],
-            "上海": ["上海"],
-            "江苏": [
-                "南京",
-                "无锡",
-                "徐州",
-                "常州",
-                "苏州",
-                "南通",
-                "连云港",
-                "淮安",
-                "盐城",
-                "扬州",
-                "镇江",
-                "泰州",
-                "宿迁",
-            ],
-            "浙江": [
-                "杭州",
-                "宁波",
-                "温州",
-                "嘉兴",
-                "湖州",
-                "绍兴",
-                "金华",
-                "衢州",
-                "舟山",
-                "台州",
-                "丽水",
-            ],
-            "安徽": [
-                "合肥",
-                "芜湖",
-                "蚌埠",
-                "淮南",
-                "马鞍山",
-                "淮北",
-                "铜陵",
-                "安庆",
-                "黄山",
-                "滁州",
-                "阜阳",
-                "宿州",
-                "六安",
-                "亳州",
-                "池州",
-                "宣城",
-            ],
-            "福建": [
-                "福州",
-                "厦门",
-                "莆田",
-                "三明",
-                "泉州",
-                "漳州",
-                "南平",
-                "龙岩",
-                "宁德",
-            ],
-            "江西": [
-                "南昌",
-                "景德镇",
-                "萍乡",
-                "九江",
-                "新余",
-                "鹰潭",
-                "赣州",
-                "吉安",
-                "宜春",
-                "抚州",
-                "上饶",
-            ],
-            "山东": [
-                "济南",
-                "青岛",
-                "淄博",
-                "枣庄",
-                "东营",
-                "烟台",
-                "潍坊",
-                "济宁",
-                "泰安",
-                "威海",
-                "日照",
-                "莱芜",
-                "临沂",
-                "德州",
-                "聊城",
-                "滨州",
-                "菏泽",
-            ],
-            "河南": [
-                "郑州",
-                "开封",
-                "洛阳",
-                "平顶山",
-                "安阳",
-                "鹤壁",
-                "新乡",
-                "焦作",
-                "濮阳",
-                "许昌",
-                "漯河",
-                "三门峡",
-                "南阳",
-                "商丘",
-                "信阳",
-                "周口",
-                "驻马店",
-            ],
-            "湖北": [
-                "武汉",
-                "黄石",
-                "十堰",
-                "宜昌",
-                "襄阳",
-                "鄂州",
-                "荆门",
-                "孝感",
-                "荆州",
-                "黄冈",
-                "咸宁",
-                "随州",
-                "恩施",
-            ],
-            "湖南": [
-                "长沙",
-                "株洲",
-                "湘潭",
-                "衡阳",
-                "邵阳",
-                "岳阳",
-                "常德",
-                "张家界",
-                "益阳",
-                "郴州",
-                "永州",
-                "怀化",
-                "娄底",
-                "湘西",
-            ],
-            "广东": [
-                "广州",
-                "韶关",
-                "深圳",
-                "珠海",
-                "汕头",
-                "佛山",
-                "江门",
-                "湛江",
-                "茂名",
-                "肇庆",
-                "惠州",
-                "梅州",
-                "汕尾",
-                "河源",
-                "阳江",
-                "清远",
-                "东莞",
-                "中山",
-                "潮州",
-                "揭阳",
-                "云浮",
-            ],
-            "广西": [
-                "南宁",
-                "柳州",
-                "桂林",
-                "梧州",
-                "北海",
-                "防城港",
-                "钦州",
-                "贵港",
-                "玉林",
-                "百色",
-                "贺州",
-                "河池",
-                "来宾",
-                "崇左",
-            ],
-            "海南": ["海口", "三亚", "三沙", "儋州"],
-            "重庆": ["重庆"],
-            "四川": [
-                "成都",
-                "自贡",
-                "攀枝花",
-                "泸州",
-                "德阳",
-                "绵阳",
-                "广元",
-                "遂宁",
-                "内江",
-                "乐山",
-                "南充",
-                "眉山",
-                "宜宾",
-                "广安",
-                "达州",
-                "雅安",
-                "巴中",
-                "资阳",
-                "阿坝",
-                "甘孜",
-                "凉山",
-            ],
-            "贵州": [
-                "贵阳",
-                "六盘水",
-                "遵义",
-                "安顺",
-                "毕节",
-                "铜仁",
-                "黔西南",
-                "黔东南",
-                "黔南",
-            ],
-            "云南": [
-                "昆明",
-                "曲靖",
-                "玉溪",
-                "保山",
-                "昭通",
-                "丽江",
-                "普洱",
-                "临沧",
-                "楚雄",
-                "红河",
-                "文山",
-                "西双版纳",
-                "大理",
-                "德宏",
-                "怒江",
-                "迪庆",
-            ],
-            "西藏": ["拉萨", "日喀则", "昌都", "林芝", "山南", "那曲", "阿里"],
-            "陕西": [
-                "西安",
-                "铜川",
-                "宝鸡",
-                "咸阳",
-                "渭南",
-                "延安",
-                "汉中",
-                "榆林",
-                "安康",
-                "商洛",
-            ],
-            "甘肃": [
-                "兰州",
-                "嘉峪关",
-                "金昌",
-                "白银",
-                "天水",
-                "武威",
-                "张掖",
-                "平凉",
-                "酒泉",
-                "庆阳",
-                "定西",
-                "陇南",
-                "临夏",
-                "甘南",
-            ],
-            "青海": ["西宁", "海东", "海北", "黄南", "海南", "果洛", "玉树", "海西"],
-            "宁夏": ["银川", "石嘴山", "吴忠", "固原", "中卫"],
-            "新疆": [
-                "乌鲁木齐",
-                "克拉玛依",
-                "吐鲁番",
-                "哈密",
-                "昌吉",
-                "博尔塔拉",
-                "巴音郭楞",
-                "阿克苏",
-                "克孜勒苏",
-                "喀什",
-                "和田",
-                "伊犁",
-                "塔城",
-                "阿勒泰",
-            ],
-            "台湾": ["台北", "高雄", "台中", "台南", "基隆", "新竹", "嘉义"],
-            "香港": ["香港"],
-            "澳门": ["澳门"],
-        }
-
-        # 创建配置窗口
-        root = tk.Tk()
-        root.title("初次设置 - 成长记录系统")
-        root.geometry("500x450")
-        root.resizable(False, False)
-
-        # 居中窗口
-        root.update_idletasks()
-        width = root.winfo_width()
-        height = root.winfo_height()
-        x = (root.winfo_screenwidth() // 2) - (width // 2)
-        y = (root.winfo_screenheight() // 2) - (height // 2)
-        root.geometry(f"{width}x{height}+{x}+{y}")
-
-        # 标题
-        title_label = ttk.Label(
-            root, text="🍼 成长记录系统", font=("Microsoft YaHei", 16, "bold")
-        )
-        title_label.pack(pady=15)
-
-        desc_label = ttk.Label(
-            root,
-            text="设置宝宝信息，用于生成个性化的成长日志",
-            font=("Microsoft YaHei", 10),
-            foreground="gray",
-        )
-        desc_label.pack(pady=(0, 20))
-
-        # 宝宝名字输入
-        name_frame = ttk.Frame(root)
-        name_frame.pack(fill="x", padx=30, pady=10)
-
-        ttk.Label(name_frame, text="宝宝名字 *", font=("Microsoft YaHei", 11)).pack(
-            anchor="w"
-        )
-        name_entry = ttk.Entry(name_frame, font=("Microsoft YaHei", 11))
-        name_entry.pack(fill="x", pady=(5, 0))
-        name_entry.insert(0, "宝宝")
-
-        # 省份选择
-        province_frame = ttk.Frame(root)
-        province_frame.pack(fill="x", padx=30, pady=10)
-
-        ttk.Label(
-            province_frame, text="所在省份（可选）", font=("Microsoft YaHei", 11)
-        ).pack(anchor="w")
-
-        provinces = list(china_cities.keys())
-        province_var = tk.StringVar(value="自动检测")
-        province_combo = ttk.Combobox(
-            province_frame,
-            textvariable=province_var,
-            values=provinces,
-            font=("Microsoft YaHei", 11),
-            state="readonly",
-        )
-        province_combo.pack(fill="x", pady=(5, 0))
-
-        # 城市选择
-        city_frame = ttk.Frame(root)
-        city_frame.pack(fill="x", padx=30, pady=10)
-
-        ttk.Label(
-            city_frame, text="所在城市（可选）", font=("Microsoft YaHei", 11)
-        ).pack(anchor="w")
-
-        city_var = tk.StringVar(value="自动检测")
-        city_combo = ttk.Combobox(
-            city_frame,
-            textvariable=city_var,
-            font=("Microsoft YaHei", 11),
-            state="readonly",
-        )
-        city_combo.pack(fill="x", pady=(5, 0))
-
-        # 级联更新城市列表
-        def update_cities(*args):
-            province = province_var.get()
-            if province in china_cities:
-                cities = china_cities[province]
-                city_combo["values"] = cities
-                city_var.set(cities[0] if cities else "")
-
-        province_var.trace("w", update_cities)
-
-        ttk.Label(
-            city_frame,
-            text="选择城市后，成长日志将包含当地天气信息",
-            font=("Microsoft YaHei", 9),
-            foreground="gray",
-        ).pack(anchor="w", pady=(5, 0))
-
-        # 照片文件夹选择
-        photo_frame = ttk.Frame(root)
-        photo_frame.pack(fill="x", padx=30, pady=15)
-
-        ttk.Label(
-            photo_frame, text="宝宝照片保存文件夹 *", font=("Microsoft YaHei", 11)
-        ).pack(anchor="w")
-
-        photo_path_var = tk.StringVar()
-        photo_path_entry = ttk.Entry(
-            photo_frame, textvariable=photo_path_var, font=("Microsoft YaHei", 11)
-        )
-        photo_path_entry.pack(fill="x", pady=(5, 0))
-
-        def choose_photo_folder():
-            from tkinter import filedialog
-
-            folder = filedialog.askdirectory(title="选择宝宝照片保存文件夹")
-            if folder:
-                photo_path_var.set(folder)
-
-        choose_btn = ttk.Button(
-            photo_frame, text="选择文件夹...", command=choose_photo_folder
-        )
-        choose_btn.pack(anchor="w", pady=(5, 0))
-
-        ttk.Label(
-            photo_frame,
-            text="上传的照片将保存在此文件夹，按拍摄日期自动分类",
-            font=("Microsoft YaHei", 9),
-            foreground="gray",
-        ).pack(anchor="w", pady=(5, 0))
-
-        # 按钮区域
-        btn_frame = ttk.Frame(root)
-        btn_frame.pack(fill="x", padx=30, pady=30)
-
-        def on_confirm():
-            baby_name = name_entry.get().strip()
-            if not baby_name:
-                messagebox.showwarning("提示", "请输入宝宝名字")
-                return
-
-            photo_folder = photo_path_var.get().strip()
-            if not photo_folder:
-                messagebox.showwarning("提示", "请选择宝宝照片保存文件夹")
-                return
-
-            # 检查文件夹是否存在，不存在则创建
-            photo_path = Path(photo_folder)
-            if not photo_path.exists():
-                try:
-                    photo_path.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    messagebox.showerror("错误", f"无法创建文件夹: {e}")
-                    return
-
-            self.baby_name = baby_name
-            self.photo_folder = str(photo_path)  # 保存照片文件夹路径
-
-            # 保存城市信息
-            province = province_var.get()
-            city = city_var.get()
-            if province == "自动检测" or city == "自动检测":
-                self.user_city = None
-            else:
-                self.user_city = city  # 保存城市名
-
-            # 保存配置
-            self.save_config()
-
-            print(f"\n✅ 设置完成！")
-            print(f"   宝宝名字: {self.baby_name}")
-            print(f"   所在城市: {self.user_city or '自动检测'}")
-            print(f"   照片文件夹: {self.photo_folder}")
-            print(f"\n{'=' * 50}\n")
-
-            root.destroy()
-
-        confirm_btn = ttk.Button(btn_frame, text="开始记录", command=on_confirm)
-        confirm_btn.pack(fill="x", pady=5)
-
-        # 运行窗口
-        root.mainloop()
-
     def save_credentials(self, credentials, subdomain=None):
         """保存 tunnel 凭证到本地
 
@@ -1244,9 +1376,6 @@ class PublicClient:
             credentials: 凭证信息字典
             subdomain: 可选，子域名信息
         """
-        import platform
-        import shutil
-
         try:
             tunnel_id = credentials.get("TunnelID", "")
             tunnel_secret = credentials.get("TunnelSecret", "")
@@ -1256,14 +1385,7 @@ class PublicClient:
                 print(f"⚠ 凭证信息不完整")
                 return False
 
-            system = platform.system()
-
-            # 确定凭证目录
-            if system == "Windows":
-                creds_dir = Path(os.environ.get("USERPROFILE", ".")) / ".cloudflared"
-            else:
-                creds_dir = Path.home() / ".cloudflared"
-
+            creds_dir = self.data_dir / "cloudflared"
             creds_dir.mkdir(parents=True, exist_ok=True)
             creds_file = creds_dir / f"{tunnel_id}.json"
 
@@ -1335,16 +1457,14 @@ class PublicClient:
                         credentials = json.load(f)
                     tunnel_id = credentials.get("TunnelID", "")
                     if tunnel_id:
-                        # 检查 cloudflared 目录中的凭证文件是否存在
-                        creds_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                        creds_dir = self.data_dir / "cloudflared"
+                        creds_dir.mkdir(parents=True, exist_ok=True)
+                        creds_file = creds_dir / f"{tunnel_id}.json"
                         if creds_file.exists():
                             print(f"📂 发现本地凭证: {tunnel_id[:8]}...")
                             return credentials
                         else:
-                            # 凭证文件不存在，需要创建
-                            print(f"⚠ cloudflared 目录缺少凭证文件，尝试创建...")
-                            creds_dir = Path.home() / ".cloudflared"
-                            creds_dir.mkdir(parents=True, exist_ok=True)
+                            print("⚠ 本地凭证缓存缺失，尝试重建...")
                             with open(creds_file, "w", encoding="utf-8") as f:
                                 json.dump(credentials, f, indent=2)
                             print(f"✅ 已创建凭证文件: {creds_file}")
@@ -1362,7 +1482,7 @@ class PublicClient:
                             tunnel_id = credentials.get("TunnelID", "")
                             if tunnel_id:
                                 cf_creds_file = (
-                                    Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                                    self.data_dir / "cloudflared" / f"{tunnel_id}.json"
                                 )
                                 if cf_creds_file.exists():
                                     print(f"📂 发现本地凭证(遍历): {tunnel_id[:8]}...")
@@ -1374,8 +1494,7 @@ class PublicClient:
                                         )
                                     return credentials
                                 else:
-                                    # 创建凭证文件
-                                    creds_dir = Path.home() / ".cloudflared"
+                                    creds_dir = self.data_dir / "cloudflared"
                                     creds_dir.mkdir(parents=True, exist_ok=True)
                                     with open(
                                         cf_creds_file, "w", encoding="utf-8"
@@ -1393,10 +1512,14 @@ class PublicClient:
                     credentials = json.load(f)
                 tunnel_id = credentials.get("TunnelID", "")
                 if tunnel_id:
-                    creds_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
-                    if creds_file.exists():
-                        print(f"📂 发现本地凭证(备用): {tunnel_id[:8]}...")
-                        return credentials
+                    creds_dir = self.data_dir / "cloudflared"
+                    creds_dir.mkdir(parents=True, exist_ok=True)
+                    creds_file = creds_dir / f"{tunnel_id}.json"
+                    if not creds_file.exists():
+                        with open(creds_file, "w", encoding="utf-8") as f:
+                            json.dump(credentials, f, indent=2)
+                    print(f"📂 发现本地凭证(备用): {tunnel_id[:8]}...")
+                    return credentials
 
             return None
         except Exception as e:
@@ -1877,11 +2000,10 @@ class PublicClient:
 
     def start_cloudflare_tunnel(self, credentials):
         """启动 Cloudflare Tunnel（使用配置文件方式）"""
-        import subprocess
         import platform
+        import subprocess
 
         try:
-            system = platform.system()
             tunnel_id = credentials.get("TunnelID", "")
             if not tunnel_id:
                 print("⚠ 凭证中缺少 TunnelID")
@@ -1891,11 +2013,7 @@ class PublicClient:
                 print("⚠ 缺少子域名信息，无法启动 Tunnel")
                 return
 
-            if system == "Windows":
-                creds_dir = Path(os.environ.get("USERPROFILE", ".")) / ".cloudflared"
-            else:
-                creds_dir = Path.home() / ".cloudflared"
-
+            creds_dir = self.data_dir / "cloudflared"
             creds_dir.mkdir(parents=True, exist_ok=True)
             creds_file = creds_dir / f"{tunnel_id}.json"
 
@@ -1914,27 +2032,28 @@ ingress:
             with open(config_file, "w", encoding="utf-8") as f:
                 f.write(config_content)
 
-            if system == "Windows":
-                exe_name = "cloudflare.exe"
-            else:
-                exe_name = "cloudflared"
+            system = platform.system()
+            exe_name = "cloudflared.exe" if system == "Windows" else "cloudflared"
 
+            which_path = shutil.which(exe_name)
             exe_paths = [
-                Path(__file__).parent / exe_name,
+                self.data_dir / exe_name,
+                self.data_dir / "bin" / exe_name,
                 Path(sys._MEIPASS) / exe_name if hasattr(sys, "_MEIPASS") else None,
-                Path(__file__).parent / "cloudflared" / exe_name,
-                Path(exe_name),
+                Path(which_path) if which_path else None,
             ]
             exe_paths = [p for p in exe_paths if p is not None]
 
             exe_path = None
             for path in exe_paths:
-                if path.exists():
+                if path.exists() and path.is_file() and os.access(path, os.X_OK):
                     exe_path = path
                     break
 
             if not exe_path:
-                print(f"⚠ 未找到 {exe_name}，请确保它在程序目录中")
+                print(
+                    f"⚠ 未找到 {exe_name}，请确保它在系统 PATH 或 {self.data_dir / 'bin'} 中"
+                )
                 return
 
             cmd = [
@@ -2130,7 +2249,6 @@ ingress:
                     CLIENT_DISABLED = True
                     return False
 
-                print(f"💓 心跳发送成功")
                 logger.debug("心跳发送成功")
 
                 # 保存服务端推送的每日卡片到本地缓存
@@ -2180,8 +2298,10 @@ ingress:
                         if added > 0:
                             print(f"📦 从服务端新增 {added} 张卡片到本地缓存")
 
+                        role_image_added = ensure_virtual_role_card_images(cache.cards)
+
                         # 只有当有实际变化时才保存缓存
-                        if added > 0 or removed > 0:
+                        if added > 0 or removed > 0 or role_image_added:
                             cache._save_cache()
                     except Exception as e:
                         print(f"⚠ 保存卡片失败: {e}")
@@ -2229,22 +2349,9 @@ ingress:
                             print(f"🔗 公网地址已同步: {self.public_url}")
                             logger.info(f"公网地址已同步: {self.public_url}")
 
-                    # 同步 ai_child_id
-                    server_ai_child_id = client_info.get("ai_child_id")
-                    if server_ai_child_id:
-                        current_ai_child_id = USER_CONFIG.get("ai_child_id")
-                        if current_ai_child_id != server_ai_child_id:
-                            USER_CONFIG["ai_child_id"] = server_ai_child_id
-                            self.save_config()
-                            print(f"🤖 AI关联已同步: {server_ai_child_id[:8]}...")
-                            logger.info(f"AI关联已同步: {server_ai_child_id}")
-                            # 更新 CLIENT_CONFIG
-                            CLIENT_CONFIG["ai_service"]["child_id"] = server_ai_child_id
-
-                    # 保存配额信息到全局变量，供前端使用
-                    if "quota" in client_info:
-                        quota = client_info["quota"]
-                        # 这里可以添加保存配额信息的逻辑
+                server_commands = data.get("commands") or []
+                if isinstance(server_commands, list) and server_commands:
+                    self.handle_server_commands(server_commands)
 
                 return True
             else:
@@ -2264,16 +2371,216 @@ ingress:
             logger.error(f"心跳错误: {e}")
             return False
 
+    def report_server_command_status(
+        self,
+        command_id: str,
+        command_type: str,
+        state: str,
+        *,
+        status: dict | None = None,
+        message: str = "",
+    ) -> bool:
+        """向服务端回报通过心跳下发的命令执行状态。"""
+        if not self.client_id:
+            return False
+
+        payload = {
+            "client_id": self.client_id,
+            "command_id": command_id,
+            "command_type": command_type,
+            "state": state,
+            "message": message,
+            "status": status or {},
+        }
+
+        try:
+            response = self.signed_request(
+                "POST",
+                f"{self.server_url}/czrz/client/command-status",
+                json=payload,
+                timeout=30,
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"[ServerCommand] 状态回报失败 {command_id}: {e}")
+            return False
+
+    def handle_server_commands(self, commands: list[dict]):
+        """处理服务端经心跳下发的命令。"""
+        for command in commands:
+            if not isinstance(command, dict):
+                continue
+
+            command_id = (command.get("command_id") or "").strip()
+            command_type = (command.get("command_type") or "").strip()
+            if not command_id or not command_type:
+                continue
+
+            if command_type == "cancel_auto_review":
+                payload = command.get("payload") or {}
+                target_task_id = (payload.get("target_task_id") or "").strip()
+                result = request_ai_auto_review_cancel(target_task_id)
+                state = "completed" if result.get("success") else "failed"
+                status = {}
+                if result.get("task_id"):
+                    status = _snapshot_ai_review_task(result["task_id"])
+                self.report_server_command_status(
+                    command_id,
+                    command_type,
+                    state,
+                    status=status,
+                    message=result.get("message", ""),
+                )
+                with REMOTE_AI_COMMANDS_LOCK:
+                    REMOTE_AI_COMMANDS[command_id] = {
+                        "state": state,
+                        "completed_at": datetime.now().isoformat(),
+                        "command_type": command_type,
+                    }
+                continue
+
+            if command_type != "auto_review":
+                logger.info(f"[ServerCommand] 忽略未知命令类型: {command_type}")
+                self.report_server_command_status(
+                    command_id,
+                    command_type,
+                    "rejected",
+                    message=f"不支持的命令类型: {command_type}",
+                )
+                continue
+
+            with REMOTE_AI_COMMANDS_LOCK:
+                tracker = REMOTE_AI_COMMANDS.get(command_id)
+                if tracker and tracker.get("state") not in {"failed", "completed"}:
+                    continue
+                REMOTE_AI_COMMANDS[command_id] = {
+                    "state": "queued",
+                    "received_at": datetime.now().isoformat(),
+                    "command_type": command_type,
+                }
+
+            worker = threading.Thread(
+                target=self._run_server_auto_review_command,
+                args=(command_id, command_type),
+                daemon=True,
+            )
+            with REMOTE_AI_COMMANDS_LOCK:
+                REMOTE_AI_COMMANDS[command_id]["thread"] = worker
+            worker.start()
+
+    def _run_server_auto_review_command(self, command_id: str, command_type: str):
+        """执行服务端通过心跳下发的自动刷新命令。"""
+        start_result = start_ai_auto_review_task(reuse_running=True)
+        if not start_result.get("success"):
+            failure_message = start_result.get("message") or "客户端拒绝启动刷新任务"
+            failure_status = {
+                "task_id": "",
+                "completed": True,
+                "message": failure_message,
+                "portrait_refresh": "failed",
+                "portrait_llm_valid": False,
+                "portrait_message": failure_message,
+            }
+            self.report_server_command_status(
+                command_id,
+                command_type,
+                "failed",
+                status=failure_status,
+                message=failure_message,
+            )
+            with REMOTE_AI_COMMANDS_LOCK:
+                REMOTE_AI_COMMANDS[command_id] = {
+                    "state": "failed",
+                    "completed_at": datetime.now().isoformat(),
+                    "command_type": command_type,
+                }
+            return
+
+        local_task_id = start_result.get("task_id")
+        accepted_message = start_result.get("message") or "客户端已接收刷新命令"
+        snapshot = _snapshot_ai_review_task(local_task_id)
+        self.report_server_command_status(
+            command_id,
+            command_type,
+            "accepted",
+            status=snapshot,
+            message=accepted_message,
+        )
+
+        last_fingerprint = ""
+        final_state = "accepted"
+        while True:
+            snapshot = _snapshot_ai_review_task(local_task_id)
+            if not snapshot:
+                snapshot = {
+                    "task_id": local_task_id or "",
+                    "completed": True,
+                    "message": "本地任务不存在",
+                    "portrait_refresh": "failed",
+                    "portrait_llm_valid": False,
+                    "portrait_message": "本地任务不存在",
+                }
+                final_state = "failed"
+                self.report_server_command_status(
+                    command_id,
+                    command_type,
+                    final_state,
+                    status=snapshot,
+                    message=snapshot["message"],
+                )
+                break
+
+            fingerprint = json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
+            if snapshot.get("completed"):
+                if snapshot.get("status") == "cancelled" or snapshot.get("cancelled"):
+                    final_state = "cancelled"
+                else:
+                    final_state = (
+                        "completed"
+                        if snapshot.get("portrait_refresh") == "completed"
+                        and snapshot.get("portrait_llm_valid") is True
+                        else "failed"
+                    )
+                self.report_server_command_status(
+                    command_id,
+                    command_type,
+                    final_state,
+                    status=snapshot,
+                    message=snapshot.get("message", ""),
+                )
+                break
+
+            if fingerprint != last_fingerprint:
+                self.report_server_command_status(
+                    command_id,
+                    command_type,
+                    "running",
+                    status=snapshot,
+                    message=snapshot.get("message", ""),
+                )
+                last_fingerprint = fingerprint
+
+            time.sleep(3)
+
+        with REMOTE_AI_COMMANDS_LOCK:
+            REMOTE_AI_COMMANDS[command_id] = {
+                "state": final_state,
+                "completed_at": datetime.now().isoformat(),
+                "local_task_id": local_task_id,
+                "command_type": command_type,
+            }
+
     def start_heartbeat_loop(self):
-        """启动后台心跳循环（每 5 分钟发送一次心跳）"""
+        """启动后台心跳循环（短间隔轮询服务端命令）"""
 
         def heartbeat_worker():
-            print("💓 心跳循环已启动（每 5 分钟一次）")
+            print(f"💓 心跳循环已启动（每 {HEARTBEAT_INTERVAL_SECONDS} 秒一次）")
             last_restart_hour = -1  # 记录上次重启的小时
+            heartbeat_failures = 0
 
             while True:
                 try:
-                    time.sleep(300)  # 5 分钟
+                    time.sleep(HEARTBEAT_INTERVAL_SECONDS)
 
                     # 检查并重启 Tunnel（每天凌晨 3 点）
                     current_hour = datetime.now().hour
@@ -2329,8 +2636,11 @@ ingress:
                     if self.client_id:
                         success = self.send_heartbeat()
                         if success:
-                            print("✅ 心跳保持成功")
+                            if heartbeat_failures > 0:
+                                print("✅ 心跳恢复成功")
+                            heartbeat_failures = 0
                         else:
+                            heartbeat_failures += 1
                             print("⚠ 心跳失败，可能需要重新连接")
                     else:
                         print("⚠ client_id 为空，尝试重新注册...")
@@ -2346,11 +2656,6 @@ ingress:
         thread = threading.Thread(target=heartbeat_worker, daemon=True)
         thread.start()
         return thread
-
-    def start_ai_sync_loop(self):
-        """AI数据同步由服务端负责，客户端不再执行同步"""
-        print("🤖 AI数据同步由服务端负责执行")
-        return None
 
     def check_and_refresh_credentials(self):
         """
@@ -2432,8 +2737,6 @@ ingress:
         2. 遇到可用 → 立即使用
         3. 全部占用 → 报错退出
         """
-        import ctypes
-
         # 定义扫描端口范围（缩小范围提高性能）
         priority_ports = [
             3000,
@@ -2526,22 +2829,29 @@ ingress:
 
 
 # ==================== Flask 应用配置 ====================
+def sync_runtime_web_dir(folder_name: str) -> str:
+    """将页面资源同步到客户端缓存目录，避免直接从源码目录读取。"""
+    if hasattr(sys, "_MEIPASS"):
+        source_dir = Path(sys._MEIPASS) / folder_name
+    else:
+        source_dir = Path(__file__).resolve().parent / folder_name
+
+    target_dir = RUNTIME_WEB_DIR / folder_name
+    if source_dir.exists():
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
+        return str(target_dir)
+    return str(source_dir)
+
+
 def get_template_folder():
     """获取模板文件夹路径（兼容 PyInstaller）"""
-    if hasattr(sys, "_MEIPASS"):
-        # PyInstaller 打包环境
-        return os.path.join(sys._MEIPASS, "templates")
-    else:
-        # 普通运行环境
-        return os.path.join(os.path.dirname(__file__), "templates")
+    return sync_runtime_web_dir("templates")
 
 
 def get_static_folder():
     """获取静态文件夹路径（兼容 PyInstaller）"""
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, "static")
-    else:
-        return os.path.join(os.path.dirname(__file__), "static")
+    return sync_runtime_web_dir("static")
 
 
 # 创建 Flask 应用
@@ -2627,11 +2937,21 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
 
 @app.context_processor
 def inject_quota_info():
-    """自动注入配额信息到所有模板"""
+    """自动注入配额信息到所有模板。
+
+    模板渲染阶段只读缓存或使用极短超时，避免公网接口阻塞首屏。
+    """
+    now = time.time()
+    cached = TEMPLATE_QUOTA_CACHE.get("data")
+    if cached and now < TEMPLATE_QUOTA_CACHE.get("expires_at", 0):
+        return cached
+
     quota_used = 0
     quota_total = 50000
     quota_percent = 0
     token_usage = {"total_tokens": 0, "total_prompt": 0, "total_completion": 0}
+    image_usage = {"image_count": 0, "request_count": 0}
+    fetched_any = False
 
     if (
         public_client
@@ -2643,7 +2963,7 @@ def inject_quota_info():
                 "GET",
                 f"{public_client.server_url}/czrz/quota/status",
                 params={"client_id": public_client.client_id},
-                timeout=30,
+                timeout=TEMPLATE_REMOTE_TIMEOUT,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -2654,6 +2974,7 @@ def inject_quota_info():
                     quota_percent = (
                         int(quota_used / quota_total * 100) if quota_total > 0 else 0
                     )
+                    fetched_any = True
         except Exception as e:
             logger.info(f"[Quota] 获取Token使用失败: {e}")
 
@@ -2662,21 +2983,31 @@ def inject_quota_info():
                 "GET",
                 f"{public_client.server_url}/czrz/client/token-usage",
                 params={"client_id": public_client.client_id},
-                timeout=30,
+                timeout=TEMPLATE_REMOTE_TIMEOUT,
             )
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get("success"):
                     token_usage = data.get("token_usage", token_usage)
+                    image_usage = data.get("image_usage", image_usage)
+                    fetched_any = True
         except:
             pass
 
-    return dict(
+    result = dict(
         quota_used=quota_used,
         quota_total=quota_total,
         quota_percent=quota_percent,
         token_usage=token_usage,
+        image_usage=image_usage,
     )
+
+    if fetched_any or not cached:
+        TEMPLATE_QUOTA_CACHE["data"] = result
+        TEMPLATE_QUOTA_CACHE["expires_at"] = now + TEMPLATE_QUOTA_CACHE_TTL
+        return result
+
+    return cached
 
 
 # 全局客户端实例（在文件末尾创建，使用延迟连接）
@@ -2690,8 +3021,11 @@ CLIENT_DISABLED = False
 
 @app.route("/")
 def index():
-    """首页 - 快速渲染，异步加载数据"""
+    """首页 - 首屏快速渲染，远程数据交给前端异步补齐"""
     from datetime import datetime
+
+    perf_started = time.perf_counter()
+    perf_parts = {}
 
     date_param = request.args.get("date")
     if date_param:
@@ -2713,6 +3047,7 @@ def index():
 
     # 获取农历信息
     lunar_date = None
+    step_started = time.perf_counter()
     try:
         from calendar_utils import get_calendar_info
 
@@ -2720,11 +3055,13 @@ def index():
         lunar_date = calendar_info.get("lunar_display")
     except Exception as e:
         print(f"[WARN] 获取农历失败: {e}")
+    perf_parts["calendar_ms"] = round((time.perf_counter() - step_started) * 1000, 1)
 
     local_url = f"http://{public_client.get_local_ip()}:{public_client.client_port}"
 
     today_messages = []
     today_photos = []
+    step_started = time.perf_counter()
     try:
         from photo_manager import PhotoManager
         from pathlib import Path
@@ -2734,7 +3071,7 @@ def index():
             pm = PhotoManager(media_folders, public_client.data_dir)
             photo_list = pm.get_photos_by_date(display_date)
             for photo_info in photo_list:
-                from photo_tags import get_photo_tag
+                from database import get_photo_tag
 
                 tag_info = get_photo_tag(
                     public_client.client_id, photo_info["filename"]
@@ -2753,16 +3090,11 @@ def index():
                 )
     except Exception as e:
         print(f"[WARN] 扫描照片失败：{e}")
+    perf_parts["photo_scan_ms"] = round(
+        (time.perf_counter() - step_started) * 1000, 1
+    )
 
-    theme_css = ""
-    try:
-        from theme_generator import get_or_create_theme, generate_css
-
-        theme = get_or_create_theme(public_client.client_id, public_client.baby_name)
-        if theme:
-            theme_css = generate_css(theme)
-    except Exception as e:
-        print(f"[WARN] 加载主题失败: {e}")
+    perf_parts["theme_ms"] = 0.0
 
     default_photo = None
     default_is_video = False
@@ -2775,35 +3107,13 @@ def index():
             default_photo = today_photos[0].get("filename")
             default_is_video = today_photos[0].get("is_video", False)
 
+    # 首屏不再同步依赖公网接口，避免 tunnel 抖动或超时阻塞 HTML 返回。
     featured_photo = None
     featured_photo_hash = None
-    try:
-        featured_info = get_featured_photo_info(display_date, public_client.client_id)
-        if featured_info:
-            featured_photo = featured_info.get("filename") or ""
-            featured_photo_hash = featured_info.get("file_hash") or ""
-    except Exception as e:
-        print(f"[WARN] 获取精选照片失败: {e}")
-
-    # 获取天气数据
     weather = None
-    is_today = display_date == datetime.now().strftime("%Y-%m-%d")
-    if is_today:
-        # 今天：从服务端获取实时天气
-        try:
-            user_city = getattr(public_client, "user_city", "") or "上海"
-            weather_url = f"{public_client.server_url}/czrz/baby/log?city={user_city}&date={display_date}"
-            if public_client.client_id:
-                weather_url += f"&client_id={public_client.client_id}"
+    daily_story = None
 
-            weather_resp = public_client.signed_request("GET", weather_url, timeout=30)
-            if weather_resp.status_code == 200:
-                weather_data = weather_resp.json()
-                weather = weather_data.get("weather") or {}
-        except Exception as e:
-            print(f"[WARN] 获取天气失败: {e}")
-
-    return render_template(
+    html = render_template(
         "index.html",
         baby_name=public_client.baby_name,
         client_id=public_client.client_id,
@@ -2814,12 +3124,11 @@ def index():
         weekday=weekday,
         lunar_date=lunar_date,
         local_url=local_url,
-        theme_css=theme_css,
         client_version=getattr(public_client, "client_version", "2.0.0"),
         today_messages=today_messages,
         today_photos=today_photos,
         avatar_url=getattr(
-            public_client, "avatar_url", "/static/images/default-avatar.png"
+            public_client, "avatar_url", DEFAULT_AVATAR_URL
         ),
         user_city=getattr(public_client, "user_city", ""),
         local_mode=LOCAL_MODE,
@@ -2828,23 +3137,246 @@ def index():
         default_is_video=default_is_video,
         featured_photo=featured_photo,
         featured_photo_hash=featured_photo_hash,
+        daily_story=daily_story,
         index_after_date=getattr(public_client, "index_after_date", ""),
         weather=weather,
+        comic_style_presets=get_comic_style_presets(),
     )
+
+    perf_parts["total_ms"] = round((time.perf_counter() - perf_started) * 1000, 1)
+    logger.info(
+        "[PERF] 首页首屏完成: date=%s source=%s parts=%s",
+        display_date,
+        "local" if is_local_request() else "public",
+        perf_parts,
+    )
+    return html
+
+
+CARD_CATEGORY_META = {
+    "all": {
+        "label": "全部卡片",
+        "description": "把所有成长卡片混合成一条可以翻阅的画廊。",
+    },
+    "album": {
+        "label": "时光相册",
+        "description": "优先挑出更适合分享的照片，装订成一条有时间感的长卷预告。",
+    },
+    "comic": {
+        "label": "漫画卡片",
+        "description": "集中查看从照片墙手动生成的漫画图卡，以及虚拟角色卡。",
+    },
+    "moments": {
+        "label": "精彩瞬间",
+        "description": "把相册型、里程碑型和日常精选卡片集中浏览。",
+    },
+    "comparison": {
+        "label": "成长对比",
+        "description": "集中看时间变化、表情变化和同题材对照。",
+    },
+    "insight": {
+        "label": "画像洞察",
+        "description": "集中查看画像、情绪、陪伴与统计类卡片。",
+    },
+    "tags": {
+        "label": "标签卡片",
+        "description": "按手动标签和照片主题聚合浏览，不再单独拆到别的入口。",
+    },
+}
+
+LEGACY_STORY_CARD_TYPES = {
+    "story_character_card",
+    "story_episode_card",
+    "story_quote_card",
+    "story_skill_card",
+    "story_weather_card",
+    "story_update_card",
+    "care_guide_card",
+}
+
+
+def get_card_category_key(card: dict) -> str:
+    card_type = (card or {}).get("type") or (card or {}).get("card_type") or ""
+    if card_type == "time_album_card":
+        return "album"
+    if card_type in {"generated_comic_card", "virtual_role_card"}:
+        return "comic"
+    if card_type in {"tag_collage_card", "user_annotation_card", "collage_card"}:
+        return "tags"
+    if card_type in {
+        "comparison_card",
+        "expression_mimic_card",
+        "same_day_different_year_card",
+        "four_seasons_wardrobe_card",
+    }:
+        return "comparison"
+    if card_type in {
+        "data_portrait_card",
+        "emotion_weather_card",
+        "companion_stats_card",
+    }:
+        return "insight"
+    return "moments"
+
+
+def filter_visible_cards(cards: list) -> list:
+    visible = []
+    for card in cards or []:
+        card_type = (card or {}).get("type") or (card or {}).get("card_type") or ""
+        if card_type in LEGACY_STORY_CARD_TYPES:
+            continue
+        visible.append(card)
+    return visible
+
+
+def normalize_card_category(category: str) -> str:
+    text = (category or "").strip().lower()
+    return text if text in CARD_CATEGORY_META else "all"
+
+
+def filter_cards_by_category(cards: list, category: str) -> list:
+    category = normalize_card_category(category)
+    if category == "all":
+        return list(cards or [])
+    return [card for card in (cards or []) if get_card_category_key(card) == category]
+
+
+def summarize_card_categories(cards: list) -> list:
+    all_cards = list(cards or [])
+    summary = []
+    for key, meta in CARD_CATEGORY_META.items():
+        count = len(all_cards) if key == "all" else len(filter_cards_by_category(all_cards, key))
+        summary.append(
+            {
+                "key": key,
+                "label": meta["label"],
+                "description": meta["description"],
+                "count": count,
+            }
+        )
+    return summary
+
+
+def _extract_media_date_hint(filename: str) -> str:
+    text = Path(filename or "").name
+    if re.match(r"^\d{4}-\d{2}-\d{2}_", text):
+        return text.split("_", 1)[0]
+    return ""
+
+
+def _build_synthetic_tag_cards(client_id: str, limit_tags: int = 12) -> list:
+    try:
+        from database import get_all_photo_tags
+
+        tag_map = get_all_photo_tags(client_id) or {}
+    except Exception as e:
+        logger.info(f"[Card] 读取标签卡片素材失败: {e}")
+        return []
+
+    grouped = {}
+    for filename, info in tag_map.items():
+        tag_text = (info.get("tag") or "").strip()
+        if not filename or not tag_text:
+            continue
+        grouped.setdefault(tag_text, []).append(
+            {
+                "path": filename,
+                "date": _extract_media_date_hint(filename),
+                "note": (info.get("note") or "").strip(),
+            }
+        )
+
+    ranked_groups = sorted(
+        grouped.items(),
+        key=lambda item: (
+            -len(item[1]),
+            max((photo.get("date") or "") for photo in item[1]),
+            item[0],
+        ),
+        reverse=False,
+    )
+    ranked_groups = sorted(
+        ranked_groups,
+        key=lambda item: (-len(item[1]), max((photo.get("date") or "") for photo in item[1]), item[0]),
+    )
+
+    cards = []
+    for index, (tag_text, photos) in enumerate(ranked_groups[:limit_tags], start=1):
+        ordered = sorted(
+            photos,
+            key=lambda photo: (photo.get("date") or "", photo.get("path") or ""),
+        )
+        cover = ordered[-4:] if len(ordered) > 4 else ordered
+        note_texts = _story_dedup_texts(
+            [item.get("note", "") for item in ordered if item.get("note")],
+            limit=2,
+            max_len=18,
+        )
+        cards.append(
+            {
+                "id": f"synthetic_tag_{index}_{hashlib.md5(tag_text.encode('utf-8')).hexdigest()[:8]}",
+                "type": "tag_collage_card",
+                "card_subtype": "manual_tag_group",
+                "layout": "tag_collage",
+                "tag": tag_text,
+                "title": f"🏷️ {tag_text}时刻",
+                "subtitle": f"把和“{tag_text}”有关的照片集中翻阅",
+                "content": note_texts[0]
+                if note_texts
+                else f"当前共整理出 {len(ordered)} 张带“{tag_text}”标注的照片",
+                "footer": "标签照片已并入成长卡片",
+                "photos": cover,
+                "photo_paths": [item.get("path", "") for item in cover if item.get("path")],
+                "photo": cover[0].get("path", "") if cover else "",
+            }
+        )
+    return cards
+
+
+def augment_cards_with_synthetic_categories(cards: list, client_id: str) -> list:
+    all_cards = list(cards or [])
+    if any(get_card_category_key(card) == "tags" for card in all_cards):
+        return all_cards
+    return all_cards + _build_synthetic_tag_cards(client_id)
+
+
+def augment_cards_with_local_manual_cards(cards: list) -> list:
+    combined = list(cards or [])
+    seen_ids = {
+        str(card.get("id") or card.get("card_id") or "").strip()
+        for card in combined
+        if isinstance(card, dict)
+    }
+    for card in load_local_manual_cards():
+        card_id = str(card.get("id") or card.get("card_id") or "").strip()
+        if not card_id or card_id in seen_ids:
+            continue
+        seen_ids.add(card_id)
+        combined.append(card)
+    return combined
 
 
 @app.route("/cards")
 def cards_page():
     """成长卡片页面"""
     baby_name = USER_CONFIG.get("baby_name", "宝宝")
+    initial_category = normalize_card_category(request.args.get("category") or "all")
+    category_counts = summarize_card_categories([])
     try:
         from card_cache import get_card_cache
 
         cache = get_card_cache()
         sync_card_cache_silently()
-        cards = [
+        all_cards = [
             convert_photo_path_for_client(card) for card in cache.get_all_cards()
         ]
+        all_cards = filter_visible_cards(all_cards)
+        all_cards = augment_cards_with_synthetic_categories(
+            all_cards, public_client.client_id
+        )
+        all_cards = augment_cards_with_local_manual_cards(all_cards)
+        category_counts = summarize_card_categories(all_cards)
+        cards = filter_cards_by_category(all_cards, initial_category)
         cards = select_rotating_cards(cards, per_day=50)
 
         for card in cards:
@@ -2855,10 +3387,17 @@ def cards_page():
         cards = []
 
     avatar_url = getattr(
-        public_client, "avatar_url", "/static/images/default-avatar.png"
+        public_client, "avatar_url", DEFAULT_AVATAR_URL
     )
 
-    return render_template("cards.html", baby_name=baby_name, cards=cards, avatar_url=avatar_url)
+    return render_template(
+        "cards.html",
+        baby_name=baby_name,
+        cards=cards,
+        avatar_url=avatar_url,
+        initial_category=initial_category,
+        category_counts=category_counts,
+    )
 
 
 @app.route("/setup")
@@ -2904,7 +3443,7 @@ def api_family_access():
     """校验家庭码并写入会话"""
     try:
         data = request.get_json(silent=True) or {}
-        family_code = (data.get("family_code") or data.get("password") or "").strip()
+        family_code = (data.get("family_code") or "").strip()
         next_url = data.get("next", "/")
         if not isinstance(next_url, str) or not next_url.startswith("/"):
             next_url = "/"
@@ -2935,7 +3474,7 @@ def api_setup():
         log_style = data.get("log_style", "简练").strip()
         custom_style = data.get("custom_style", "").strip()
         media_folders = data.get("media_folders", [])
-        admin_password = data.get("admin_password", "").strip()
+        family_code = data.get("family_code", "").strip()
 
         if not baby_name:
             return jsonify({"success": False, "message": "请输入宝宝名字"})
@@ -2943,8 +3482,8 @@ def api_setup():
         if not media_folders or len(media_folders) == 0:
             return jsonify({"success": False, "message": "请至少选择一个文件夹"})
 
-        if not public_client.admin_password and not admin_password:
-            return jsonify({"success": False, "message": "初次设置需要设置管理密码（即家庭码）"})
+        if not public_client.admin_password and not family_code:
+            return jsonify({"success": False, "message": "初次设置需要设置家庭码"})
 
         from pathlib import Path
 
@@ -2976,8 +3515,8 @@ def api_setup():
         if index_after_date:
             public_client.index_after_date = index_after_date
 
-        if admin_password:
-            public_client.admin_password = admin_password
+        if family_code:
+            public_client.admin_password = family_code
 
         # 保存压缩设置（如果提供了）
         compression_settings = data.get("compression_settings")
@@ -3073,36 +3612,6 @@ def get_photo_index_progress():
     """获取首次索引建立进度"""
     global scan_progress
     return jsonify(scan_progress)
-
-
-@app.route("/api/settings/verify", methods=["POST"])
-def verify_settings_password():
-    """兼容旧接口：验证家庭码并写入会话"""
-    try:
-        source_ip = get_request_source_ip()
-        if _is_private_or_loopback_ip(source_ip) or is_family_code_verified():
-            return jsonify({"success": True, "message": "验证通过"})
-
-        data = request.get_json(silent=True) or {}
-        family_code = data.get("password", "")
-
-        if verify_family_code(family_code):
-            mark_family_code_verified()
-            return jsonify({"success": True, "message": "验证通过"})
-
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "家庭码错误",
-                    "require_family_code": True,
-                }
-            ),
-            401,
-        )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/settings/current", methods=["GET"])
@@ -3244,7 +3753,7 @@ def profile_page():
         age_text=age_text,
         client_id=public_client.client_id,
         avatar_url=getattr(
-            public_client, "avatar_url", "/static/images/default-avatar.png"
+            public_client, "avatar_url", DEFAULT_AVATAR_URL
         ),
     )
 
@@ -3259,12 +3768,6 @@ def settings():
 def usage():
     """使用明细页面"""
     return render_template("usage.html")
-
-
-@app.route("/quota-exceeded")
-def quota_exceeded():
-    """配额用完页面"""
-    return render_template("quota-exceeded.html")
 
 
 @app.route("/health")
@@ -3286,36 +3789,6 @@ def health():
     )
 
 
-@app.route("/api/quota/status")
-def quota_status():
-    """配额状态 - 从服务端获取"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/quota/status",
-            params={"client_id": public_client.client_id},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success"):
-                quota = data.get("quota", {})
-                return jsonify(
-                    {
-                        "success": True,
-                        "token_used": quota.get("used", 0),
-                        "token_limit": quota.get("limit", 50000),
-                        "token_remaining": quota.get("remaining", 50000),
-                        "is_paid": data.get("is_paid", False),
-                        "tier": "paid" if data.get("is_paid") else "free",
-                    }
-                )
-
-        return jsonify({"success": False, "message": "获取配额失败"})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
 @app.route("/api/usage/list")
 def usage_list():
     """使用明细列表 - 从服务端获取"""
@@ -3334,38 +3807,15 @@ def usage_list():
                     {
                         "success": True,
                         "today_tokens": data.get("today_tokens", 0),
+                        "today_image_count": data.get("today_image_count", 0),
                         "total_tokens": data.get("total_tokens", 0),
+                        "total_image_count": data.get("total_image_count", 0),
                         "records": data.get("records", []),
                     }
                 )
         return jsonify({"success": False, "message": "获取使用明细失败"})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
-
-
-def get_token_usage():
-    """从服务端获取token用量"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/client/token-usage",
-            params={"client_id": public_client.client_id},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success"):
-                return data.get(
-                    "token_usage",
-                    {
-                        "total_prompt": 0,
-                        "total_completion": 0,
-                        "total_tokens": 0,
-                    },
-                )
-    except Exception as e:
-        print(f"[WARN] 获取token用量失败: {e}")
-    return {"total_prompt": 0, "total_completion": 0, "total_tokens": 0}
 
 
 @app.route("/photo/<filename>")
@@ -3438,11 +3888,53 @@ def get_photo_by_hash(file_hash):
 # 缩略图缓存目录
 THUMB_DIR = USER_DATA_DIR / "thumbnails"
 THUMB_DIR.mkdir(exist_ok=True)
+PHOTO_THUMB_SIZE = (400, 400)
+ALBUM_IMAGE_SIZE = (1400, 1400)
 
 
-def get_or_create_thumbnail(image_path: Path, size=(400, 400)) -> Path:
+def ensure_default_video_thumb() -> Path:
+    """生成客户端默认视频缩略图，避免读取源码静态资源。"""
+    target = GENERATED_ASSETS_DIR / "default-video-thumb.jpg"
+    if target.exists():
+        return target
+
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (400, 300), color="#2f3d4a")
+    draw = ImageDraw.Draw(img)
+    draw.rounded_rectangle((135, 85, 265, 215), radius=28, fill="#f6f1e8")
+    draw.polygon([(178, 120), (178, 180), (235, 150)], fill="#2f3d4a")
+    draw.text((146, 238), "VIDEO", fill="#f6f1e8")
+    img.save(target, quality=90)
+    return target
+
+
+def ensure_default_avatar() -> Path:
+    """生成客户端默认头像，避免读取源码静态资源。"""
+    target = GENERATED_ASSETS_DIR / "default-avatar.png"
+    if target.exists():
+        return target
+
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGBA", (320, 320), color=(248, 240, 225, 255))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse((26, 26, 294, 294), fill=(164, 195, 178, 255))
+    draw.ellipse((110, 72, 210, 172), fill=(248, 240, 225, 255))
+    draw.rounded_rectangle((86, 165, 234, 265), radius=52, fill=(248, 240, 225, 255))
+    img.save(target)
+    return target
+
+
+def get_or_create_thumbnail(
+    image_path: Path, size=(400, 400), cache_tag: str = "thumb"
+) -> Path:
     """生成或获取照片缩略图（本地处理，自动修正EXIF方向）"""
-    thumb_filename = f"{image_path.stem}_thumb{image_path.suffix}"
+    width, height = int(size[0]), int(size[1])
+    safe_tag = re.sub(r"[^a-z0-9_-]+", "_", str(cache_tag or "thumb").lower())
+    thumb_filename = (
+        f"{image_path.stem}_{safe_tag}_{width}x{height}{image_path.suffix}"
+    )
     thumb_path = THUMB_DIR / thumb_filename
 
     # 如果缩略图已存在且比原图新，直接返回
@@ -3467,7 +3959,7 @@ def get_or_create_thumbnail(image_path: Path, size=(400, 400)) -> Path:
                 img = img.convert("RGB")
 
             # 等比例缩放
-            img.thumbnail(size, Image.Resampling.LANCZOS)
+            img.thumbnail((width, height), Image.Resampling.LANCZOS)
             img.save(thumb_path, quality=85, optimize=True)
 
         return thumb_path
@@ -3517,7 +4009,7 @@ def get_or_create_video_thumbnail(video_path: Path) -> Path:
                 str(thumb_path),
             ]
 
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            subprocess.run(cmd, capture_output=True, timeout=300)
 
             if thumb_path.exists():
                 return thumb_path
@@ -3574,18 +4066,29 @@ def get_or_create_video_thumbnail(video_path: Path) -> Path:
     except Exception as e1:
         print(f"[INFO] OpenCV 生成缩略图失败: {e1}")
 
-    # 返回默认视频缩略图
-    default_thumb = Path(__file__).parent / "static" / "images" / "video-thumb.jpg"
-    if default_thumb.exists():
-        return default_thumb
+    return ensure_default_video_thumb()
 
-    from PIL import Image, ImageDraw
 
-    img = Image.new("RGB", (400, 300), color="#333333")
-    draw = ImageDraw.Draw(img)
-    draw.text((150, 140), "视频", fill="white")
-    img.save(thumb_path, quality=85)
-    return thumb_path
+def _resolve_photo_path_by_filename(filename: str) -> Path | None:
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        return None
+
+    from photo_manager import PhotoManager
+
+    pm = PhotoManager(media_folders, public_client.data_dir)
+    entry = pm.get_photo_by_filename(filename)
+    if entry:
+        photo_path = Path(entry["path"])
+        if photo_path.exists():
+            return photo_path
+
+    for folder in media_folders:
+        folder_path = Path(folder)
+        for file_path in folder_path.rglob(filename):
+            if file_path.is_file():
+                return file_path
+    return None
 
 
 @app.route("/photo/thumb/<filename>")
@@ -3595,34 +4098,17 @@ def get_photo_thumb(filename):
 
     photo_path = None
     try:
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
+        if not getattr(public_client, "media_folders", []):
             return jsonify({"success": False, "message": "未配置媒体文件夹"}), 404
-
-        from photo_manager import PhotoManager
-
-        pm = PhotoManager(media_folders, public_client.data_dir)
-        entry = pm.get_photo_by_filename(filename)
-
-        if entry:
-            photo_path = Path(entry["path"])
-            if not photo_path.exists():
-                photo_path = None
-
-        if not photo_path:
-            for folder in media_folders:
-                folder_path = Path(folder)
-                for file_path in folder_path.rglob(filename):
-                    if file_path.is_file():
-                        photo_path = file_path
-                        break
-                if photo_path:
-                    break
-
+        photo_path = _resolve_photo_path_by_filename(filename)
         if not photo_path:
             return jsonify({"success": False, "message": "照片不存在"}), 404
 
-        thumb_path = get_or_create_thumbnail(photo_path, size=(400, 400))
+        thumb_path = get_or_create_thumbnail(
+            photo_path,
+            size=PHOTO_THUMB_SIZE,
+            cache_tag="thumb",
+        )
         return send_file(thumb_path)
 
     except Exception as e:
@@ -3630,6 +4116,37 @@ def get_photo_thumb(filename):
         if photo_path and photo_path.exists():
             try:
                 print(f"[INFO] 缩略图失败，回退原图: {photo_path}")
+                return send_file(photo_path)
+            except Exception as fallback_error:
+                print(f"[ERROR] 回退原图也失败: {fallback_error}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/photo/album/<filename>")
+def get_photo_album_image(filename):
+    """获取时光相册专用中尺寸图片。"""
+    from flask import send_file
+
+    photo_path = None
+    try:
+        if not getattr(public_client, "media_folders", []):
+            return jsonify({"success": False, "message": "未配置媒体文件夹"}), 404
+        photo_path = _resolve_photo_path_by_filename(filename)
+        if not photo_path:
+            return jsonify({"success": False, "message": "照片不存在"}), 404
+
+        album_path = get_or_create_thumbnail(
+            photo_path,
+            size=ALBUM_IMAGE_SIZE,
+            cache_tag="album",
+        )
+        return send_file(album_path)
+
+    except Exception as e:
+        print(f"[ERROR] 获取时光相册图片失败: {e}")
+        if photo_path and photo_path.exists():
+            try:
+                print(f"[INFO] 相册图失败，回退原图: {photo_path}")
                 return send_file(photo_path)
             except Exception as fallback_error:
                 print(f"[ERROR] 回退原图也失败: {fallback_error}")
@@ -3661,20 +4178,9 @@ def get_video_thumb(filename):
         thumb_path = get_or_create_video_thumbnail(video_path)
         return send_file(thumb_path)
 
-        # 返回默认缩略图
-        default_thumb = Path(__file__).parent / "static" / "images" / "video-thumb.jpg"
-        if default_thumb.exists():
-            return send_file(default_thumb)
-
-        return jsonify({"success": False, "message": "视频不存在"}), 404
-
     except Exception as e:
         print(f"[ERROR] 获取视频缩略图失败: {e}")
-        # 返回默认缩略图
-        default_thumb = Path(__file__).parent / "static" / "images" / "video-thumb.jpg"
-        if default_thumb.exists():
-            return send_file(default_thumb)
-        return jsonify({"success": False, "message": str(e)}), 500
+        return send_file(ensure_default_video_thumb())
 
 
 @app.route("/video/<filename>")
@@ -3834,7 +4340,7 @@ def get_photo_detail(filename):
 @app.route("/upload", methods=["POST"])
 @require_local_or_password
 def upload_photos():
-    """上传照片到本地文件夹"""
+    """上传文件到本地文件夹"""
     try:
         # 检查是否配置了媒体文件夹
         media_folders = getattr(public_client, "media_folders", [])
@@ -3860,27 +4366,45 @@ def upload_photos():
         skipped_files = []
         for file in files:
             if file.filename:
-                # 保存到临时文件（使用安全文件名）
                 from pathlib import Path
-                import tempfile
-
-                temp_dir = Path(tempfile.gettempdir())
                 safe_filename = secure_filename(file.filename)
+                ext = Path(safe_filename).suffix.lower()
+                is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
 
-                # 检查文件是否已存在
-                target_path = Path(media_folders[0]) / "new_upload" / safe_filename
+                target_path = pm.get_upload_target_path(safe_filename)
                 if target_path.exists():
                     print(f"⏭️ 跳过已存在文件: {safe_filename}")
                     skipped_files.append(safe_filename)
                     continue
 
-                temp_path = temp_dir / safe_filename
-                file.save(temp_path)
+                partial_path = target_path.with_name(f".{safe_filename}.uploading")
+                partial_path.unlink(missing_ok=True)
 
-                # 使用PhotoManager保存并分类，传入指定日期
-                result = pm.save_uploaded_photo_with_date(
-                    temp_path, safe_filename, upload_date
-                )
+                try:
+                    # 直接写入最终目录，减少公网视频上传成功后的额外等待时间。
+                    file.save(partial_path)
+
+                    if target_path.exists():
+                        print(f"⏭️ 并发上传已存在文件: {safe_filename}")
+                        skipped_files.append(safe_filename)
+                        partial_path.unlink(missing_ok=True)
+                        continue
+
+                    partial_path.replace(target_path)
+
+                    result = pm.register_saved_upload_with_date(
+                        target_path,
+                        safe_filename,
+                        upload_date,
+                        fast_hash=is_video,
+                    )
+                except PermissionError:
+                    raise
+                except Exception:
+                    partial_path.unlink(missing_ok=True)
+                    if target_path.exists():
+                        target_path.unlink(missing_ok=True)
+                    raise
 
                 # 添加标注（如果有）
                 if caption:
@@ -3888,110 +4412,12 @@ def upload_photos():
 
                 saved_files.append(result)
 
-                # 清理临时文件
-                temp_path.unlink(missing_ok=True)
-
-        # ========== 勋章检测逻辑（已禁用） ==========
-        # 勋章功能已暂停，代码保留备用
-        badges_earned = []
-        # try:
-        #     from badge_detector import (
-        #         check_count_badges,
-        #         check_achievement_badges,
-        #         check_special_date_badges,
-        #         save_badge,
-        #     )
-        #     from select_best_photo import analyze_all_photos
-        #     from database import user_session
-        #     from datetime import datetime
-        #
-        #     # 获取上传日期
-        #     today = upload_date if upload_date else datetime.now().strftime("%Y-%m-%d")
-        #
-        #     # 检查照片数量勋章
-        #     with user_session(public_client.client_id) as session:
-        #         count_badges = check_count_badges(
-        #             public_client.client_id, today, len(saved_files), session
-        #         )
-        #         for badge_type in count_badges:
-        #             save_badge(public_client.client_id, badge_type, today, today)
-        #             badges_earned.append(badge_type)
-        #
-        #     # AI分析照片内容（异步执行，不阻塞上传）
-        #     if saved_files:
-        #         photo_paths = [f["path"] for f in saved_files if f.get("path")]
-        #         if photo_paths:
-        #             # 在后台线程中执行
-        #             def analyze_and_check_badges():
-        #                 try:
-        #                     from badge_config import BADGE_CONFIG
-        #
-        #                     # AI分析
-        #                     photo_analysis = analyze_all_photos(
-        #                         photo_paths,
-        #                         max_photos=20,
-        #                         client_id=public_client.client_id,
-        #                         date=today
-        #                     )
-        #
-        #                     # 检查成就勋章
-        #                     with user_session(public_client.client_id) as session:
-        #                         achievement_badges = check_achievement_badges(
-        #                             public_client.client_id, today, photo_analysis, session
-        #                         )
-        #                         for badge_info in achievement_badges:
-        #                             badge_type = badge_info["badge_type"]
-        #                             trigger_photo = badge_info.get("trigger_photo")
-        #                             save_badge(
-        #                                 public_client.client_id,
-        #                                 badge_type,
-        #                                 today,
-        #                                 today,
-        #                                 trigger_photo
-        #                             )
-        #
-        #                     # 检查特殊日期勋章
-        #                     with user_session(public_client.client_id) as session:
-        #                         special_badges = check_special_date_badges(
-        #                             public_client.client_id, today, session
-        #                         )
-        #                         for badge_type in special_badges:
-        #                             save_badge(public_client.client_id, badge_type, today, today)
-        #
-        #                 except Exception as e:
-        #                     print(f"[Badge] 勋章检测异常: {e}")
-        #
-        #             # 启动后台线程
-        #             import threading
-        #             badge_thread = threading.Thread(target=analyze_and_check_badges, daemon=True)
-        #             badge_thread.start()
-        #
-        # except Exception as e:
-        #     print(f"[Badge] 勋章检测失败: {e}")
-
-        # 返回结果，包含新获得的勋章
-        badge_info = []
-        for badge_type in badges_earned:
-            from badge_config import get_badge_config
-
-            config = get_badge_config(badge_type)
-            if config:
-                badge_info.append(
-                    {
-                        "type": badge_type,
-                        "name": config["name"],
-                        "icon": config["icon"],
-                        "description": config["description"],
-                    }
-                )
-
         return jsonify(
             {
                 "success": True,
                 "message": f"成功上传 {len(saved_files)} 个文件",
                 "count": len(saved_files),
                 "files": saved_files,
-                "badges": badge_info,  # 新获得的勋章
             }
         )
 
@@ -4000,7 +4426,7 @@ def upload_photos():
         return jsonify(
             {
                 "success": False,
-                "message": "保存照片失败：目标文件夹没有写入权限，请检查文件夹权限或更换保存位置",
+                "message": "保存文件失败：目标文件夹没有写入权限，请检查文件夹权限或更换保存位置",
             }
         )
     except Exception as e:
@@ -4009,92 +4435,6 @@ def upload_photos():
 
         traceback.print_exc()
         return jsonify({"success": False, "message": f"上传失败: {str(e)}"})
-
-
-@app.route("/api/settings/photo_folder", methods=["GET", "POST"])
-@require_local_or_password
-def photo_folder_settings():
-    """获取/修改照片文件夹设置"""
-    if request.method == "GET":
-        # 获取当前设置
-        return jsonify(
-            {
-                "success": True,
-                "photo_folder": getattr(public_client, "photo_folder", None),
-            }
-        )
-
-    elif request.method == "POST":
-        # POST修改设置需要权限检查（使用统一的 session 检查）
-        check_result = check_local_or_password()
-        if check_result:
-            return check_result
-
-        # 修改设置
-        data = request.get_json()
-        new_folder = data.get("photo_folder", "").strip()
-
-        if not new_folder:
-            return jsonify({"success": False, "message": "文件夹路径不能为空"})
-
-        # 验证文件夹
-        from pathlib import Path
-
-        folder_path = Path(new_folder)
-
-        try:
-            if not folder_path.exists():
-                folder_path.mkdir(parents=True, exist_ok=True)
-
-            # 更新配置
-            public_client.photo_folder = str(folder_path)
-            return jsonify(
-                {
-                    "success": True,
-                    "message": "照片文件夹已更新",
-                    "photo_folder": str(folder_path),
-                }
-            )
-
-        except Exception as e:
-            return jsonify({"success": False, "message": f"无法设置文件夹: {str(e)}"})
-
-
-@app.route("/api/settings/basic", methods=["POST"])
-@require_local_or_password
-def save_basic_settings():
-    """保存基本设置"""
-    try:
-        data = request.get_json()
-        baby_name = data.get("baby_name", "").strip()
-        baby_gender = data.get("baby_gender", "").strip()
-        baby_birthday = data.get("baby_birthday", "").strip()
-        user_city = data.get("user_city", "").strip()
-
-        if not baby_name:
-            return jsonify({"success": False, "message": "宝宝名字不能为空"})
-
-        public_client.baby_name = baby_name
-        public_client.baby_gender = baby_gender if baby_gender else None
-        public_client.baby_birthday = baby_birthday if baby_birthday else None
-        if user_city:
-            public_client.user_city = user_city
-
-        public_client.save_config()
-
-        return jsonify(
-            {
-                "success": True,
-                "message": "设置已保存",
-                "baby_name": baby_name,
-                "baby_gender": baby_gender,
-                "baby_birthday": baby_birthday,
-                "user_city": user_city,
-            }
-        )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"保存失败: {str(e)}"})
 
 
 @app.route("/api/settings/log-style", methods=["POST"])
@@ -4128,7 +4468,6 @@ def save_log_style():
 def upload_avatar():
     """上传头像"""
     try:
-        from werkzeug.utils import secure_filename
         from PIL import Image
 
         if "avatar" not in request.files:
@@ -4210,16 +4549,20 @@ def get_avatar(filename):
         if avatar_path.exists():
             return send_file(avatar_path, mimetype="image/png")
         else:
-            # 返回默认头像
-            default_avatar = (
-                Path(__file__).parent / "static" / "images" / "default-avatar.png"
-            )
-            if default_avatar.exists():
-                return send_file(default_avatar)
-            return jsonify({"success": False, "message": "头像不存在"}), 404
+            return send_file(ensure_default_avatar(), mimetype="image/png")
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route(DEFAULT_AVATAR_URL)
+def get_default_avatar():
+    return send_file(ensure_default_avatar(), mimetype="image/png")
+
+
+@app.route(DEFAULT_VIDEO_THUMB_URL)
+def get_default_video_thumb():
+    return send_file(ensure_default_video_thumb(), mimetype="image/jpeg")
 
 
 @app.route("/api/photos/by_date/<date>")
@@ -4339,13 +4682,11 @@ def get_calendar_data(month):
     try:
         year, month_num = map(int, month.split("-"))
         import calendar
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         # 获取该月第一天和最后一天
         first_day = 1
         last_day = calendar.monthrange(year, month_num)[1]
-        month_start = f"{year}-{month_num:02d}-01"
-        month_end = f"{year}-{month_num:02d}-{last_day:02d}"
 
         # 获取照片日期 - 优先使用按月缓存
         media_folders = getattr(public_client, "media_folders", [])
@@ -4418,7 +4759,7 @@ def get_calendar_data(month):
 def get_date_details(date):
     """获取指定日期的详细信息（AJAX调用）- 优先从已保存数据读取"""
     try:
-        from datetime import datetime, timedelta
+        from datetime import datetime
 
         is_today = date == datetime.now().strftime("%Y-%m-%d")
 
@@ -4431,7 +4772,7 @@ def get_date_details(date):
         photos = []
         if media_folders:
             from photo_manager import PhotoManager
-            from photo_tags import get_photo_tag
+            from database import get_photo_tag
 
             pm = PhotoManager(media_folders, public_client.data_dir)
             photo_list = pm.get_photos_by_date(date)
@@ -4447,7 +4788,11 @@ def get_date_details(date):
 
         # 获取精选照片信息（从服务端获取）
         try:
-            featured_info = get_featured_photo_info(date, public_client.client_id)
+            featured_info = get_featured_photo_info(
+                date,
+                public_client.client_id,
+                timeout=DATE_API_REMOTE_TIMEOUT,
+            )
             print(
                 f"[DEBUG] 获取精选照片: date={date}, client_id={public_client.client_id}, info={featured_info}"
             )
@@ -4476,7 +4821,11 @@ def get_date_details(date):
             if public_client.client_id:
                 log_url += f"&client_id={public_client.client_id}"
 
-            log_resp = public_client.signed_request("GET", log_url, timeout=30)
+            log_resp = public_client.signed_request(
+                "GET",
+                log_url,
+                timeout=DATE_API_REMOTE_TIMEOUT,
+            )
             if log_resp.status_code == 200:
                 resp_data = log_resp.json()
                 if resp_data.get("success"):
@@ -4507,7 +4856,9 @@ def get_date_details(date):
             if public_client.client_id:
                 messages_url = f"{public_client.server_url}/czrz/messages/{public_client.client_id}/{date}"
                 messages_resp = public_client.signed_request(
-                    "GET", messages_url, timeout=30
+                    "GET",
+                    messages_url,
+                    timeout=DATE_API_REMOTE_TIMEOUT,
                 )
                 if messages_resp.status_code == 200:
                     messages_data = messages_resp.json()
@@ -4519,74 +4870,73 @@ def get_date_details(date):
             print(f"[WARN] 从服务端获取留言失败: {e}")
             response_data["messages"] = []
 
+        response_data["story"] = None
+
         return jsonify({"success": True, **response_data})
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
 
-@app.route("/api/log/generate", methods=["POST"])
-@require_local_or_password
-def api_generate_log():
-    """生成日志API - 支持照片和用户输入"""
-    try:
-        data = request.get_json()
-        include_news = data.get("include_news", True)
-        user_note = data.get("user_note", "")
-        photo_filename = data.get("photo_filename")
+@app.route("/story-assets/<date>/<filename>")
+def get_story_asset(date, filename):
+    """获取本地缓存的故事面板图片。"""
+    asset_dir = _story_dir(date, public_client.client_id)
+    file_path = asset_dir / filename
+    if not file_path.exists():
+        return jsonify({"success": False, "message": "故事图片不存在"}), 404
+    return send_from_directory(asset_dir, filename)
 
-        photo_description = None
-        if photo_filename:
-            try:
-                time_part = (
-                    photo_filename.split("_")[1].split(".")[0]
-                    if "_" in photo_filename
-                    else ""
-                )
-                photo_description = f"照片拍摄于今天{time_part[:2]}:{time_part[2:4] if len(time_part) >= 4 else ''}"
-            except:
-                photo_description = "今天的照片"
 
-        log_city = public_client.user_city
+@app.route("/generated-assets/<category>/<filename>")
+def get_generated_asset(category, filename):
+    """获取本地生成素材，例如漫画卡生成图。"""
+    asset_dir = _generated_asset_dir(category)
+    file_path = asset_dir / filename
+    if not file_path.exists():
+        return jsonify({"success": False, "message": "生成素材不存在"}), 404
+    return send_from_directory(asset_dir, filename)
 
-        params = {
-            "client_id": public_client.client_id,
-            "include_news": include_news,
-            "user_note": user_note,
-            "photo_description": photo_description,
+
+@app.route("/story/<date>")
+def daily_story_page(date):
+    """旧四格故事页已下线，兼容跳转到同日期范围的时光相册。"""
+    return redirect("/storybook")
+
+
+@app.route("/api/story/<date>")
+def api_get_story(date):
+    return jsonify(
+        {
+            "success": False,
+            "message": "四格故事功能已下线，请改用时光相册和漫画卡片。",
+            "story": None,
         }
-        if log_city:
-            params["city"] = log_city
+    )
 
-        response = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/baby/log",
-            params=params,
-            timeout=1200,
-        )
 
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("success"):
-                return jsonify(
-                    {
-                        "success": True,
-                        "log": result.get("log"),
-                        "city": result.get("city"),
-                        "message": "生成成功",
-                    }
-                )
-            else:
-                return jsonify(
-                    {"success": False, "message": result.get("message", "生成失败")}
-                )
-        else:
-            return jsonify(
-                {"success": False, "message": f"服务端错误: {response.status_code}"}
-            )
+@app.route("/api/story/status/<date>")
+def api_story_status(date):
+    job = {
+        "date": date,
+        "status": "disabled",
+        "stage": "disabled",
+        "message": "四格故事功能已下线",
+        "progress": 0,
+    }
+    return jsonify({"success": True, "job": job, "story": None, "has_story": False})
 
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
+
+@app.route("/api/story/generate", methods=["POST"])
+@require_local_or_password
+def api_generate_daily_story():
+    """旧四格故事生成接口已下线。"""
+    return jsonify(
+        {
+            "success": False,
+            "message": "四格故事功能已下线，请改用时光相册和漫画卡片。",
+        }
+    ), 410
 
 
 @app.route("/api/log/save", methods=["POST"])
@@ -4608,6 +4958,8 @@ def api_save_log():
                 "client_id": public_client.client_id,
                 "date": date,
                 "content": content,
+                "source_kind": "manual",
+                "allow_overwrite_manual": True,
                 "metadata": {
                     "city": metadata.get("city", public_client.user_city or "未知"),
                     "temperature": metadata.get("temperature"),
@@ -4626,18 +4978,6 @@ def api_save_log():
             if resp.status_code == 200:
                 result = resp.json()
                 if result.get("success"):
-                    # 添加通知
-                    try:
-                        from baby_log_generator import add_notification
-
-                        add_notification(
-                            client_id=public_client.client_id,
-                            title=f"{public_client.baby_name}的成长日志已更新",
-                            message=f"家长编辑了{date}的成长日志",
-                            notification_type="log",
-                        )
-                    except Exception as e:
-                        logger.info(f"[通知] 添加通知失败: {e}")
                     return jsonify({"success": True, "message": "保存成功"})
                 else:
                     return jsonify(
@@ -4653,61 +4993,6 @@ def api_save_log():
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
-
-
-# ========== 勋章API（已禁用） ==========
-# @app.route("/api/badges", methods=["GET"])
-# @require_local_or_password
-# def api_get_badges():
-#     """获取用户所有勋章"""
-#     try:
-#         from badge_detector import get_all_badges, get_badge_stats
-#
-#         badges = get_all_badges(public_client.client_id)
-#         stats = get_badge_stats(public_client.client_id)
-#
-#         return jsonify({
-#             "success": True,
-#             "badges": badges,
-#             "stats": stats
-#         })
-#     except Exception as e:
-#         print(f"[ERROR] 获取勋章失败: {e}")
-#         return jsonify({"success": False, "message": str(e)})
-
-
-# @app.route("/api/badges/stats", methods=["GET"])
-# @require_local_or_password
-# def api_get_badge_stats():
-#     """获取勋章统计"""
-#     try:
-#         from badge_detector import get_badge_stats
-#
-#         stats = get_badge_stats(public_client.client_id)
-#         return jsonify({
-#             "success": True,
-#             "stats": stats
-#         })
-#     except Exception as e:
-#         print(f"[ERROR] 获取勋章统计失败: {e}")
-#         return jsonify({"success": False, "message": str(e)})
-
-
-# 勋章API已禁用，保留代码备用
-@app.route("/api/badges", methods=["GET"])
-@require_local_or_password
-def api_get_badges():
-    """获取用户所有勋章（已禁用）"""
-    return jsonify(
-        {"success": False, "message": "勋章功能已暂停", "badges": [], "stats": {}}
-    )
-
-
-@app.route("/api/badges/stats", methods=["GET"])
-@require_local_or_password
-def api_get_badge_stats():
-    """获取勋章统计（已禁用）"""
-    return jsonify({"success": False, "message": "勋章功能已暂停", "stats": {}})
 
 
 @app.route("/api/photo/tag", methods=["POST", "DELETE"])
@@ -4823,33 +5108,10 @@ def api_tagged_photos():
         return jsonify({"success": False, "message": str(e)})
 
 
-@app.route("/api/photo/tag/<filename>")
-def api_get_photo_tag(filename):
-    """获取单张照片的标签（从服务端获取）"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/client/photo/tag",
-            params={"client_id": public_client.client_id, "filename": filename},
-            timeout=30,
-        )
-
-        if resp.status_code == 200:
-            result = resp.json()
-            return jsonify(result)
-        else:
-            return jsonify({"success": False, "message": "服务端请求失败"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
 @app.route("/api/notifications")
 def api_get_notifications():
     """获取服务端通知"""
     try:
-        import requests
-
         response = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/notifications",
@@ -4926,8 +5188,6 @@ def api_submit_feedback():
 def api_mark_notification_read():
     """标记通知为已读"""
     try:
-        import requests
-
         data = request.get_json()
         notification_id = data.get("notification_id")
 
@@ -5112,7 +5372,6 @@ def api_download_update():
         update_file = update_dir / filename
 
         # 下载并显示进度
-        total_size = int(response.headers.get("content-length", 0))
         downloaded = 0
 
         with open(update_file, "wb") as f:
@@ -5199,7 +5458,6 @@ def api_install_update():
 
             # EXE 文件路径
             exe_dir = exe_path.parent
-            exe_name = exe_path.name
             backup_exe = exe_path.with_suffix(".exe.bak")
             update_exe = Path(update_file)
 
@@ -5343,360 +5601,6 @@ except Exception as e:
         return jsonify({"success": False, "message": f"安装失败: {str(e)}"})
 
 
-@app.route("/api/version/auto-update", methods=["POST"])
-@require_local_or_password
-def api_auto_update():
-    """一键自动更新：下载并安装"""
-    try:
-        if not is_windows_exe():
-            return jsonify(
-                {
-                    "success": False,
-                    "manual_update_required": True,
-                    "manual_update_url": get_manual_update_url(),
-                    "message": "当前平台不支持一键自动更新，请手动下载",
-                }
-            )
-
-        # 1. 获取版本信息
-        response = public_client.signed_request(
-            "GET", f"{public_client.server_url}/czrz/version/latest", timeout=30
-        )
-
-        if response.status_code != 200:
-            return jsonify({"success": False, "message": "获取版本信息失败"})
-
-        version_info = response.json()
-        download_url = version_info.get("download_url", "")
-        expected_md5 = version_info.get("md5", "")
-        latest_version = version_info.get("version", "2.0.0")
-
-        if not download_url:
-            return jsonify({"success": False, "message": "没有可用的更新"})
-
-        # 2. 下载
-        update_dir = Path(tempfile.gettempdir()) / "czrz_updates"
-        update_dir.mkdir(exist_ok=True)
-
-        if download_url.startswith("/"):
-            download_url = f"{public_client.server_url}{download_url}"
-
-        dl_response = public_client.signed_request(
-            "GET", download_url, timeout=300, stream=True
-        )
-        dl_response.raise_for_status()
-
-        # 根据环境决定文件名
-        if is_windows_exe():
-            filename = download_url.split("/")[-1]
-            if not filename.endswith(".exe"):
-                filename = "client_update.exe"
-        else:
-            filename = download_url.split("/")[-1]
-            if not filename.endswith(".py"):
-                filename = "client_update.py"
-
-        update_file = update_dir / filename
-
-        with open(update_file, "wb") as f:
-            for chunk in dl_response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-
-        # 3. 验证MD5
-        if expected_md5:
-            import hashlib
-
-            md5_hash = hashlib.md5()
-            with open(update_file, "rb") as f:
-                for chunk in iter(lambda: f.read(8192), b""):
-                    md5_hash.update(chunk)
-
-            if md5_hash.hexdigest() != expected_md5:
-                update_file.unlink()
-                return jsonify({"success": False, "message": "MD5校验失败"})
-
-        # 4. 安装 - Windows EXE 环境
-        if is_windows_exe():
-            exe_path = get_exe_path()
-            if not exe_path:
-                return jsonify({"success": False, "message": "无法获取 EXE 路径"})
-
-            exe_dir = exe_path.parent
-            backup_exe = exe_path.with_suffix(".exe.bak")
-            update_exe = update_file
-
-            # 创建 Windows 批处理和 VBS 脚本
-            batch_script = exe_dir / "_update_helper.bat"
-            vbs_script = exe_dir / "_update_helper.vbs"
-
-            batch_content = f'''@echo off
-chcp 65001 >nul
-title CZRZ 更新助手
-echo 正在更新，请稍候...
-timeout /t 3 /nobreak >nul
-
-REM 备份原文件
-if exist "{exe_path}" (
-    copy /Y "{exe_path}" "{backup_exe}" >nul 2>&1
-)
-
-REM 替换文件
-copy /Y "{update_exe}" "{exe_path}" >nul 2>&1
-if errorlevel 1 (
-    echo 更新失败，恢复备份...
-    if exist "{backup_exe}" (
-        copy /Y "{backup_exe}" "{exe_path}" >nul 2>&1
-    )
-    pause
-    exit /b 1
-)
-
-REM 更新版本号
-echo 更新配置文件...
-python -c "import json; f=open(r'{Path.home() / "Documents" / "CZRZ" / "config.json"}','r',encoding='utf-8'); d=json.load(f); f.close(); d['client_version']='{latest_version}'; f=open(r'{Path.home() / "Documents" / "CZRZ" / "config.json"}','w',encoding='utf-8'); json.dump(d,f,indent=2,ensure_ascii=False); f.close()" 2>nul
-
-REM 清理临时文件
-del /F /Q "{update_exe}" 2>nul
-del /F /Q "{backup_exe}" 2>nul
-del /F /Q "{batch_script}" 2>nul
-del /F /Q "{vbs_script}" 2>nul
-
-REM 启动新版本
-echo 启动新版本...
-start "" "{exe_path}"
-
-exit
-'''
-
-            vbs_content = f'''Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run chr(34) & "{batch_script}" & Chr(34), 0
-Set WshShell = Nothing
-'''
-
-            with open(batch_script, "w", encoding="utf-8") as f:
-                f.write(batch_content)
-
-            with open(vbs_script, "w", encoding="utf-8") as f:
-                f.write(vbs_content)
-
-            # 启动隐藏更新进程
-            subprocess.Popen(
-                ["wscript.exe", str(vbs_script)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-            )
-
-            return jsonify({"success": True, "message": "更新已开始，即将重启..."})
-
-        # 4. 安装 - 普通 Python 环境
-        else:
-            import subprocess
-
-            current_file = Path(__file__).resolve()
-            update_script = current_file.parent / "_update_helper.py"
-
-            script_content = f'''#!/usr/bin/env python3
-import os
-import sys
-import time
-import shutil
-import json
-from pathlib import Path
-
-time.sleep(3)
-
-try:
-    backup = "{current_file}.bak"
-    if os.path.exists("{current_file}"):
-        shutil.copy2("{current_file}", backup)
-    
-    shutil.copy2("{update_file}", "{current_file}")
-    os.chmod("{current_file}", 0o755)
-    
-    # 更新配置文件中的版本号
-    try:
-        config_file = Path.home() / "Documents" / "CZRZ" / "config.json"
-        if config_file.exists():
-            with open(config_file, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            config['client_version'] = "{latest_version}"
-            with open(config_file, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            print(f"[✓] 版本号已更新为: {latest_version}")
-    except Exception as e:
-        print(f"[WARN] 更新版本号失败: {{e}}")
-    
-    if sys.platform == 'win32':
-        os.startfile("{current_file}")
-    else:
-        os.system("cd {current_file.parent} && ./start_client.sh")
-    
-    os.remove("{update_file}")
-    os.remove("{update_script}")
-except Exception as e:
-    print(f"更新失败: {{e}}")
-    if os.path.exists(backup):
-        shutil.copy2(backup, "{current_file}")
-'''
-
-            with open(update_script, "w") as f:
-                f.write(script_content)
-            os.chmod(update_script, 0o755)
-
-            subprocess.Popen(
-                [sys.executable, str(update_script)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-
-            return jsonify({"success": True, "message": "更新已开始，即将重启..."})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"自动更新失败: {str(e)}"})
-
-
-@app.route("/api/theme")
-def get_theme():
-    """获取当前主题CSS"""
-    try:
-        from theme_generator import get_or_create_theme, generate_css
-
-        theme = get_or_create_theme(public_client.client_id, public_client.baby_name)
-
-        if theme:
-            css = generate_css(theme)
-            return jsonify({"success": True, "theme": theme, "css": css})
-        else:
-            return jsonify({"success": False, "message": "主题不存在"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/theme/update", methods=["POST"])
-@require_local_or_password
-def update_theme():
-    """根据用户描述更新主题"""
-    try:
-        from theme_generator import update_theme, generate_css
-
-        data = request.get_json()
-        user_prompt = data.get("prompt", "")
-
-        if not user_prompt:
-            return jsonify({"success": False, "message": "请描述你想要的风格"})
-
-        theme = update_theme(public_client.client_id, user_prompt)
-
-        if theme:
-            css = generate_css(theme)
-            response = {
-                "success": True,
-                "theme": theme,
-                "css": css,
-                "message": f"已切换到「{theme['name']}」主题",
-            }
-
-            if theme.get("limitations"):
-                response["limitations"] = theme["limitations"]
-            if theme.get("fallback"):
-                response["fallback"] = theme["fallback"]
-            if theme.get("ai_error"):
-                response["ai_error"] = theme["ai_error"]
-
-            return jsonify(response)
-        else:
-            return jsonify({"success": False, "message": "更新主题失败"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/theme/presets")
-def get_preset_themes():
-    """获取预设主题列表 - 新版本使用AI生成主题，预设已废弃"""
-    try:
-        # 新版本不再使用预设主题，返回空列表
-        # AI主题生成通过 /api/theme/update 端点处理
-        return jsonify(
-            {
-                "success": True,
-                "presets": [],
-                "message": "请使用AI主题生成功能创建自定义主题",
-            }
-        )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/theme/apply", methods=["POST"])
-@require_local_or_password
-def apply_preset_theme():
-    """应用预设主题 - 新版本已废弃，请使用AI主题生成"""
-    try:
-        return jsonify(
-            {
-                "success": False,
-                "message": "预设主题功能已废弃，请使用AI主题生成器创建自定义主题",
-            }
-        )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/theme/reset", methods=["POST"])
-@require_local_or_password
-def reset_theme():
-    """重置为默认主题"""
-    try:
-        from theme_generator import get_or_create_theme
-
-        # 删除自定义主题，重新生成默认主题
-        theme = get_or_create_theme(
-            public_client.client_id, public_client.baby_name, force_new=True
-        )
-
-        if theme:
-            # 清除保存的自定义CSS
-            theme_file = (
-                USER_DATA_DIR / "themes" / f"{public_client.client_id}_custom.css"
-            )
-            if theme_file.exists():
-                theme_file.unlink()
-
-            return jsonify({"success": True, "message": "已恢复默认主题"})
-        else:
-            return jsonify({"success": False, "message": "重置主题失败"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/photos/dates")
-def get_photo_dates():
-    """获取所有有照片的日期"""
-    try:
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
-            return jsonify({"success": True, "dates": []})
-
-        from photo_manager import PhotoManager
-
-        pm = PhotoManager(media_folders, public_client.data_dir)
-
-        dates = pm.get_all_dates()
-
-        return jsonify({"success": True, "dates": dates})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
 # 创建客户端实例（不自动连接，等端口确定后再连接）
 public_client = PublicClient(auto_connect=False)
 
@@ -5788,36 +5692,6 @@ def delete_message(message_id):
         return jsonify({"success": False, "message": str(e)})
 
 
-@app.route("/api/verify-password", methods=["POST"])
-def verify_password():
-    """兼容旧接口：验证家庭码并写入会话"""
-    try:
-        source_ip = get_request_source_ip()
-        if _is_private_or_loopback_ip(source_ip) or is_family_code_verified():
-            return jsonify({"success": True, "message": "验证通过"})
-
-        data = request.get_json(silent=True) or {}
-        family_code = data.get("password", "")
-
-        if verify_family_code(family_code):
-            mark_family_code_verified()
-            return jsonify({"success": True, "message": "验证通过"})
-
-        return (
-            jsonify(
-                {
-                    "success": False,
-                    "message": "家庭码错误，请询问家人或朋友",
-                    "require_family_code": True,
-                }
-            ),
-            401,
-        )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
 # ==================== 照片工具API ====================
 
 
@@ -5836,10 +5710,6 @@ def featured_photo_api():
                 timeout=30,
             )
         else:
-            # POST操作需要权限验证
-            check_result = check_local_or_password()
-            if check_result:
-                return check_result
             data = request.get_json()
             response = public_client.signed_request(
                 "POST",
@@ -5852,70 +5722,6 @@ def featured_photo_api():
         return jsonify({"success": False, "message": str(e)})
 
 
-@app.route("/api/photos/best", methods=["POST"])
-@require_local_or_password
-def select_best_photo_api():
-    """选择最佳照片"""
-    try:
-        from photo_tools import select_best_photo_from_list
-
-        data = request.get_json()
-        date = data.get("date")
-
-        # 获取指定日期的照片
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
-            return jsonify({"success": False, "message": "未配置媒体文件夹"})
-
-        from photo_manager import PhotoManager
-
-        pm = PhotoManager(media_folders, public_client.data_dir)
-        photos = pm.get_photos_by_date(date)
-
-        if not photos:
-            return jsonify({"success": False, "message": "该日期没有照片"})
-
-        # 获取照片路径
-        photo_paths = [p["path"] for p in photos if os.path.exists(p["path"])]
-
-        if not photo_paths:
-            return jsonify({"success": False, "message": "照片文件不存在"})
-
-        # 选择最佳照片
-        best_path = select_best_photo_from_list(
-            photo_paths, api_key=os.environ.get("DASHSCOPE_API_KEY")
-        )
-
-        if best_path:
-            best_filename = os.path.basename(best_path)
-            return jsonify(
-                {
-                    "success": True,
-                    "message": "已选择最佳照片",
-                    "filename": best_filename,
-                    "path": best_path,
-                }
-            )
-        else:
-            return jsonify({"success": False, "message": "无法选择最佳照片"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"选择失败: {str(e)}"})
-
-
-@app.route("/api/photos/cleanup", methods=["POST"])
-@require_local_or_password
-def cleanup_photos_api():
-    """清理功能已合并到AI精选，提示用户使用精选功能"""
-    return jsonify(
-        {
-            "success": False,
-            "message": "清理功能已合并到「挑选精选照片」，点击「精选」按钮可同时完成：\n1. 选择最佳照片\n2. 识别模糊照片\n3. 识别重复照片\n\nAI识别更精准，误杀率更低。",
-            "suggest_select_best": True,
-        }
-    )
-
-
 @app.route("/api/photos/remove-from-index", methods=["POST"])
 @require_local_or_password
 def remove_photos_from_index_api():
@@ -5923,7 +5729,6 @@ def remove_photos_from_index_api():
     try:
         data = request.get_json()
         filenames = data.get("filenames", [])
-        date = data.get("date")
 
         if not filenames:
             return jsonify({"success": False, "message": "未指定要移除的照片"})
@@ -5986,16 +5791,15 @@ def proxy_ai_generate_log():
         )
 
         media_folders = getattr(public_client, "media_folders", [])
-        child_id = CLIENT_CONFIG.get("ai_service", {}).get("child_id", "") or client_id
+        child_id = get_ai_identity_client_id(client_id)
 
         photo_analysis = None
-        valid_photo_descs = []
 
         # 步骤1：AI分析照片
         if media_folders and date:
             try:
                 from photo_manager import PhotoManager
-                from select_best_photo import ai_select, analyze_all_photos
+                from select_best_photo import describe_photo_batch, analyze_all_photos
 
                 pm = PhotoManager(media_folders, public_client.data_dir)
                 all_media = pm.get_photos_by_date(date)
@@ -6008,14 +5812,17 @@ def proxy_ai_generate_log():
                     print(f"[INFO] 找到 {len(photo_paths)} 张照片，开始AI分析...")
 
                     step_start = time.time()
-                    ai_result = ai_select(
-                        photo_paths[:20], select_n=1, child_id=child_id
+                    ai_result, _ = _describe_photos_with_block_fallback(
+                        photo_paths,
+                        child_id=child_id,
+                        client_id=client_id,
+                        date=date,
+                        log_prefix="[INFO]",
                     )
                     logger.info(f"[TIME] AI分析耗时: {time.time() - step_start:.2f}s")
 
                     # 【调试】输出 AI 返回结果
                     logger.info(f"[DEBUG] AI 返回结果:")
-                    logger.info(f"  - selected: {len(ai_result.get('selected', []))}张")
                     logger.info(
                         f"  - photos 字段：{len(ai_result.get('photos', {}))}条"
                     )
@@ -6039,17 +5846,12 @@ def proxy_ai_generate_log():
 
                     photo_analysis = analyze_all_photos(
                         photo_paths,
-                        max_photos=20,
+                        max_photos=len(photo_paths),
                         client_id=client_id,
                         date=date,
                         ai_result=ai_result,
                     )
                     valid_photos = photo_analysis.get("photos", [])
-                    valid_photo_descs = [
-                        p.get("description", "")
-                        for p in valid_photos
-                        if p.get("description")
-                    ]
                     print(f"[INFO] 有效照片: {len(valid_photos)}张")
 
             except Exception as e:
@@ -6076,7 +5878,7 @@ def proxy_ai_generate_log():
                         analyze_language_ability,
                     )
 
-                    for video in videos[:5]:
+                    for video in videos:
                         video_path = Path(video.get("path", ""))
                         if not video_path.exists():
                             continue
@@ -6118,6 +5920,7 @@ def proxy_ai_generate_log():
                                 baby_name=baby_name,
                                 age_months=age_months,
                             )
+                            video_hash = _resolve_media_hash(vr["path"])
 
                             upload_resp = public_client.signed_request(
                                 "POST",
@@ -6126,6 +5929,7 @@ def proxy_ai_generate_log():
                                     "client_id": client_id,
                                     "date": date,
                                     "video_path": vr["path"],
+                                    "file_hash": video_hash,
                                     "transcript": vr["transcript"],
                                     "duration": vr["duration"],
                                     "analysis": analysis,
@@ -6141,10 +5945,6 @@ def proxy_ai_generate_log():
                 print(f"[WARN] 视频语音处理失败: {e}")
 
         # 步骤3：生成日志
-        combined_desc = None
-        if valid_photo_descs:
-            combined_desc = "、".join(valid_photo_descs[:5])
-
         request_data = {
             "client_id": client_id,
             "date": date,
@@ -6182,13 +5982,8 @@ def proxy_ai_generate_log():
 def select_best_photo_local():
     """本地选择精选照片（同时返回模糊和重复照片列表）"""
     try:
-        from select_best_photo import (
-            select_best_photo_for_client,
-            analyze_photo_content,
-        )
-
         data = request.get_json() or {}
-        date = data.get("date")
+        date = (data.get("date") or datetime.now().strftime("%Y-%m-%d")).strip()
 
         media_folders = getattr(public_client, "media_folders", [])
         if not media_folders:
@@ -6199,29 +5994,31 @@ def select_best_photo_local():
                 }
             )
 
-        child_id = CLIENT_CONFIG.get("ai_service", {}).get("child_id", "")
-        data_dir = getattr(public_client, "data_dir", None)
+        child_id = get_ai_identity_client_id(public_client.client_id)
+        processed_photos = get_processed_photos(date, public_client.client_id)
+        ensured = _ensure_photo_descriptions_for_entries(
+            date,
+            public_client.client_id,
+            child_id=child_id,
+            processed_photos=processed_photos,
+            log_prefix="[精选照片]",
+        )
+        photo_records = ensured.get("photos", [])
+        selected_record, ai_description, selection = _pick_featured_photo_from_records(
+            photo_records,
+            child_id=child_id,
+        )
 
-        result = select_best_photo_for_client(media_folders, child_id, date, data_dir)
-
-        if not result or not result.get("best_photo"):
+        if not selected_record or not selected_record.get("path"):
             return jsonify({"success": False, "message": "未能选出精选照片"})
 
-        photo_folder = result.get("photo_folder", "")
-        best_photo = result.get("best_photo", "")
-        photo_path = os.path.join(photo_folder, best_photo) if photo_folder else ""
-
-        ai_description = None
-        if photo_path and os.path.exists(photo_path):
-            try:
-                ai_description = analyze_photo_content(photo_path)
-            except Exception as e:
-                print(f"[WARN] 分析照片内容失败: {e}")
+        photo_path = selected_record.get("path", "")
+        best_photo = Path(photo_path).name
 
         # 保存精选照片
         if best_photo:
             save_featured_photo_server(
-                date or datetime.now().strftime("%Y-%m-%d"),
+                date,
                 public_client.client_id,
                 photo_path,
                 ai_description or "",
@@ -6233,9 +6030,10 @@ def select_best_photo_local():
                 "photo": best_photo,
                 "ai_description": ai_description,
                 "message": "已选择精选照片",
-                "blurry": result.get("blurry", []),
-                "duplicates": result.get("duplicates", []),
-                "method": result.get("method", "ai"),
+                "blurry": ensured.get("blurry", []),
+                "duplicates": ensured.get("duplicates", []),
+                "method": "description_select",
+                "selection_reason": (selection.get("reasons") or [""])[0],
             }
         )
 
@@ -6257,12 +6055,12 @@ def ai_ask():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
+        child_id = get_ai_identity_client_id()
         if not child_id:
             return jsonify(
                 {
                     "success": False,
-                    "message": "未配置宝宝ID，请先在配置文件中设置AI_CHILD_ID",
+                    "message": "未配置 client_id，请先完成客户端注册",
                 }
             )
 
@@ -6336,9 +6134,9 @@ def ai_feedback():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
+        child_id = get_ai_identity_client_id()
         if not child_id:
-            return jsonify({"success": False, "message": "未配置宝宝ID"})
+            return jsonify({"success": False, "message": "未配置 client_id"})
 
         server_url = USER_CONFIG.get("server_url", "")
         if not server_url:
@@ -6357,7 +6155,6 @@ def ai_feedback():
 
         payload = {
             "client_id": public_client.client_id,
-            "ai_child_id": child_id,
             "feedback_text": feedback_text,
             "feedback_type": data.get("feedback_type", "user_input"),
         }
@@ -6388,9 +6185,9 @@ def ai_get_profile():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
+        child_id = get_ai_identity_client_id()
         if not child_id:
-            return jsonify({"success": False, "message": "未配置宝宝ID"})
+            return jsonify({"success": False, "message": "未配置 client_id"})
 
         # 通过服务端代理访问健康AI
         server_url = USER_CONFIG.get("server_url", "")
@@ -6406,18 +6203,16 @@ def ai_get_profile():
         if response.status_code == 200:
             ai_data = response.json()
             profile_data = ai_data.get("profile", {})
+            llm_valid = bool(ai_data.get("llm_valid", True))
 
             dimensions = profile_data.get("dimensions", {})
             guidance = profile_data.get("guidance", {})
             evolution = profile_data.get("evolution", {})
-            growth_curve = profile_data.get("growth_curve", {})
 
             personality = dimensions.get("personality", {})
             interests = dimensions.get("interests", {})
             development = dimensions.get("development", {})
 
-            baby_birthday = getattr(public_client, "baby_birthday", None)
-            birth_date_str = baby_birthday or ""
             age_text = ""
             age_months = profile_data.get("age_months", 0)
             if age_months:
@@ -6444,6 +6239,7 @@ def ai_get_profile():
             profile = {
                 "age": age_text,
                 "age_months": age_months,
+                "llm_valid": llm_valid,
                 "knowledge_level": int(familiarity),
                 "completeness": min(100, int(familiarity)),
                 "total_events": total_events,
@@ -6461,6 +6257,7 @@ def ai_get_profile():
                         "current": interests.get("current", []),
                         "emerging": interests.get("emerging", []),
                         "faded": interests.get("faded", []),
+                        "evidence": interests.get("evidence", []),
                     },
                     "development": development,
                 },
@@ -6479,7 +6276,7 @@ def ai_get_profile():
                 },
             }
 
-            return jsonify({"success": True, "profile": profile})
+            return jsonify({"success": True, "profile": profile, "llm_valid": llm_valid})
         else:
             return jsonify(
                 {"success": False, "message": f"获取失败: {response.status_code}"}
@@ -6497,9 +6294,9 @@ def ai_get_features():
         if not ai_config.get("enabled", False):
             return jsonify({"success": False, "message": "AI服务未启用"})
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
+        child_id = get_ai_identity_client_id()
         if not child_id:
-            return jsonify({"success": False, "message": "未配置宝宝ID"})
+            return jsonify({"success": False, "message": "未配置 client_id"})
 
         server_url = USER_CONFIG.get("server_url", "")
         if not server_url:
@@ -6522,126 +6319,27 @@ def ai_get_features():
         return jsonify({"success": False, "message": f"获取失败: {str(e)}"})
 
 
-# ========== 成长卡片生成API ==========
-
-
-@app.route("/api/card/types", methods=["GET"])
-def api_card_types():
-    """获取可用的卡片类型"""
-    try:
-        from card_generator import get_available_card_types
-
-        # 获取画像数据
-        profile = get_profile_data()
-        if profile is None:
-            return jsonify({"success": False, "message": "无法获取画像数据"})
-
-        types = get_available_card_types(profile)
-        return jsonify({"success": True, "types": types})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/card/styles", methods=["GET"])
-def api_card_styles():
-    """获取可用的卡片风格"""
-    try:
-        from card_generator import get_card_styles
-
-        styles = get_card_styles()
-        return jsonify({"success": True, "styles": styles})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/card/generate", methods=["POST"])
-@require_local_or_password
-def api_card_generate():
-    """生成成长卡片"""
-    try:
-        from card_generator import generate_card_content
-
-        data = request.get_json() or {}
-        card_type = data.get("card_type", "daily")
-        style = data.get("style", "warm")
-        template_id = data.get("template")  # 可选：指定模板
-
-        # 直接调用本地画像API获取数据
-        profile = get_local_profile_data()
-        if profile is None:
-            profile = {}
-
-        # 获取宝宝信息
-        baby_name = USER_CONFIG.get("baby_name", "宝宝")
-        age_text = calculate_age_text()
-
-        # 获取本地端口
-        local_port = public_client.client_port if public_client else 3000
-
-        # 生成卡片数据
-        card_data = generate_card_content(
-            profile=profile,
-            baby_name=baby_name,
-            age_text=age_text,
-            style=style,
-            template_id=template_id,
-            base_url=f"http://localhost:{local_port}",
-        )
-
-        return jsonify({"success": True, "card": card_data})
-    except Exception as e:
-        print(f"[Card] 生成卡片失败: {e}")
-        return jsonify({"success": False, "message": str(e)})
-
-
 # ========== 卡片缓存API ==========
-
-
-@app.route("/api/card/cache/status")
-def api_card_cache_status():
-    """获取卡片缓存状态"""
-    try:
-        from card_cache import get_card_cache
-
-        cache = get_card_cache()
-        status = cache.get_cache_status()
-        return jsonify({"success": True, "status": status})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
 
 
 @app.route("/api/card/cache/list")
 def api_card_cache_list():
-    """获取所有缓存的卡片（不含里程碑）"""
+    """获取所有缓存的卡片"""
     try:
         from card_cache import get_card_cache
 
         cache = get_card_cache()
         sync_card_cache_silently()
-        cards = [convert_photo_path_for_client(card) for card in cache.get_all_cards()]
+        requested_category = normalize_card_category(request.args.get("category") or "all")
+        all_cards = [convert_photo_path_for_client(card) for card in cache.get_all_cards()]
+        all_cards = filter_visible_cards(all_cards)
+        all_cards = augment_cards_with_synthetic_categories(
+            all_cards, public_client.client_id
+        )
+        all_cards = augment_cards_with_local_manual_cards(all_cards)
+        category_counts = summarize_card_categories(all_cards)
+        cards = filter_cards_by_category(all_cards, requested_category)
         cards = select_rotating_cards(cards, per_day=50)
-
-        # 添加分享状态
-        for card in cards:
-            card_id = card.get("id", "")
-            card["shared"] = cache.is_shared(card_id)
-
-        return jsonify({"success": True, "cards": cards, "total": len(cards)})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/card/milestone/today")
-def api_card_milestone_today():
-    """获取今日里程碑卡片"""
-    try:
-        from card_cache import get_card_cache
-
-        cache = get_card_cache()
-        cards = [
-            convert_photo_path_for_client(card)
-            for card in cache.get_today_milestone_cards()
-        ]
 
         # 添加分享状态
         for card in cards:
@@ -6653,7 +6351,8 @@ def api_card_milestone_today():
                 "success": True,
                 "cards": cards,
                 "total": len(cards),
-                "has_milestone": len(cards) > 0,
+                "category": requested_category,
+                "category_counts": category_counts,
             }
         )
     except Exception as e:
@@ -6670,14 +6369,18 @@ def convert_photo_path_for_client(obj):
         "photo",
         "before_photo",
         "after_photo",
+        "cover_photo",
         "cover_path",
         "thumbnail",
         "thumb",
         "src",
+        "generated_image",
+        "generated_image_url",
+        "source_photo",
     }
 
     if isinstance(obj, str):
-        if obj.startswith("/photo/"):
+        if obj.startswith(("/photo/", "/story-assets/", "/generated-assets/", "/video/thumb/")):
             return obj
         import urllib.parse
 
@@ -6700,6 +6403,9 @@ def convert_photo_path_for_client(obj):
                 "year_samples",
                 "seasons",
                 "evolution_photos",
+                "timeline_entries",
+                "secondary_photos",
+                "supporting_photos",
                 "assets",
                 "cards",
             }:
@@ -6804,43 +6510,6 @@ def sync_card_cache_silently():
         return False
 
 
-@app.route("/api/card/cache/random")
-def api_card_cache_random():
-    """获取随机卡片"""
-    try:
-        from card_cache import get_card_cache
-
-        cache = get_card_cache()
-
-        count = request.args.get("count", 5, type=int)
-        exclude_ids = (
-            request.args.get("exclude", "").split(",")
-            if request.args.get("exclude")
-            else []
-        )
-
-        cards = [
-            convert_photo_path_for_client(card)
-            for card in cache.get_random_cards(count, exclude_ids)
-        ]
-
-        if not cards:
-            sync_card_cache_silently()
-            cards = [
-                convert_photo_path_for_client(card)
-                for card in cache.get_random_cards(count, exclude_ids)
-            ]
-
-        # 添加分享状态
-        for card in cards:
-            card_id = card.get("id", "")
-            card["shared"] = cache.is_shared(card_id)
-
-        return jsonify({"success": True, "cards": cards})
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
 @app.route("/api/card/share", methods=["POST"])
 @require_local_or_password
 def api_card_share():
@@ -6870,7 +6539,7 @@ def get_local_profile_data():
         if not ai_config.get("enabled", False):
             return None
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
+        child_id = get_ai_identity_client_id()
         if not child_id:
             return None
 
@@ -6893,343 +6562,367 @@ def get_local_profile_data():
         return None
 
 
-@app.route("/api/card/share-log", methods=["POST"])
-@require_local_or_password
-def api_card_share_log():
-    """记录分享行为"""
-    try:
-        from card_generator import log_share_event
-
-        data = request.get_json() or {}
-        template_id = data.get("template_id", "unknown")
-        card_style = data.get("card_style", "warm")
-        shared = data.get("shared", True)
-
-        log_share_event(
-            card_style=card_style,
-            template_id=template_id,
-            shared=shared,
-        )
-
-        return jsonify({"success": True})
-    except Exception as e:
-        print(f"[Card] 记录分享行为失败: {e}")
-        return jsonify({"success": False, "message": str(e)})
+def _get_comic_style_by_key(style_key: str) -> dict:
+    target = (style_key or "").strip().lower()
+    for item in _get_comic_style_library():
+        item_key = str(item.get("theme") or "").strip().lower()
+        if target and item_key == target:
+            return dict(item)
+    return {}
 
 
-@app.route("/api/card/share-stats", methods=["GET"])
-def api_card_share_stats():
-    """获取分享统计数据"""
-    try:
-        from card_generator import get_share_stats
-
-        stats = get_share_stats()
-        return jsonify({"success": True, "stats": stats})
-    except Exception as e:
-        print(f"[Card] 获取分享统计失败: {e}")
-        return jsonify({"success": False, "message": str(e)})
+def _default_comic_style() -> dict:
+    return {
+        "name": "晴光绘本",
+        "tagline": "保留真实日常，再把光线和故事感往前推一格",
+        "palette": ["#f6c36a", "#f7e3a6", "#93c9b7", "#fff8ef"],
+        "theme": "sunlit",
+        "frame_shape": "arch",
+        "prompt": "soft illustrated storybook, warm daylight, airy brushwork, gentle highlights",
+    }
 
 
-def get_profile_data():
-    """获取画像数据（内部函数）"""
-    try:
-        ai_config = CLIENT_CONFIG.get("ai_service", {})
-        if not ai_config.get("enabled", False):
-            return None
+def _select_comic_source_records(records: list, limit: int = 1) -> tuple[list, list]:
+    candidates = [
+        dict(item)
+        for item in (records or [])
+        if isinstance(item, dict)
+        and item.get("path")
+        and not item.get("is_video", False)
+    ]
+    if not candidates:
+        return [], []
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
-        if not child_id:
-            return None
-
-        server_url = USER_CONFIG.get("server_url", "")
-        if not server_url:
-            return None
-
-        response = public_client.signed_request(
-            "GET",
-            f"{server_url}/api/ai/children/{child_id}/profile",
-            timeout=1200,
-        )
-
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("profile", {})
-        return None
-    except Exception as e:
-        print(f"[Card] 获取画像数据失败: {e}")
-        return None
-
-
-def calculate_age_text():
-    """计算年龄文本"""
-    try:
-        birthday_str = USER_CONFIG.get("birthday", "")
-        if not birthday_str:
-            return ""
-
-        birthday = datetime.strptime(birthday_str, "%Y-%m-%d")
-        today = datetime.now()
-
-        delta = today - birthday
-        days = delta.days
-
-        if days < 0:
-            return ""
-
-        if days < 30:
-            return f"{days}天"
-        elif days < 365:
-            months = days // 30
-            remaining_days = days % 30
-            if remaining_days > 15:
-                months += 1
-            return f"{months}个月"
-        else:
-            years = days // 365
-            remaining_months = (days % 365) // 30
-            if remaining_months > 0:
-                return f"{years}岁{remaining_months}个月"
-            return f"{years}岁"
-    except:
-        return ""
-
-
-@app.route("/api/ai/children/<child_id>/feedback", methods=["GET", "POST"])
-@require_local_or_password
-def ai_feedback_proxy(child_id):
-    """反馈API代理"""
-    server_url = USER_CONFIG.get("server_url", "")
-    if not server_url:
-        return jsonify({"success": False, "message": "未配置服务端地址"})
-
-    try:
-        if request.method == "GET":
-            limit = request.args.get("limit", 20)
-            response = public_client.signed_request(
-                "GET",
-                f"{server_url}/api/ai/children/{child_id}/feedback",
-                params={"limit": limit},
-                timeout=30,
-            )
-        else:
-            # POST请求需要权限验证（使用统一的 session 检查）
-            check_result = check_local_or_password()
-            if check_result:
-                return check_result
-
-            data = request.get_json()
-            response = public_client.signed_request(
-                "POST",
-                f"{server_url}/api/ai/children/{child_id}/feedback",
-                json=data,
-                timeout=30,
-            )
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return jsonify(
-                {"success": False, "message": f"请求失败: {response.status_code}"}
-            )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"请求失败: {str(e)}"})
-
-
-@app.route("/api/ai/children/<child_id>/feedback/<int:feedback_id>", methods=["DELETE"])
-@require_local_or_password
-def ai_delete_feedback(child_id, feedback_id):
-    """删除反馈"""
-    server_url = USER_CONFIG.get("server_url", "")
-    if not server_url:
-        return jsonify({"success": False, "message": "未配置服务端地址"})
-
-    try:
-        response = public_client.signed_request(
-            "DELETE",
-            f"{server_url}/api/ai/children/{child_id}/feedback/{feedback_id}",
-            timeout=30,
-        )
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return jsonify(
-                {"success": False, "message": f"删除失败: {response.status_code}"}
-            )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"删除失败: {str(e)}"})
-
-
-@app.route("/api/ai/children/<child_id>/tags/<int:tag_id>/reject", methods=["POST"])
-@require_local_or_password
-def ai_reject_tag(child_id, tag_id):
-    """否决标签"""
-    server_url = USER_CONFIG.get("server_url", "")
-    if not server_url:
-        return jsonify({"success": False, "message": "未配置服务端地址"})
-
-    try:
-        response = public_client.signed_request(
-            "POST",
-            f"{server_url}/api/ai/children/{child_id}/tags/{tag_id}/reject",
-            timeout=30,
-        )
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return jsonify(
-                {"success": False, "message": f"操作失败: {response.status_code}"}
-            )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"操作失败: {str(e)}"})
-
-
-@app.route("/api/ai/children/<child_id>/tags/<int:tag_id>/restore", methods=["POST"])
-@require_local_or_password
-def ai_restore_tag(child_id, tag_id):
-    """恢复标签"""
-    server_url = USER_CONFIG.get("server_url", "")
-    if not server_url:
-        return jsonify({"success": False, "message": "未配置服务端地址"})
-
-    try:
-        response = public_client.signed_request(
-            "POST",
-            f"{server_url}/api/ai/children/{child_id}/tags/{tag_id}/restore",
-            timeout=30,
-        )
-
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return jsonify(
-                {"success": False, "message": f"操作失败: {response.status_code}"}
-            )
-
-    except Exception as e:
-        return jsonify({"success": False, "message": f"操作失败: {str(e)}"})
-
-
-@app.route("/api/ai/sync/batch", methods=["POST"])
-@require_local_or_password
-def ai_batch_sync():
-    """批量同步历史数据到AI系统"""
-    try:
-        ai_config = CLIENT_CONFIG.get("ai_service", {})
-        if not ai_config.get("enabled", False):
-            return jsonify({"success": False, "message": "AI服务未启用"})
-
-        child_id = ai_config.get("child_id", "")
-        if not child_id:
-            return jsonify({"success": False, "message": "未配置宝宝ID"})
-
-        # 通过服务端代理访问健康AI
-        server_url = USER_CONFIG.get("server_url", "")
-        if not server_url:
-            return jsonify({"success": False, "message": "未配置服务端地址"})
-
-        data = request.get_json() or {}
-        start_date = data.get("start_date", "")
-        end_date = data.get("end_date", "")
-
-        if not start_date or not end_date:
-            return jsonify({"success": False, "message": "请选择同步的时间范围"})
-
-        # 转换日期范围
-        from datetime import datetime, timedelta
-
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-
-        if start > end:
-            return jsonify({"success": False, "message": "开始日期不能晚于结束日期"})
-
-        # 获取日期范围内的所有日期
-        date_generated = [
-            start + timedelta(days=x) for x in range(0, (end - start).days + 1)
+    limit = max(1, min(int(limit or 1), 3))
+    if len(candidates) <= limit:
+        return candidates[:limit], [
+            (item.get("description") or "当天代表性照片").strip() for item in candidates[:limit]
         ]
-        total_days = len(date_generated)
-        success_count = 0
 
-        from photo_manager import PhotoManager
+    try:
+        from select_best_photo import select_featured_photo_from_descriptions
 
-        media_folders = getattr(public_client, "media_folders", [])
-        pm = PhotoManager(media_folders, public_client.data_dir)
+        selection = select_featured_photo_from_descriptions(
+            candidates,
+            select_n=limit,
+            child_id=public_client.client_id,
+        )
+        chosen_names = selection.get("selected_filenames") or [
+            Path(path).name for path in (selection.get("selected") or [])
+        ]
+        reason_map = {}
+        reasons = selection.get("reasons") or []
+        for index, name in enumerate(chosen_names):
+            reason_map[name] = reasons[index] if index < len(reasons) else ""
 
-        for date_obj in date_generated:
-            date_str = date_obj.strftime("%Y-%m-%d")
-            try:
-                # 获取当天照片
-                photos = pm.get_photos_by_date(date_str)
-
-                # 从服务端获取当天日志
-                log_content = ""
-                try:
-                    log_resp = public_client.signed_request(
-                        "GET",
-                        f"{public_client.server_url}/czrz/baby/log",
-                        params={"client_id": public_client.client_id, "date": date_str},
-                        timeout=30,
-                    )
-                    if log_resp.status_code == 200:
-                        log_data = log_resp.json()
-                        if log_data.get("success") and log_data.get("log"):
-                            log_content = log_data.get("log", "")
-                except Exception as e:
-                    print(f"[WARN] 获取日志失败 {date_str}: {e}")
-
-                # 同步到AI
-                payload = {
-                    "child_id": child_id,
-                    "date": date_str,
-                    "photos": [
-                        {
-                            "path": p.get("path"),
-                            "caption": p.get("caption"),
-                            "tag": p.get("tag", {}).get("tag"),
-                        }
-                        for p in photos
-                    ],
-                    "logs": [{"content": log_content}] if log_content else [],
-                    "context": {
-                        "baby_name": public_client.baby_name,
-                        "city": getattr(public_client, "user_city", None),
-                    },
-                }
-
-                response = public_client.signed_request(
-                    "POST",
-                    f"{server_url}/api/ai/mumu/sync",
-                    json=payload,
-                    timeout=1200,
-                )
-                if response.status_code == 200:
-                    success_count += 1
-
-            except Exception as e:
-                print(f"同步 {date_str} 失败: {e}")
+        candidate_map = {
+            (item.get("filename") or Path(item.get("path", "")).name): item
+            for item in candidates
+        }
+        chosen = []
+        chosen_reasons = []
+        for name in chosen_names:
+            item = candidate_map.get(name)
+            if not item:
                 continue
+            chosen.append(item)
+            chosen_reasons.append(
+                (reason_map.get(name) or item.get("description") or "当天代表性照片").strip()
+            )
+        if chosen:
+            return chosen[:limit], chosen_reasons[:limit]
+    except Exception as e:
+        logger.warning(f"[Comic] 自动选图失败，改用本地排序: {e}")
 
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            bool(item.get("has_baby", True)),
+            len((item.get("description") or "").strip()),
+            bool((item.get("scene") or "").strip()),
+            bool((item.get("activity") or "").strip()),
+        ),
+        reverse=True,
+    )
+    chosen = ranked[:limit]
+    return chosen, [
+        (item.get("description") or "当天代表性照片").strip() for item in chosen
+    ]
+
+
+def _build_manual_comic_prompt(record: dict, style: dict, custom_prompt: str = "") -> str:
+    baby_name = getattr(public_client, "baby_name", "宝宝")
+    description = (record.get("description") or "").strip()
+    scene = (record.get("scene") or "").strip()
+    activity = (record.get("activity") or "").strip()
+    custom_text = (custom_prompt or "").strip()
+
+    prompt = (
+        f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅漫画海报。"
+        f"主角固定为{baby_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色和当前真实场景元素，不能换脸，不能换成陌生孩子。"
+        f"不要把原图直接卡通滤镜化，而是要重新组织构图、背景层次、镜头距离和光线，让它看起来像一张精心设计的封面图。"
+    )
+    if style.get("name"):
+        prompt += f" 主要风格请走“{style.get('name')}”，方向是：{style.get('prompt') or style.get('tagline') or ''}。"
+    if scene:
+        prompt += f" 当前场景是：{scene}。"
+    if activity:
+        prompt += f" 当前动作主线是：{activity}。"
+    if description:
+        prompt += f" 真实素材摘要：{description}。"
+    if custom_text:
+        prompt += f" 家长额外希望加入的风格要求：{custom_text}。"
+    prompt += (
+        " 只输出画面，不要在图里出现任何中文、英文、数字、对白气泡、标题、路牌、logo、水印。"
+        " 画面需要温暖、有层次、有分享欲。"
+    )
+    return prompt
+
+
+def _build_manual_comic_card(
+    record: dict,
+    style: dict,
+    generated_url: str,
+    *,
+    custom_prompt: str = "",
+    selection_reason: str = "",
+    auto_reasons: list | None = None,
+) -> dict:
+    from server_card_generator import ServerCardGenerator
+
+    generator = ServerCardGenerator()
+    filename = record.get("filename") or Path(record.get("path", "")).name
+    source_photo_url = f"/photo/{quote(filename)}" if filename else ""
+    frame_shape = generator._pick_album_frame_shape(
+        record,
+        style.get("frame_shape", "square"),
+    )
+    prompt_hint = style.get("prompt") or style.get("tagline") or ""
+    if custom_prompt:
+        prompt_hint = (
+            f"{prompt_hint}；家长加料：{custom_prompt.strip()}"
+            if prompt_hint
+            else custom_prompt.strip()
+        )
+
+    reason_lines = []
+    if selection_reason:
+        reason_lines.append(selection_reason.strip())
+    for item in (auto_reasons or []):
+        text = str(item or "").strip()
+        if text and text not in reason_lines:
+            reason_lines.append(text)
+    if custom_prompt:
+        reason_lines.append("已叠加家长指定的风格要求")
+    if not reason_lines:
+        reason_lines.append("这是当天最适合被画成单幅海报的一张照片")
+
+    generated_at = datetime.now().isoformat()
+    card_id = (
+        f"manual_comic_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+        f"{hashlib.md5((filename + generated_at).encode('utf-8')).hexdigest()[:8]}"
+    )
+    return {
+        "id": card_id,
+        "card_id": card_id,
+        "type": "generated_comic_card",
+        "card_subtype": f"manual_{style.get('theme') or 'custom'}",
+        "layout": "generated_comic",
+        "title": f"🎨 {style.get('name') or '定制漫画'}",
+        "subtitle": style.get("tagline") or "从照片墙手动生成的分享漫画卡",
+        "content": (
+            f"保留“{record.get('scene') or '当天场景'}”的真实感，"
+            f"再把“{record.get('activity') or '当下动作'}”画得更有故事封面感。"
+        ),
+        "footer": "照片墙手动生成 · 已存入漫画卡片",
+        "emoji": "🎨",
+        "photo_paths": [source_photo_url] if source_photo_url else [],
+        "generated_image": generated_url,
+        "source_photo": source_photo_url,
+        "style_name": style.get("name") or "定制漫画",
+        "style_tagline": style.get("tagline") or "",
+        "style_palette": list(style.get("palette") or []),
+        "style_theme": style.get("theme") or "sunlit",
+        "frame_shape": frame_shape,
+        "reason_lines": reason_lines[:4],
+        "photo_date": (record.get("date") or datetime.now().strftime("%Y-%m-%d")).strip(),
+        "scene_label": record.get("scene") or "",
+        "activity_label": record.get("activity") or "",
+        "quality_label": "手动生成",
+        "narrative_line": (record.get("description") or "把当下这一刻画成更适合分享的一张封面。").strip(),
+        "prompt_hint": prompt_hint,
+        "generation_mode": "manual",
+        "custom_prompt": (custom_prompt or "").strip(),
+        "generated_at": generated_at,
+    }
+
+
+@app.route("/api/cards/comic/generate", methods=["POST"])
+@require_local_or_password
+def api_generate_manual_comic_cards():
+    try:
+        data = request.get_json() or {}
+        date_str = (data.get("date") or datetime.now().strftime("%Y-%m-%d")).strip()
+        style_key = (data.get("style_key") or "auto").strip().lower()
+        custom_prompt = (data.get("custom_prompt") or "").strip()
+        requested_filenames = [
+            Path(str(name or "")).name
+            for name in (data.get("filenames") or [])
+            if str(name or "").strip()
+        ]
+
+        preparation = {}
+        records = _prepare_story_photo_records(
+            date_str,
+            public_client.client_id,
+            allow_media_fallback=False,
+            diagnostics=preparation,
+        )
+        selected_records = []
+        selection_reasons = []
+        if requested_filenames:
+            record_map = {
+                (item.get("filename") or Path(item.get("path", "")).name): item
+                for item in records
+                if isinstance(item, dict)
+            }
+            for filename in requested_filenames:
+                item = record_map.get(filename)
+                if not item:
+                    continue
+                selected_records.append(item)
+                selection_reasons.append("家长手动选中的当天照片")
+            selected_records = selected_records[:3]
+            missing_requested = [
+                filename
+                for filename in requested_filenames
+                if filename not in {
+                    (item.get("filename") or Path(item.get("path", "")).name)
+                    for item in selected_records
+                }
+            ]
+            if missing_requested:
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": _build_comic_generation_unavailable_message(
+                            preparation,
+                            missing_requested=missing_requested,
+                        ),
+                    }
+                ), 400
+
+        if not selected_records:
+            selected_records, selection_reasons = _select_comic_source_records(records, limit=1)
+        if not selected_records:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": _build_comic_generation_unavailable_message(preparation),
+                }
+            ), 400
+
+        base_style = _get_comic_style_by_key(style_key) if style_key != "auto" else {}
+        if not base_style:
+            base_style = _default_comic_style()
+
+        from server_card_generator import ServerCardGenerator
+
+        generator = ServerCardGenerator()
+        category = "comic_cards"
+        created_cards = []
+
+        for index, record in enumerate(selected_records):
+            source_path = record.get("path") or ""
+            if not source_path or not Path(source_path).exists():
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            f"漫画生成失败：照片源文件不存在或已被移动"
+                            f"（{record.get('filename') or Path(source_path).name or 'unknown'}）。"
+                        ),
+                    }
+                ), 400
+
+            if style_key == "auto":
+                style, auto_reasons = generator._match_art_style(record)
+            else:
+                style = dict(base_style)
+                auto_reasons = []
+
+            prompt = _build_manual_comic_prompt(record, style, custom_prompt)
+            remote_url, image_error = _generate_image_with_reference_result(
+                prompt,
+                source_path,
+                operation="photo_to_comic",
+                model_name=DEFAULT_STORY_IMAGE_MODEL,
+                size=DEFAULT_STORY_IMAGE_SIZE,
+            )
+            if not remote_url:
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            f"漫画生成失败：{image_error or '图片模型没有返回结果。'}"
+                        ),
+                    }
+                ), 502
+
+            filename = (
+                f"comic_{datetime.now().strftime('%Y%m%d%H%M%S')}_{index}_"
+                f"{hashlib.md5((record.get('filename') or source_path).encode('utf-8')).hexdigest()[:8]}.jpg"
+            )
+            target_path = _generated_asset_dir(category) / filename
+            if not _save_generated_asset_image(remote_url, target_path):
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": "漫画生成失败：图片已生成，但保存到本地失败。",
+                    }
+                ), 500
+
+            generated_url = _generated_asset_url(category, filename)
+            selection_reason = selection_reasons[index] if index < len(selection_reasons) else ""
+            created_cards.append(
+                _build_manual_comic_card(
+                    record,
+                    style,
+                    generated_url,
+                    custom_prompt=custom_prompt,
+                    selection_reason=selection_reason,
+                    auto_reasons=auto_reasons,
+                )
+            )
+
+        if not created_cards:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "漫画生成失败：没有生成出任何可保存的结果。",
+                }
+            ), 500
+
+        append_local_manual_cards(created_cards)
         return jsonify(
             {
-                "success": success_count == total_days,
-                "message": f"同步完成，成功 {success_count}/{total_days} 天",
-                "total": total_days,
-                "success_count": success_count,
+                "success": True,
+                "message": f"已生成 {len(created_cards)} 张漫画卡片",
+                "cards": created_cards,
             }
         )
-
     except Exception as e:
-        return jsonify({"success": False, "message": f"同步失败: {str(e)}"})
+        logger.warning(f"[Comic] 生成漫画卡失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 # ==================== AI智能回顾 ====================
 
 AI_REVIEW_TASKS = {}
+REMOTE_AI_COMMANDS = {}
+REMOTE_AI_COMMANDS_LOCK = threading.Lock()
+HASH_BACKFILL_PM_CACHE = {"media_folders": None, "manager": None}
+RAW_PHOTO_INDEX_CACHE = {"mtime": None, "by_path": {}, "by_filename": {}}
 
 
 def _is_ai_review_running() -> bool:
@@ -7238,6 +6931,37 @@ def _is_ai_review_running() -> bool:
         if not task.get("completed"):
             return True
     return False
+
+
+def _get_active_ai_review_task():
+    """返回当前未完成的 AI 刷新任务。"""
+    for task_id, task in AI_REVIEW_TASKS.items():
+        if not task.get("completed"):
+            return task_id, task
+    return None, None
+
+
+def _snapshot_ai_review_task(task_id: str) -> dict:
+    """返回适合回传服务端的精简状态。"""
+    task = AI_REVIEW_TASKS.get(task_id)
+    if not isinstance(task, dict):
+        return {}
+    return {
+        "task_id": task_id,
+        "status": task.get("status", ""),
+        "processed": task.get("processed", 0),
+        "total": task.get("total", 0),
+        "success_count": task.get("success_count", 0),
+        "skipped": task.get("skipped", 0),
+        "message": task.get("message", ""),
+        "cancel_requested": bool(task.get("cancel_requested")),
+        "cancelled": bool(task.get("cancelled")),
+        "portrait_refresh": task.get("portrait_refresh"),
+        "portrait_llm_valid": task.get("portrait_llm_valid"),
+        "portrait_message": task.get("portrait_message", ""),
+        "completed": bool(task.get("completed")),
+        "started_at": task.get("started_at"),
+    }
 
 
 def _cleanup_stale_ai_review_tasks(timeout_seconds: int = 6 * 60 * 60) -> bool:
@@ -7272,57 +6996,111 @@ def _cleanup_stale_ai_review_tasks(timeout_seconds: int = 6 * 60 * 60) -> bool:
     return cleaned
 
 
+def request_ai_auto_review_cancel(task_id: str = "") -> dict:
+    """请求取消当前或指定的 AI 刷新任务。"""
+    target_task_id = ""
+    target_task = None
+
+    if task_id:
+        candidate = AI_REVIEW_TASKS.get(task_id)
+        if isinstance(candidate, dict) and not candidate.get("completed"):
+            target_task_id = task_id
+            target_task = candidate
+
+    if not target_task:
+        target_task_id, target_task = _get_active_ai_review_task()
+
+    if not target_task_id or not isinstance(target_task, dict):
+        return {"success": False, "message": "没有正在执行的刷新任务"}
+
+    target_task["cancel_requested"] = True
+    target_task["status"] = "cancelling"
+    target_task["message"] = "已请求取消，等待当前步骤结束"
+    target_task["cancel_requested_at"] = datetime.now().isoformat()
+    return {"success": True, "task_id": target_task_id, "message": target_task["message"]}
+
+
+def start_ai_auto_review_task(reuse_running: bool = False) -> dict:
+    """启动 AI 智能回顾任务，可选择复用已在运行的任务。"""
+    import threading
+
+    _cleanup_stale_ai_review_tasks()
+
+    if _is_ai_review_running():
+        active_task_id, _ = _get_active_ai_review_task()
+        if reuse_running and active_task_id:
+            return {
+                "success": True,
+                "task_id": active_task_id,
+                "already_running": True,
+                "message": "刷新正在进行中，已复用现有任务",
+            }
+        return {"success": False, "message": "刷新正在进行中，请稍后再试"}
+
+    ai_config = CLIENT_CONFIG.get("ai_service", {})
+    if not ai_config.get("enabled", False):
+        return {"success": False, "message": "AI服务未启用"}
+
+    child_id = get_ai_identity_client_id()
+    if not child_id:
+        return {"success": False, "message": "未配置 client_id"}
+
+    if not public_client.client_id:
+        return {"success": False, "message": "未注册客户端，请先连接服务端"}
+
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        return {"success": False, "message": "未配置媒体文件夹"}
+
+    task_id = str(uuid.uuid4())[:8]
+    AI_REVIEW_TASKS[task_id] = {
+        "status": "running",
+        "processed": 0,
+        "total": 0,
+        "success_count": 0,
+        "skipped": 0,
+        "message": "正在扫描照片...",
+        "cancel_requested": False,
+        "cancelled": False,
+        "portrait_refresh": None,
+        "portrait_llm_valid": None,
+        "portrait_message": "",
+        "details": [],
+        "completed": False,
+        "started_at": datetime.now().isoformat(),
+    }
+
+    thread = threading.Thread(
+        target=run_ai_auto_review,
+        args=(task_id, media_folders, child_id, ai_config),
+        daemon=True,
+    )
+    thread.start()
+
+    return {"success": True, "task_id": task_id, "already_running": False}
+
+
 @app.route("/api/ai/auto-review", methods=["POST"])
-@require_local_or_password
+@require_local_password_or_signature
 def start_ai_auto_review():
     """启动AI智能回顾任务"""
-    import threading
-    import uuid
-
     try:
-        _cleanup_stale_ai_review_tasks()
-        if _is_ai_review_running():
-            return jsonify({"success": False, "message": "刷新正在进行中，请稍后再试"})
+        result = start_ai_auto_review_task(reuse_running=False)
+        return jsonify(result)
 
-        ai_config = CLIENT_CONFIG.get("ai_service", {})
-        if not ai_config.get("enabled", False):
-            return jsonify({"success": False, "message": "AI服务未启用"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
 
-        child_id = ai_config.get("child_id", "") or public_client.client_id
-        if not child_id:
-            return jsonify({"success": False, "message": "未配置宝宝ID"})
 
-        if not public_client.client_id:
-            return jsonify({"success": False, "message": "未注册客户端，请先连接服务端"})
-
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
-            return jsonify({"success": False, "message": "未配置媒体文件夹"})
-
-        data = request.get_json() or {}
-
-        task_id = str(uuid.uuid4())[:8]
-        AI_REVIEW_TASKS[task_id] = {
-            "status": "running",
-            "processed": 0,
-            "total": 0,
-            "success_count": 0,
-            "skipped": 0,
-            "message": "正在扫描照片...",
-            "details": [],
-            "completed": False,
-            "started_at": datetime.now().isoformat(),
-        }
-
-        thread = threading.Thread(
-            target=run_ai_auto_review,
-            args=(task_id, media_folders, child_id, ai_config),
-            daemon=True,
-        )
-        thread.start()
-
-        return jsonify({"success": True, "task_id": task_id})
-
+@app.route("/api/ai/auto-review/cancel", methods=["POST"])
+@require_local_password_or_signature
+def cancel_ai_auto_review():
+    """取消正在执行的 AI 智能回顾任务。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        task_id = (data.get("task_id") or "").strip()
+        result = request_ai_auto_review_cancel(task_id)
+        return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -7337,8 +7115,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
     - 所有日期处理完毕后触发同步到健康AI和画像生成
     """
     from photo_manager import PhotoManager
-    from datetime import datetime, timedelta
-    import requests as req
+    from datetime import datetime
     import re
 
     def is_valid_date(date_str: str) -> bool:
@@ -7358,6 +7135,22 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
             return True
         except:
             return False
+
+    def cancel_if_requested(message: str) -> bool:
+        task = AI_REVIEW_TASKS.get(task_id)
+        if not isinstance(task, dict) or not task.get("cancel_requested"):
+            return False
+
+        task["cancelled"] = True
+        task["completed"] = True
+        task["status"] = "cancelled"
+        task["message"] = message
+        task["cancelled_at"] = datetime.now().isoformat()
+        if task.get("portrait_refresh") in {None, "pending"}:
+            task["portrait_refresh"] = "cancelled"
+        if not task.get("portrait_message"):
+            task["portrait_message"] = message
+        return True
 
     try:
         pm = PhotoManager(media_folders, public_client.data_dir)
@@ -7392,6 +7185,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
         can_use, used, limit = _check_token_quota()
         if not can_use:
             AI_REVIEW_TASKS[task_id]["completed"] = True
+            AI_REVIEW_TASKS[task_id]["status"] = "failed"
             AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
             AI_REVIEW_TASKS[task_id]["message"] = (
                 f"Token配额已用完（已用 {used:,} / 限额 {limit:,}）"
@@ -7402,8 +7196,14 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
         skipped_count = 0
         import time
 
+        if cancel_if_requested("刷新任务已取消"):
+            return
+
         for i, date in enumerate(dates_to_process):
             try:
+                if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                    return
+
                 AI_REVIEW_TASKS[task_id]["message"] = (
                     f"正在处理 {date} ({i + 1}/{len(dates_to_process)})"
                 )
@@ -7430,7 +7230,6 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 processed_videos = []
                 unprocessed_photos = []
                 unprocessed_videos = []
-                photo_hash_map = {}  # 存储照片哈希用于检查
 
                 # 1. 获取数据库中的照片哈希记录
                 db_photos = get_processed_photos(date, server_client_id)
@@ -7475,19 +7274,27 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 for db_video in db_videos:
                     if isinstance(db_video, dict):
                         db_path = db_video.get("video_path", "")
-                        db_hash = db_video.get("file_hash", "")
-                        if db_path and db_hash:
-                            db_video_map[Path(db_path).name] = db_hash
+                        if db_path:
+                            db_video_map[Path(db_path).name] = db_video
                     elif isinstance(db_video, str):
                         # 旧格式，没有哈希信息
                         db_video_map[Path(db_video).name] = None
 
                 for video_path in video_paths:
                     video_name = Path(video_path).name
-                    db_hash = db_video_map.get(video_name)
+                    db_record = db_video_map.get(video_name)
+                    db_hash = ""
+                    if isinstance(db_record, dict):
+                        db_hash = (db_record.get("file_hash", "") or "").strip()
 
                     # 情况1: 数据库中没有记录或没有哈希信息
                     if db_hash is None:
+                        unprocessed_videos.append(video_path)
+                        continue
+                    if not db_hash:
+                        unprocessed_videos.append(video_path)
+                        continue
+                    if not _video_record_has_completed_read(db_record):
                         unprocessed_videos.append(video_path)
                         continue
 
@@ -7508,8 +7315,6 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             video_hash = video_info["hash"]
                         else:
                             # 如果没有索引哈希，需要计算
-                            import hashlib
-
                             hasher = hashlib.md5()
                             with open(video_path, "rb") as f:
                                 for chunk in iter(lambda: f.read(8192), b""):
@@ -7569,42 +7374,76 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 needs_sync = False  # 是否需要同步到健康AI
 
                 if needs_analyze and unprocessed_photos:
+                    if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                        return
+
                     # 只分析未处理的照片
                     try:
-                        from select_best_photo import ai_select
-
-                        ai_result = ai_select(
-                            unprocessed_photos[:20], select_n=1, child_id=child_id
+                        skipped_photo_records = []
+                        ai_result, skipped_photo_records = _describe_photos_with_block_fallback(
+                            unprocessed_photos,
+                            child_id=child_id,
+                            client_id=server_client_id,
+                            date=date,
                         )
 
-                        # 【调试】输出 AI 返回结果
-                        logger.info(f"[DEBUG] AI 返回结果:")
-                        logger.info(
-                            f"  - selected: {len(ai_result.get('selected', []))}张"
-                        )
-                        logger.info(
-                            f"  - photos 字段：{len(ai_result.get('photos', {}))}条"
-                        )
-                        logger.info(f"  - blurry: {len(ai_result.get('blurry', []))}张")
-                        logger.info(
-                            f"  - no_baby: {len(ai_result.get('no_baby', []))}张"
-                        )
-                        logger.info(
-                            f"  - duplicates: {len(ai_result.get('duplicates', []))}组"
-                        )
-                        if ai_result.get("photos"):
+                        if skipped_photo_records:
+                            status_counter = Counter(
+                                (item.get("processed_status") or PHOTO_STATUS_OK)
+                                for item in skipped_photo_records
+                            )
+                            blocked_count = status_counter.get(PHOTO_STATUS_BLOCKED, 0)
+                            other_error_count = status_counter.get(
+                                PHOTO_STATUS_OTHER_ERROR,
+                                0,
+                            )
+                            terminal_photo_count = len(skipped_photo_records)
+                            message = (
+                                f"已标记为已处理: blocked={blocked_count}, "
+                                f"other_error={other_error_count}"
+                            )
                             logger.info(
-                                f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                                f"[AI回顾] {date}: 终态异常图片 {terminal_photo_count} 张，{message}"
+                            )
+                            AI_REVIEW_TASKS[task_id]["details"].append(
+                                {
+                                    "date": date,
+                                    "success": True,
+                                    "message": message,
+                                }
+                            )
+                            print(
+                                f"[AI回顾] {date}: 终态异常图片{terminal_photo_count}张，{message}"
                             )
 
-                        blurry_count = len(ai_result.get("blurry", []))
-                        no_baby_count = len(ai_result.get("no_baby", []))
-                        dup_groups = ai_result.get("duplicates", [])
-                        dup_count = sum(len(g) - 1 for g in dup_groups if len(g) > 1)
+                        # 【调试】输出 AI 返回结果
+                        if ai_result:
+                            logger.info(f"[DEBUG] AI 返回结果:")
+                            logger.info(
+                                f"  - photos 字段：{len(ai_result.get('photos', {}))}条"
+                            )
+                            logger.info(
+                                f"  - blurry: {len(ai_result.get('blurry', []))}张"
+                            )
+                            logger.info(
+                                f"  - no_baby: {len(ai_result.get('no_baby', []))}张"
+                            )
+                            logger.info(
+                                f"  - duplicates: {len(ai_result.get('duplicates', []))}组"
+                            )
+                            if ai_result.get("photos"):
+                                logger.info(
+                                    f"  - photos 样例：{list(ai_result['photos'].items())[:2]}"
+                                )
 
-                        print(
-                            f"[AI回顾] {date}: 模糊{blurry_count}张, 无宝宝{no_baby_count}张, 重复{dup_count}张"
-                        )
+                            blurry_count = len(ai_result.get("blurry", []))
+                            no_baby_count = len(ai_result.get("no_baby", []))
+                            dup_groups = ai_result.get("duplicates", [])
+                            dup_count = sum(len(g) - 1 for g in dup_groups if len(g) > 1)
+
+                            print(
+                                f"[AI回顾] {date}: 模糊{blurry_count}张, 无宝宝{no_baby_count}张, 重复{dup_count}张"
+                            )
 
                     except Exception as e:
                         error_msg = str(e)
@@ -7613,6 +7452,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             or "ALL_MODELS_EXHAUSTED" in error_msg
                         ):
                             AI_REVIEW_TASKS[task_id]["completed"] = True
+                            AI_REVIEW_TASKS[task_id]["status"] = "failed"
                             AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
                             if "ALL_MODELS_EXHAUSTED:" in error_msg:
                                 friendly_msg = error_msg.split("ALL_MODELS_EXHAUSTED:")[
@@ -7641,13 +7481,15 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                 # 步骤2：分析新照片并保存描述（如果有新照片）
                 if needs_analyze and ai_result:
+                    if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                        return
                     try:
                         from select_best_photo import analyze_all_photos
 
                         # 分析新照片并保存到数据库
                         analyze_all_photos(
                             unprocessed_photos,  # 只分析新照片
-                            max_photos=20,
+                            max_photos=len(unprocessed_photos),
                             client_id=server_client_id,
                             date=date,
                             ai_result=ai_result,
@@ -7663,7 +7505,9 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 analysis_result = None
                 try:
                     logger.info(f"[DEBUG] 从数据库获取当天所有照片描述")
-                    all_descriptions = get_processed_photos(date, server_client_id)
+                    all_descriptions = _filter_semantic_skip_photo_records(
+                        get_processed_photos(date, server_client_id)
+                    )
 
                     if all_descriptions:
                         # 构建 analysis_result 格式
@@ -7750,13 +7594,19 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                 # 步骤4：保存精选照片（总是生成或更新）
                 featured_info = None
-                if ai_result:
-                    selected = ai_result.get("selected", [])
-                    reasons = ai_result.get("reasons", [])
+                existing_featured = get_featured_photo_info(date, server_client_id)
+                should_select_featured = bool(
+                    analysis_result and analysis_result.get("photos")
+                ) and (needs_analyze or not existing_featured)
 
-                    if selected:
-                        best_photo = selected[0]
-                        ai_description = reasons[0] if reasons else "今日照片"
+                if should_select_featured:
+                    selected_record, ai_description, _selection = _pick_featured_photo_from_records(
+                        analysis_result.get("photos", []),
+                        child_id=child_id,
+                    )
+
+                    if selected_record and selected_record.get("path"):
+                        best_photo = selected_record.get("path", "")
                         best_photo_filename = Path(best_photo).name
 
                         # 计算精选照片哈希用于比较
@@ -7772,10 +7622,6 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                 f"[AI回顾] 计算精选照片哈希失败 {best_photo}: {e}"
                             )
 
-                        # 检查是否已有相同的精选照片
-                        existing_featured = get_featured_photo_info(
-                            date, server_client_id
-                        )
                         existing_hash = (
                             existing_featured.get("file_hash", "")
                             if existing_featured
@@ -7783,7 +7629,6 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                         )
 
                         if not existing_featured or best_photo_hash != existing_hash:
-                            # 保存或更新精选照片
                             save_featured_photo_server(
                                 date,
                                 server_client_id,
@@ -7814,7 +7659,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                 }
                             )
                     else:
-                        featured_info = None
+                        featured_info = existing_featured
                         AI_REVIEW_TASKS[task_id]["details"].append(
                             {
                                 "date": date,
@@ -7823,7 +7668,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                             }
                         )
                 else:
-                    featured_info = get_featured_photo_info(date, server_client_id)
+                    featured_info = existing_featured
                     AI_REVIEW_TASKS[task_id]["details"].append(
                         {
                             "date": date,
@@ -7835,6 +7680,8 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 # 步骤5：处理视频语音
                 video_count = 0
                 if needs_video_process and unprocessed_videos:
+                    if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                        return
                     try:
                         print(
                             f"[AI回顾] {date}: 找到 {len(unprocessed_videos)} 个未处理视频"
@@ -7847,15 +7694,52 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                         baby_info = getattr(public_client, "baby_info", {}) or {}
                         baby_name = baby_info.get("baby_name", "宝宝")
                         age_months = baby_info.get("age_months", 0)
+                        video_entry_map = {
+                            item.get("path", ""): item
+                            for item in videos
+                            if item.get("path")
+                        }
 
-                        for video_path_str in unprocessed_videos[:5]:
+                        for video_path_str in unprocessed_videos:
+                            if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                                return
+
                             video_path = Path(video_path_str)
+                            indexed_video_hash = (
+                                video_entry_map.get(video_path_str, {}).get("hash") or ""
+                            ).strip()
                             if not video_path.exists():
+                                try:
+                                    upload_resp = public_client.signed_request(
+                                        "POST",
+                                        f"{public_client.server_url}/czrz/speech/record",
+                                        json={
+                                            "client_id": server_client_id,
+                                            "date": date,
+                                            "video_path": str(video_path),
+                                            "file_hash": indexed_video_hash,
+                                            "transcript": "",
+                                            "duration": 0,
+                                            "analysis": _build_terminal_video_analysis(
+                                                "索引存在但磁盘文件不存在",
+                                                error_code="missing_source_file",
+                                                note="视频文件不存在，按已处理跳过",
+                                            ),
+                                        },
+                                        timeout=30,
+                                        verify=False,
+                                    )
+                                    if upload_resp.status_code == 200:
+                                        video_count += 1
+                                        needs_sync = True
+                                except Exception as upload_error:
+                                    logger.info(
+                                        f"[AI回顾] 视频缺失终态标记失败 {video_path}: {upload_error}"
+                                    )
                                 continue
 
                             try:
                                 import time
-                                import hashlib
 
                                 time.sleep(2)
                                 logger.info(
@@ -7866,15 +7750,9 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                 )
 
                                 # 计算视频文件 hash
-                                video_hash = ""
-                                try:
-                                    hasher = hashlib.md5()
-                                    with open(video_path, "rb") as f:
-                                        for chunk in iter(lambda: f.read(8192), b""):
-                                            hasher.update(chunk)
-                                    video_hash = hasher.hexdigest()
-                                except Exception as e:
-                                    logger.info(f"[AI回顾] 计算视频hash失败: {e}")
+                                video_hash = indexed_video_hash or _resolve_media_hash(
+                                    str(video_path)
+                                )
 
                                 # 准备上传数据
                                 upload_data = {
@@ -7902,10 +7780,11 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                     # 语音识别失败或无内容
                                     error_msg = speech_result.get("error", "未知错误")
                                     upload_data["transcript"] = ""
-                                    upload_data["analysis"] = {
-                                        "error": error_msg,
-                                        "note": "语音识别失败或无有效语音",
-                                    }
+                                    upload_data["analysis"] = _build_terminal_video_analysis(
+                                        error_msg,
+                                        error_code="no_audio",
+                                        note="语音识别失败或无有效语音",
+                                    )
 
                                 # 上传视频处理结果
                                 upload_resp = public_client.signed_request(
@@ -7929,6 +7808,33 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                             except Exception as e:
                                 logger.info(f"[AI回顾] 视频处理失败 {video_path}: {e}")
+                                try:
+                                    upload_resp = public_client.signed_request(
+                                        "POST",
+                                        f"{public_client.server_url}/czrz/speech/record",
+                                        json={
+                                            "client_id": server_client_id,
+                                            "date": date,
+                                            "video_path": str(video_path),
+                                            "file_hash": indexed_video_hash
+                                            or _resolve_media_hash(str(video_path)),
+                                            "transcript": "",
+                                            "duration": 0,
+                                            "analysis": _build_terminal_video_analysis(
+                                                str(e),
+                                                error_code="video_process_error",
+                                            ),
+                                        },
+                                        timeout=30,
+                                        verify=False,
+                                    )
+                                    if upload_resp.status_code == 200:
+                                        video_count += 1
+                                        needs_sync = True
+                                except Exception as upload_error:
+                                    logger.info(
+                                        f"[AI回顾] 视频终态标记失败 {video_path}: {upload_error}"
+                                    )
 
                         if video_count > 0:
                             AI_REVIEW_TASKS[task_id]["details"].append(
@@ -7950,11 +7856,10 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                     except Exception as e:
                         logger.info(f"[AI回顾] 视频处理失败 {date}: {e}")
 
-                # 步骤6：生成日志（总是生成或更新）
-                log_generated = False
-
                 # 获取照片描述用于生成日志
-                all_descriptions = get_processed_photos(date, server_client_id)
+                all_descriptions = _filter_semantic_skip_photo_records(
+                    get_processed_photos(date, server_client_id)
+                )
                 valid_photos = []
                 for desc in all_descriptions:
                     if isinstance(desc, dict) and desc.get("description"):
@@ -7997,18 +7902,33 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                     if featured_info
                                     else None
                                 )
-                                save_log_server(
+                                save_result = save_log_server(
                                     date, server_client_id, log_content, featured_desc
                                 )
-                                needs_sync = True
-                                log_generated = True
-                                AI_REVIEW_TASKS[task_id]["details"].append(
-                                    {
-                                        "date": date,
-                                        "success": True,
-                                        "message": "日志已生成",
-                                    }
-                                )
+                                if save_result.get("success"):
+                                    if not save_result.get("skipped"):
+                                        needs_sync = True
+                                    AI_REVIEW_TASKS[task_id]["details"].append(
+                                        {
+                                            "date": date,
+                                            "success": True,
+                                            "message": (
+                                                "已有手动日志，跳过自动覆盖"
+                                                if save_result.get("skipped")
+                                                else "日志已生成"
+                                            ),
+                                        }
+                                    )
+                                else:
+                                    AI_REVIEW_TASKS[task_id]["details"].append(
+                                        {
+                                            "date": date,
+                                            "success": False,
+                                            "message": save_result.get(
+                                                "message", "日志保存失败"
+                                            ),
+                                        }
+                                    )
                             else:
                                 AI_REVIEW_TASKS[task_id]["details"].append(
                                     {
@@ -8071,7 +7991,8 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
             process_time = date_end_time - date_start_time
             logger.info(f"[AI回顾]   性能: 处理 {date} 耗时 {process_time:.2f}秒")
 
-        AI_REVIEW_TASKS[task_id]["completed"] = True
+            if cancel_if_requested(f"刷新任务已取消，停止于 {date}"):
+                return
 
         # 计算实际处理天数（跳过不算）
         actual_processed = success_count
@@ -8085,10 +8006,18 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
         else:
             AI_REVIEW_TASKS[task_id]["message"] = "完成！AI刷新已完成"
 
-        # 触发同步到健康AI（无论是否有变化）
+        # 触发同步到健康AI并等待画像刷新结果
         try:
             server_url = USER_CONFIG.get("server_url", "")
             if server_url:
+                import time as time_module
+
+                if cancel_if_requested("刷新任务已取消，未继续同步到健康AI"):
+                    return
+
+                AI_REVIEW_TASKS[task_id]["portrait_refresh"] = "pending"
+                AI_REVIEW_TASKS[task_id]["message"] = "正在同步到健康AI..."
+
                 # 触发服务端同步（需要签名）
                 public_client.signed_request(
                     "POST",
@@ -8101,55 +8030,138 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                 )
                 logger.info("[AI回顾] 已触发服务端同步到健康AI")
 
-                # 等待片刻后触发画像生成
-                import time as time_module
+                # 等待同步线程结束，避免画像刷新吃到半同步数据
+                for _ in range(120):
+                    if cancel_if_requested("刷新任务已取消，未继续生成画像"):
+                        return
+                    sync_status_resp = public_client.signed_request(
+                        "GET",
+                        f"{server_url}/czrz/ai/sync-status",
+                        timeout=30,
+                    )
+                    if sync_status_resp.status_code != 200:
+                        break
+                    sync_status_payload = sync_status_resp.json() or {}
+                    sync_status = sync_status_payload.get("status") or {}
+                    if not sync_status.get("running"):
+                        break
+                    time_module.sleep(1)
 
-                time_module.sleep(2)
+                if cancel_if_requested("刷新任务已取消，未继续生成画像"):
+                    return
 
-                public_client.signed_request(
+                AI_REVIEW_TASKS[task_id]["message"] = "正在刷新画像..."
+                refresh_resp = public_client.signed_request(
                     "POST",
                     f"{server_url}/czrz/profile/generate-trigger",
                     json={
                         "client_id": public_client.client_id,
                         "child_id": child_id,
+                        "wait": False,
                     },
                     timeout=30,
                 )
-                logger.info("[AI回顾] 已触发画像生成")
+                if refresh_resp.status_code == 200:
+                    refresh_payload = refresh_resp.json() or {}
+                    if refresh_payload.get("success"):
+                        portrait_deadline = time_module.time() + 3600
+                        last_profile_message = refresh_payload.get("message") or ""
+                        while time_module.time() < portrait_deadline:
+                            if cancel_if_requested("刷新任务已取消，未继续等待画像完成"):
+                                return
+
+                            sync_status_resp = public_client.signed_request(
+                                "GET",
+                                f"{server_url}/czrz/ai/sync-status",
+                                timeout=30,
+                            )
+                            if sync_status_resp.status_code != 200:
+                                time_module.sleep(2)
+                                continue
+
+                            sync_status_payload = sync_status_resp.json() or {}
+                            sync_status = sync_status_payload.get("status") or {}
+                            profile_status = sync_status.get("profile_refresh") or "pending"
+                            profile_message = (
+                                sync_status.get("profile_refresh_message") or ""
+                            )
+                            profile_llm_valid = sync_status.get("profile_llm_valid")
+                            if profile_message:
+                                last_profile_message = profile_message
+
+                            if profile_status in {"completed", "failed"}:
+                                llm_valid = bool(profile_llm_valid)
+                                AI_REVIEW_TASKS[task_id]["portrait_llm_valid"] = llm_valid
+                                AI_REVIEW_TASKS[task_id]["portrait_refresh"] = profile_status
+                                AI_REVIEW_TASKS[task_id]["portrait_message"] = (
+                                    last_profile_message
+                                    or (
+                                        "画像生成完成"
+                                        if profile_status == "completed"
+                                        else "画像生成失败"
+                                    )
+                                )
+                                break
+
+                            time_module.sleep(2)
+                        else:
+                            AI_REVIEW_TASKS[task_id]["portrait_refresh"] = "pending"
+                            AI_REVIEW_TASKS[task_id]["portrait_llm_valid"] = None
+                            AI_REVIEW_TASKS[task_id]["portrait_message"] = (
+                                last_profile_message or "画像仍在生成中"
+                            )
+                    else:
+                        AI_REVIEW_TASKS[task_id]["portrait_refresh"] = "failed"
+                        AI_REVIEW_TASKS[task_id]["portrait_llm_valid"] = False
+                        AI_REVIEW_TASKS[task_id]["portrait_message"] = (
+                            refresh_payload.get("message") or "画像刷新启动失败"
+                        )
+                else:
+                    AI_REVIEW_TASKS[task_id]["portrait_refresh"] = "failed"
+                    AI_REVIEW_TASKS[task_id]["portrait_llm_valid"] = False
+                    AI_REVIEW_TASKS[task_id]["portrait_message"] = (
+                        f"画像刷新请求失败: {refresh_resp.status_code}"
+                    )
         except Exception as e:
+            AI_REVIEW_TASKS[task_id]["portrait_refresh"] = "failed"
+            AI_REVIEW_TASKS[task_id]["portrait_llm_valid"] = False
+            AI_REVIEW_TASKS[task_id]["portrait_message"] = str(e)
             logger.info(f"[AI回顾] 触发同步/画像生成失败: {e}")
 
-    except Exception as e:
+        if AI_REVIEW_TASKS[task_id].get("portrait_refresh") == "failed":
+            AI_REVIEW_TASKS[task_id]["status"] = "failed"
+            AI_REVIEW_TASKS[task_id]["message"] = (
+                AI_REVIEW_TASKS[task_id].get("portrait_message")
+                or "素材刷新完成，但画像生成失败"
+            )
+        elif AI_REVIEW_TASKS[task_id].get("portrait_refresh") == "completed":
+            AI_REVIEW_TASKS[task_id]["status"] = "completed"
+            AI_REVIEW_TASKS[task_id]["message"] = "完成！AI刷新和画像生成已完成"
+        elif AI_REVIEW_TASKS[task_id].get("portrait_refresh") == "pending":
+            AI_REVIEW_TASKS[task_id]["status"] = "completed"
+            AI_REVIEW_TASKS[task_id]["message"] = "素材刷新完成，画像仍在生成中"
+        else:
+            AI_REVIEW_TASKS[task_id]["status"] = "completed"
+
         AI_REVIEW_TASKS[task_id]["completed"] = True
-        AI_REVIEW_TASKS[task_id]["message"] = f"任务失败: {str(e)}"
 
-
-def check_has_featured_photo(date: str, client_id: str) -> bool:
-    """检查是否已有精选照片（从服务端检查）"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/photo/featured",
-            params={"client_id": client_id, "date": date},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            result = resp.json()
-            if result.get("success") and result.get("photo"):
-                return True
     except Exception as e:
-        logger.info(f"[AI回顾] 检查服务端精选照片失败: {e}")
-    return False
+        if AI_REVIEW_TASKS.get(task_id, {}).get("status") == "cancelled":
+            AI_REVIEW_TASKS[task_id]["completed"] = True
+        else:
+            AI_REVIEW_TASKS[task_id]["completed"] = True
+            AI_REVIEW_TASKS[task_id]["status"] = "failed"
+            AI_REVIEW_TASKS[task_id]["message"] = f"任务失败: {str(e)}"
 
 
-def get_featured_photo_info(date: str, client_id: str) -> dict:
+def get_featured_photo_info(date: str, client_id: str, timeout: int = 8) -> dict:
     """获取精选照片信息（从服务端获取，包含哈希）"""
     try:
         resp = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/photo/featured",
             params={"client_id": client_id, "date": date},
-            timeout=30,
+            timeout=timeout,
         )
         logger.info(
             f"[DEBUG] get_featured_photo_info: status={resp.status_code}, url={resp.url}"
@@ -8168,39 +8180,316 @@ def get_featured_photo_info(date: str, client_id: str) -> dict:
     return None
 
 
-def get_featured_photo_by_hash(file_hash: str) -> dict:
-    """通过哈希获取精选照片的本地文件信息"""
-    from photo_manager import PhotoManager
+def _compute_file_hash(file_path: str) -> str:
+    path_obj = Path(file_path or "")
+    if not path_obj.exists() or not path_obj.is_file():
+        return ""
 
-    media_folders = getattr(public_client, "media_folders", [])
+    hasher = hashlib.md5()
+    with open(path_obj, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _get_hash_backfill_photo_manager():
+    media_folders = tuple(
+        str(Path(folder))
+        for folder in (getattr(public_client, "media_folders", []) or [])
+        if folder and Path(folder).exists()
+    )
     if not media_folders:
         return None
 
-    pm = PhotoManager(media_folders, public_client.data_dir)
-    entry = pm.get_photo_by_hash(file_hash)
-    if entry:
-        path = entry.get("path")
-        if path and Path(path).exists():
-            return entry
+    cached_folders = HASH_BACKFILL_PM_CACHE.get("media_folders")
+    cached_manager = HASH_BACKFILL_PM_CACHE.get("manager")
+    if cached_manager is not None and cached_folders == media_folders:
+        return cached_manager
+
+    try:
+        from photo_manager import PhotoManager
+
+        manager = PhotoManager(list(media_folders), public_client.data_dir)
+    except Exception as e:
+        logger.info(f"[AI回顾] 初始化 PhotoManager 失败，跳过 hash 回填: {e}")
+        return None
+
+    HASH_BACKFILL_PM_CACHE["media_folders"] = media_folders
+    HASH_BACKFILL_PM_CACHE["manager"] = manager
+    return manager
+
+
+def _load_raw_photo_index_maps():
+    index_file = USER_DATA_DIR / "photo_index" / "photo_index.json"
+    if not index_file.exists():
+        return RAW_PHOTO_INDEX_CACHE
+
+    try:
+        current_mtime = index_file.stat().st_mtime
+        if RAW_PHOTO_INDEX_CACHE.get("mtime") == current_mtime:
+            return RAW_PHOTO_INDEX_CACHE
+
+        payload = json.loads(index_file.read_text(encoding="utf-8"))
+        by_path = {}
+        by_filename = {}
+        for bucket in ("photos", "videos"):
+            entries = payload.get(bucket, {}) or {}
+            if not isinstance(entries, dict):
+                continue
+            for entry in entries.values():
+                if not isinstance(entry, dict):
+                    continue
+                file_hash = (entry.get("hash") or "").strip()
+                file_path = (entry.get("path") or "").strip()
+                filename = (entry.get("filename") or Path(file_path).name or "").strip()
+                if not file_hash:
+                    continue
+                if file_path:
+                    by_path[file_path] = file_hash
+                if filename and filename not in by_filename:
+                    by_filename[filename] = file_hash
+
+        RAW_PHOTO_INDEX_CACHE["mtime"] = current_mtime
+        RAW_PHOTO_INDEX_CACHE["by_path"] = by_path
+        RAW_PHOTO_INDEX_CACHE["by_filename"] = by_filename
+    except Exception as e:
+        logger.info(f"[AI回顾] 读取原始索引失败，跳过原始索引回退: {e}")
+
+    return RAW_PHOTO_INDEX_CACHE
+
+
+def _resolve_media_hash(file_path: str, photo_manager=None) -> str:
+    file_path = (file_path or "").strip()
+    if not file_path:
+        return ""
+
+    resolved_hash = ""
+    try:
+        entry = (
+            photo_manager.get_photo_by_path(file_path)
+            if photo_manager and hasattr(photo_manager, "get_photo_by_path")
+            else None
+        )
+        if not entry and photo_manager and hasattr(photo_manager, "get_photo_by_filename"):
+            entry = photo_manager.get_photo_by_filename(Path(file_path).name)
+        if entry:
+            resolved_hash = (entry.get("hash") or "").strip()
+        if not resolved_hash:
+            raw_index = _load_raw_photo_index_maps()
+            resolved_hash = (
+                raw_index.get("by_path", {}).get(file_path)
+                or raw_index.get("by_filename", {}).get(Path(file_path).name, "")
+            ).strip()
+        if not resolved_hash:
+            resolved_hash = _compute_file_hash(file_path)
+    except Exception as e:
+        logger.info(f"[AI回顾] 解析媒体 hash 失败 {file_path}: {e}")
+    return resolved_hash
+
+
+def _backfill_missing_photo_hashes(date: str, client_id: str, photos: list) -> list:
+    """用本地索引回填服务端旧记录中的空 hash，避免老素材被反复重读。"""
+    if not photos or client_id != public_client.client_id:
+        return photos
+
+    photo_manager = _get_hash_backfill_photo_manager()
+    if not photo_manager:
+        return photos
+
+    updated = []
+    repaired_payload = []
+
+    for item in photos:
+        current = dict(item or {})
+        file_path = (current.get("path") or "").strip()
+        file_hash = (current.get("hash") or current.get("file_hash") or "").strip()
+
+        if not file_path or file_hash:
+            updated.append(current)
+            continue
+
+        resolved_hash = _resolve_media_hash(file_path, photo_manager)
+
+        if resolved_hash:
+            current["hash"] = resolved_hash
+            repaired_payload.append(
+                {
+                    "path": file_path,
+                    "hash": resolved_hash,
+                    "description": current.get("description", "") or "",
+                    "has_baby": current.get("has_baby", True),
+                    "scene": current.get("scene", "") or "",
+                    "activity": current.get("activity", "") or "",
+                    "processed_status": current.get("processed_status", "") or PHOTO_STATUS_OK,
+                    "processed_error_code": current.get("processed_error_code", "") or "",
+                    "processed_error_detail": current.get("processed_error_detail", "") or "",
+                }
+            )
+        updated.append(current)
+
+    if repaired_payload:
+        try:
+            resp = public_client.signed_request(
+                "POST",
+                f"{public_client.server_url}/czrz/photos/descriptions",
+                json={
+                    "client_id": client_id,
+                    "date": date,
+                    "photos": repaired_payload,
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    f"[AI回顾] 已回填 {date} 缺失照片 hash: {len(repaired_payload)} 条"
+                )
+        except Exception as e:
+            logger.info(f"[AI回顾] 回填照片 hash 上传失败: {e}")
+
+    return updated
+
+
+def _parse_language_analysis_payload(value):
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
     return None
 
 
-def check_has_log(date: str, client_id: str) -> bool:
-    """检查是否已有日志（从服务端检查）"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/baby/log",
-            params={"client_id": client_id, "date": date},
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            result = resp.json()
-            if result.get("success") and result.get("log"):
-                return True
-    except Exception as e:
-        logger.info(f"[AI回顾] 检查服务端日志失败: {e}")
+def _build_terminal_video_analysis(
+    error_text: str,
+    *,
+    error_code: str = "other_error",
+    note: str = "视频处理异常，按已处理跳过",
+    processed_status: str = "other_error",
+) -> dict:
+    return {
+        "error": str(error_text or "").strip(),
+        "note": note,
+        "processed_status": processed_status,
+        "processed_error_code": error_code,
+        "processed_error_detail": str(error_text or "").strip(),
+    }
+
+
+def _video_record_has_completed_read(record: dict) -> bool:
+    """判断视频记录是否已经完成读取，或已明确确认素材无有效语音。"""
+    if not isinstance(record, dict):
+        return False
+
+    transcript = str(record.get("transcript") or "").strip()
+    if transcript:
+        return True
+
+    confirmed_invalid_markers = (
+        "识别结果为空",
+        "未检测到有效语音",
+        "音频全是静音",
+        "音频时长过短",
+        "无有效语音",
+        "无明显语音",
+        "无语音",
+        "静音",
+        "语音识别失败或无有效语音",
+        "音频提取失败",
+        "output file does not contain any stream",
+        "error opening output file",
+        "error opening output files",
+        "视频文件不存在",
+        "索引存在但磁盘文件不存在",
+    )
+
+    raw_analysis_text = str(record.get("language_analysis") or "").strip()
+    analysis = _parse_language_analysis_payload(record.get("language_analysis"))
+
+    if isinstance(analysis, dict):
+        processed_status = str(analysis.get("processed_status") or "").strip().lower()
+        if processed_status and processed_status not in {"retry", "needs_retry", "pending"}:
+            return True
+        processed_error_code = str(analysis.get("processed_error_code") or "").strip().lower()
+        if processed_error_code and processed_error_code not in {"retry", "needs_retry", "pending"}:
+            return True
+        error_text = str(analysis.get("error") or "").strip()
+        note_text = str(analysis.get("note") or "").strip()
+        combined_text = "\n".join(part for part in (error_text, note_text) if part)
+        combined_text_lower = combined_text.lower()
+        if any(marker.lower() in combined_text_lower for marker in confirmed_invalid_markers):
+            return True
+        return False
+
+    raw_analysis_text_lower = raw_analysis_text.lower()
+    if any(marker.lower() in raw_analysis_text_lower for marker in confirmed_invalid_markers):
+        return True
+
     return False
+
+
+def _backfill_missing_video_hashes(date: str, client_id: str, videos: list) -> list:
+    """回填旧语音记录中的空视频 hash，避免视频被反复转写。"""
+    if not videos or client_id != public_client.client_id:
+        return videos
+
+    photo_manager = _get_hash_backfill_photo_manager()
+    if not photo_manager:
+        return videos
+
+    updated = []
+    repaired_count = 0
+
+    for item in videos:
+        current = dict(item or {})
+        video_path = (current.get("video_path") or "").strip()
+        file_hash = (current.get("file_hash") or current.get("hash") or "").strip()
+
+        if not video_path or file_hash:
+            updated.append(current)
+            continue
+
+        resolved_hash = _resolve_media_hash(video_path, photo_manager)
+        if not resolved_hash:
+            updated.append(current)
+            continue
+
+        current["file_hash"] = resolved_hash
+        upload_data = {
+            "client_id": client_id,
+            "date": date,
+            "video_path": video_path,
+            "file_hash": resolved_hash,
+            "transcript": current.get("transcript", "") or "",
+            "duration": current.get("duration", 0) or 0,
+        }
+        parsed_analysis = _parse_language_analysis_payload(
+            current.get("language_analysis")
+        )
+        if parsed_analysis is not None:
+            upload_data["analysis"] = parsed_analysis
+
+        try:
+            resp = public_client.signed_request(
+                "POST",
+                f"{public_client.server_url}/czrz/speech/record",
+                json=upload_data,
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                repaired_count += 1
+        except Exception as e:
+            logger.info(f"[AI回顾] 回填视频 hash 上传失败 {video_path}: {e}")
+
+        updated.append(current)
+
+    if repaired_count:
+        logger.info(f"[AI回顾] 已回填 {date} 缺失视频 hash: {repaired_count} 条")
+
+    return updated
 
 
 def get_processed_photos(date: str, client_id: str) -> list:
@@ -8215,46 +8504,2485 @@ def get_processed_photos(date: str, client_id: str) -> list:
         if resp.status_code == 200:
             result = resp.json()
             if result.get("success"):
-                return result.get("photos", [])
+                photos = result.get("photos") or result.get("data", {}).get("photos", [])
+                return _backfill_missing_photo_hashes(date, client_id, photos)
     except Exception as e:
         logger.info(f"[AI回顾] 获取已处理照片失败: {e}")
     return []
 
 
-def check_new_feedback(date: str, client_id: str) -> bool:
-    """检查某天是否有新的画像反馈"""
+def _filter_semantic_skip_photo_records(records: list) -> list:
+    return [
+        dict(item)
+        for item in (records or [])
+        if isinstance(item, dict) and not is_semantic_skip_photo_record(item)
+    ]
+
+
+def _empty_photo_describe_result() -> dict:
+    return {
+        "selected": [],
+        "blurry": [],
+        "duplicates": [],
+        "no_baby": [],
+        "photos": {},
+        "blurry_filenames": [],
+        "duplicate_filenames": [],
+        "no_baby_filenames": [],
+        "reasons": [],
+    }
+
+
+def _merge_photo_describe_results(base: dict, incoming: dict) -> dict:
+    if not incoming:
+        return base
+
+    base.setdefault("photos", {}).update(incoming.get("photos", {}) or {})
+
+    for list_key in ("selected", "blurry", "no_baby", "blurry_filenames", "no_baby_filenames", "reasons"):
+        existing = base.setdefault(list_key, [])
+        seen = set(existing)
+        for item in incoming.get(list_key, []) or []:
+            if item in seen:
+                continue
+            existing.append(item)
+            seen.add(item)
+
+    for group_key in ("duplicates", "duplicate_filenames"):
+        existing = base.setdefault(group_key, [])
+        seen = {tuple(group) for group in existing if isinstance(group, list)}
+        for group in incoming.get(group_key, []) or []:
+            if not isinstance(group, list):
+                continue
+            marker = tuple(group)
+            if marker in seen:
+                continue
+            existing.append(group)
+            seen.add(marker)
+
+    return base
+
+
+def _describe_photos_with_block_fallback(
+    photo_paths: list,
+    child_id: str,
+    client_id: str,
+    date: str,
+    log_prefix: str = "[AI回顾]",
+) -> tuple[dict | None, list]:
+    from select_best_photo import (
+        describe_photo_batch,
+        save_blocked_photo_descriptions_to_server,
+        save_other_error_photo_descriptions_to_server,
+    )
+
+    target_paths = [path for path in (photo_paths or []) if path]
+    if not target_paths:
+        return None, []
+
+    merged = _empty_photo_describe_result()
+    skipped_records = []
+    chunk_size = 20
+
+    for chunk_start in range(0, len(target_paths), chunk_size):
+        chunk_paths = target_paths[chunk_start : chunk_start + chunk_size]
+
+        try:
+            chunk_result = describe_photo_batch(chunk_paths, child_id=child_id)
+            _merge_photo_describe_results(merged, chunk_result)
+            continue
+        except Exception as e:
+            batch_error = classify_terminal_photo_error(e)
+            if not batch_error:
+                raise
+
+            logger.info(f"{log_prefix} 视觉批量分析触发终态异常，回退单张识别: {e}")
+            blocked_paths = []
+
+            for photo_path in chunk_paths:
+                try:
+                    single_result = describe_photo_batch([photo_path], child_id=child_id)
+                    _merge_photo_describe_results(merged, single_result)
+                except Exception as single_e:
+                    single_error = classify_terminal_photo_error(single_e)
+                    if not single_error:
+                        raise
+                    if single_error.get("processed_status") == PHOTO_STATUS_BLOCKED:
+                        blocked_paths.append(photo_path)
+                        continue
+                    skipped_records.extend(
+                        save_other_error_photo_descriptions_to_server(
+                            client_id,
+                            date,
+                            [photo_path],
+                            error_detail=single_error.get("processed_error_detail", ""),
+                            error_code=single_error.get(
+                                "processed_error_code",
+                                PHOTO_STATUS_OTHER_ERROR,
+                            ),
+                        )
+                    )
+
+            if blocked_paths:
+                skipped_records.extend(
+                    save_blocked_photo_descriptions_to_server(
+                        client_id,
+                        date,
+                        blocked_paths,
+                    )
+                )
+
+    if skipped_records:
+        status_counter = Counter(
+            (item.get("processed_status") or PHOTO_STATUS_OK)
+            for item in skipped_records
+        )
+        logger.info(
+            f"{log_prefix} 终态异常图片已标记为已处理: "
+            f"blocked={status_counter.get(PHOTO_STATUS_BLOCKED, 0)}, "
+            f"other_error={status_counter.get(PHOTO_STATUS_OTHER_ERROR, 0)}"
+        )
+
+    has_describe_result = any(
+        merged.get(key)
+        for key in ("photos", "blurry", "duplicates", "no_baby")
+    )
+    return (merged if has_describe_result else None), skipped_records
+
+
+def _story_trim_text(text: str, limit: int = 40) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+    return cleaned[:limit]
+
+
+def _story_dedup_texts(items: list, limit: int = 6, max_len: int = 24) -> list:
+    seen = set()
+    result = []
+    for item in items or []:
+        text = _story_trim_text(item, max_len)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _story_pick_seed(options: list, seed_source: str, salt: str = "") -> str:
+    if not options:
+        return ""
+    digest = hashlib.md5(f"{seed_source}|{salt}".encode("utf-8")).hexdigest()
+    return options[int(digest[:8], 16) % len(options)]
+
+
+def _story_score_keywords(text: str, keywords: list) -> int:
+    raw = str(text or "")
+    return sum(1 for word in keywords if word and word in raw)
+
+
+def _story_guess_emotion(profile_bundle: dict, tag_lines: list, feedback_lines: list) -> str:
+    emotion_keywords = {
+        "开心": ["笑", "开心", "快乐", "高兴", "灿烂", "轻松"],
+        "平静": ["安静", "平稳", "专注", "柔和", "稳定", "沉静"],
+        "好奇": ["好奇", "探索", "观察", "发现", "研究", "新鲜"],
+        "困倦": ["睡", "困", "午睡", "打哈欠", "休息"],
+        "撒娇": ["抱", "依恋", "黏", "撒娇", "贴贴"],
+        "哭闹": ["哭", "委屈", "闹", "不舒服", "烦躁"],
+    }
+    text_pool = " ".join(
+        list(profile_bundle.get("traits", []))
+        + list(profile_bundle.get("interest_current", []))
+        + list(profile_bundle.get("recent_changes", []))
+        + list(tag_lines or [])
+        + list(feedback_lines or [])
+    )
+    scores = {}
+    for emotion, keywords in emotion_keywords.items():
+        scores[emotion] = sum(1 for word in keywords if word and word in text_pool)
+    best = max(scores.items(), key=lambda item: item[1]) if scores else ("好奇", 0)
+    return best[0] if best[1] > 0 else "好奇"
+
+
+def _story_collect_domain_scores(text_pool: str) -> dict:
+    domain_specs = {
+        "focus": ["专注", "认真", "稳定", "安静", "平静", "观察", "研究", "沉稳"],
+        "empathy": ["温柔", "安抚", "照顾", "照看", "回应", "贴心", "陪伴", "关心"],
+        "mobility": ["站", "站立", "迈步", "走", "散步", "跑", "爬", "台阶", "楼梯", "大运动", "外出"],
+        "exploration": ["好奇", "探索", "发现", "新鲜", "侦察", "线索", "观察", "巡路"],
+        "language": ["说", "表达", "模仿", "聊天", "台词", "唱", "叫", "回应"],
+        "craft": ["抓", "捏", "翻", "搭", "拼", "画", "积木", "精细"],
+        "rhythm": ["音乐", "节奏", "跳舞", "律动"],
+        "resilience": ["坚持", "反复", "勇敢", "耐心", "适应", "稳住", "练习"],
+    }
+    scores = {}
+    for name, keywords in domain_specs.items():
+        scores[name] = _story_score_keywords(text_pool, keywords)
+    return scores
+
+
+def _story_extract_growth_clues(text_pool: str) -> list:
+    clue_specs = [
+        ("站立", ["站立", "扶站", "站稳", "站起来"]),
+        ("迈步", ["迈步", "走路", "散步", "往前走", "外出"]),
+        ("爬台阶", ["台阶", "楼梯", "爬高", "上坡"]),
+        ("大运动", ["大运动", "跑", "追", "冲", "平衡"]),
+        ("专注观察", ["专注", "观察", "认真", "研究", "看了很久"]),
+        ("安抚照看", ["安抚", "照顾", "陪伴", "贴贴", "回应"]),
+        ("语言表达", ["表达", "模仿", "聊天", "说话", "台词"]),
+        ("小手操作", ["抓", "捏", "翻", "搭", "拼", "画"]),
+    ]
+    clues = []
+    for label, keywords in clue_specs:
+        if _story_score_keywords(text_pool, keywords) > 0:
+            clues.append(label)
+    return _story_dedup_texts(clues, limit=5, max_len=14)
+
+
+def _story_build_role_seed_prompt(
+    seed_source: str,
+    profile_bundle: dict,
+    tag_candidates: list,
+    interest_candidates: list,
+    feedback_lines: list,
+    panel_sources: list,
+    growth_clues: list,
+    top_scene: str,
+    top_activity: str,
+    top_emotion: str,
+) -> str:
+    gender_hint = (getattr(public_client, "baby_gender", "") or "").strip()
+    if gender_hint:
+        audience_hint = f"要贴合这个宝宝的年龄感与性别气质（{gender_hint}）"
+    else:
+        audience_hint = "要贴合这个宝宝的年龄感与真实气质"
+    real_actions = _story_dedup_texts(
+        [
+            item.get("activity", "") or item.get("description", "")
+            for item in panel_sources or []
+        ]
+        + [item.get("description", "") for item in panel_sources or []],
+        limit=6,
+        max_len=22,
+    )
+    prompt_lines = [
+        f"名字：{public_client.baby_name}",
+        f"性别：{getattr(public_client, 'baby_gender', '') or '未知'}",
+        f"画像标签：{'、'.join(tag_candidates) or '暂无'}",
+        f"兴趣线索：{'、'.join(interest_candidates) or '暂无'}",
+        f"近期变化：{'、'.join(profile_bundle.get('recent_changes', [])) or '暂无'}",
+        f"家长反馈：{'；'.join(feedback_lines[:3]) or '暂无'}",
+        f"真实动作：{'、'.join(real_actions) or '暂无'}",
+        f"常见场景：{top_scene or '暂无'}",
+        f"当前活动：{top_activity or '暂无'}",
+        f"情绪底色：{top_emotion or '好奇'}",
+        f"成长线索：{'、'.join(growth_clues) or '暂无'}",
+    ]
+    return f"""你是儿童连载漫画的角色设定编辑。
+请根据宝宝的长期画像信号，生成一个可以稳定连载的人物设定。
+
+创作重点：
+1. 角色和世界观要从真实信号里自然长出来，不要做词语换皮。
+2. 角色{audience_hint}，温柔、具体、好记，不要成人化。
+3. 这个设定必须允许日常小事反复进入剧情，例如观察、指认、被抱着、玩耍、外出、安静等待、运动尝试。
+4. 不要套用固定题材池、角色池或示例母题；必须由画像和真实素材自己长出来。
+5. 只给一个最终设定，不要候选，不要解释。
+
+输出严格 JSON：
+{{
+  "hero_archetype": "8到16字的稳定角色称呼",
+  "world_name": "6到12字的固定世界名",
+  "core": "28字内，说明这个主角最像宝宝本人的核心气质",
+  "signature_line": "34字内，稳定识别句",
+  "catchphrase": "40字内，旁白口吻",
+  "motifs": ["2到6字母题1", "2到6字母题2", "2到6字母题3"]
+}}
+
+不要 markdown，不要附加说明。
+真实信号：
+{chr(10).join(prompt_lines)}
+稳定种子：{seed_source[:80]}
+"""
+
+
+def _story_generate_role_seed_via_llm(
+    client_id: str,
+    seed_source: str,
+    profile_bundle: dict,
+    tag_candidates: list,
+    interest_candidates: list,
+    feedback_lines: list,
+    panel_sources: list,
+    growth_clues: list,
+    top_scene: str,
+    top_activity: str,
+    top_emotion: str,
+) -> dict:
+    if not getattr(public_client, "server_url", ""):
+        return {}
+
+    prompt = _story_build_role_seed_prompt(
+        seed_source,
+        profile_bundle,
+        tag_candidates,
+        interest_candidates,
+        feedback_lines,
+        panel_sources,
+        growth_clues,
+        top_scene,
+        top_activity,
+        top_emotion,
+    )
+    try:
+        response = public_client.signed_request(
+            "POST",
+            f"{public_client.server_url}/czrz/ai/proxy/text",
+            json={
+                "client_id": client_id or public_client.client_id,
+                "prompt": prompt,
+                "max_tokens": 900,
+                "operation": "story_series_seed",
+            },
+            timeout=1200,
+        )
+        if response.status_code != 200:
+            return {}
+        result = response.json()
+        if not result.get("success"):
+            return {}
+        payload = _extract_json_payload((result.get("result") or {}).get("content", ""))
+        if not isinstance(payload, dict):
+            return {}
+        hero_archetype = _story_trim_text(payload.get("hero_archetype"), 18)
+        world_name = _story_trim_text(payload.get("world_name"), 16)
+        motifs = payload.get("motifs") or []
+        if isinstance(motifs, str):
+            motifs = re.split(r"[、,，；;\\s]+", motifs)
+        if not hero_archetype or not world_name:
+            return {}
+        return {
+            "id": "series_seed_llm",
+            "title": hero_archetype,
+            "world": world_name,
+            "core": _story_trim_text(payload.get("core", ""), 48),
+            "motifs": _story_dedup_texts(motifs, limit=4, max_len=12),
+            "signature_line": _story_trim_text(payload.get("signature_line", ""), 34),
+            "catchphrase": _story_trim_text(payload.get("catchphrase", ""), 48),
+        }
+    except Exception as e:
+        logger.info(f"[Story] 角色种子生成失败: {e}")
+        return {}
+
+
+def get_story_series_profile(client_id: str, panel_sources: list = None, episodes: list = None) -> dict:
+    for episode in reversed(episodes or []):
+        cached = dict(episode.get("series_profile") or {})
+        if cached and (cached.get("story_engine") or cached.get("story_motifs")):
+            cached["role_name"] = public_client.baby_name
+            cached.setdefault("world_name", episode.get("world_name") or "")
+            cached.setdefault(
+                "series_name",
+                episode.get("series_name") or f"《{public_client.baby_name}的成长连环画》",
+            )
+            cached.setdefault("catchphrase", episode.get("catchphrase") or "")
+            cached.setdefault("signature_traits", episode.get("signature_traits") or [])
+            cached.setdefault("world_rules", episode.get("world_rules") or [])
+            cached.setdefault("signature_line", episode.get("signature") or "")
+            cached.setdefault("hero_archetype", episode.get("hero_archetype") or "")
+            cached.setdefault("ability_tracks", episode.get("ability_tracks") or [])
+            cached.setdefault("gear_tracks", episode.get("gear_tracks") or [])
+            cached.setdefault("story_engine", episode.get("story_engine") or "")
+            cached.setdefault("story_motifs", episode.get("story_motifs") or [])
+            cached.setdefault("top_growth_clues", episode.get("top_growth_clues") or [])
+            return cached
+
+    profile_bundle = get_story_profile_bundle(client_id)
+    feedback_lines = get_story_feedback_records(client_id, limit=4)
+    filenames = [item.get("filename", "") for item in panel_sources or [] if item.get("filename")]
+    tag_lines = get_story_tag_records(client_id, filenames, limit=6)
+
+    scene_counter = Counter()
+    activity_counter = Counter()
+    for item in panel_sources or []:
+        scene_text = _story_trim_text(item.get("scene", ""), 12)
+        activity_text = _story_trim_text(item.get("activity", "") or item.get("description", ""), 14)
+        if scene_text:
+            scene_counter[scene_text] += 1
+        if activity_text:
+            activity_counter[activity_text] += 1
+
+    top_scene = scene_counter.most_common(1)[0][0] if scene_counter else "家里"
+    top_activity = activity_counter.most_common(1)[0][0] if activity_counter else (
+        profile_bundle.get("interest_current", ["玩耍"])[0]
+        if profile_bundle.get("interest_current")
+        else "玩耍"
+    )
+    top_emotion = _story_guess_emotion(profile_bundle, tag_lines, feedback_lines)
+
+    tag_candidates = _story_dedup_texts(
+        list(profile_bundle.get("profile_tags", []))
+        + list(profile_bundle.get("traits", []))
+        + list(tag_lines),
+        limit=6,
+        max_len=14,
+    )
+    interest_candidates = _story_dedup_texts(
+        list(profile_bundle.get("interest_current", []))
+        + list(profile_bundle.get("interest_emerging", [])),
+        limit=4,
+        max_len=14,
+    )
+    speech_hints = _story_dedup_texts(
+        list(profile_bundle.get("strengths", []))
+        + list(profile_bundle.get("suggestions", [])),
+        limit=4,
+        max_len=18,
+    )
+
+    signal_pool = " ".join(
+        list(profile_bundle.get("traits", []))
+        + list(profile_bundle.get("interest_current", []))
+        + list(profile_bundle.get("interest_emerging", []))
+        + list(profile_bundle.get("profile_tags", []))
+        + list(profile_bundle.get("recent_changes", []))
+        + list(tag_lines)
+        + list(feedback_lines)
+        + list(speech_hints)
+        + [item.get("description", "") for item in panel_sources or []]
+        + [item.get("activity", "") for item in panel_sources or []]
+        + [item.get("scene", "") for item in panel_sources or []]
+    )
+    domain_scores = _story_collect_domain_scores(signal_pool)
+    growth_clues = _story_extract_growth_clues(signal_pool)
+
+    seed_source = "|".join(
+        [
+            client_id or "",
+            public_client.baby_name or "",
+            top_scene,
+            top_emotion,
+            ",".join(sorted(name for name, score in domain_scores.items() if score > 0)[:3]),
+            ",".join(growth_clues[:3]),
+            ",".join(tag_candidates[:4]),
+            ";".join(feedback_lines[:2]),
+        ]
+    )
+    role_blueprint = _story_load_series_seed(client_id)
+    if not role_blueprint:
+        role_blueprint = _story_generate_role_seed_via_llm(
+            client_id,
+            seed_source,
+            profile_bundle,
+            tag_candidates,
+            interest_candidates,
+            feedback_lines,
+            panel_sources,
+            growth_clues,
+            top_scene,
+            top_activity,
+            top_emotion,
+        )
+        if role_blueprint:
+            _story_save_series_seed(client_id, role_blueprint)
+
+    hero_archetype = role_blueprint.get("title") or role_blueprint.get("hero_archetype") or ""
+    role_name = public_client.baby_name
+    world_name = role_blueprint.get("world") or role_blueprint.get("world_name") or ""
+    ability_tracks = []
+    gear_tracks = []
+    story_motifs = []
+    world_rules = []
+    story_engine = ""
+    signature_traits = []
+
+    signature_line = role_blueprint.get("signature_line") or ""
+    catchphrase = role_blueprint.get("catchphrase") or ""
+    series_name = f"《{public_client.baby_name}的成长连环画》"
+    subtitle_line = (
+        f"让{public_client.baby_name}始终保持同一主角画像，把每天真实的成长推进写成可持续更新的漫画连载。"
+    )
+
+    return {
+        "role_name": role_name,
+        "hero_archetype": hero_archetype,
+        "world_name": world_name,
+        "series_name": series_name,
+        "catchphrase": catchphrase,
+        "signature_line": signature_line,
+        "signature_traits": signature_traits[:4],
+        "world_rules": world_rules,
+        "ability_tracks": ability_tracks,
+        "gear_tracks": gear_tracks,
+        "story_engine": story_engine,
+        "story_motifs": story_motifs,
+        "top_growth_clues": [],
+        "top_scene": top_scene,
+        "top_activity": top_activity,
+        "top_emotion": top_emotion,
+        "profile_tags": tag_candidates[:6],
+        "subtitle_line": subtitle_line,
+        "seed_source": seed_source,
+    }
+
+
+def _hydrate_story_series_fields(
+    date_str: str,
+    story: dict,
+    client_id: str = None,
+    series_profile: dict = None,
+) -> dict:
+    if not story:
+        return None
+
+    hydrated = _normalize_story_payload(story)
+    merged_profile = dict(series_profile or {})
+    cached_profile = dict(hydrated.get("series_profile") or {})
+    if cached_profile:
+        merged_profile.update(cached_profile)
+
+    has_story_profile = hydrated.get("role_name") and hydrated.get("world_name")
+    has_series_profile = merged_profile.get("role_name") and merged_profile.get("world_name")
+    needs_profile = not (has_story_profile or has_series_profile)
+    if needs_profile and client_id and date_str:
+        try:
+            panel_sources = _pick_story_panel_sources(
+                _prepare_story_photo_records(date_str, client_id)
+            )
+            computed = get_story_series_profile(
+                client_id,
+                panel_sources=panel_sources,
+                episodes=_get_story_prior_episodes(client_id, date_str, limit=6),
+            )
+            for key, value in computed.items():
+                merged_profile.setdefault(key, value)
+        except Exception as e:
+            logger.info(f"[Story] 补齐故事世界观失败 {date_str}: {e}")
+
+    role_name = public_client.baby_name
+    world_name = hydrated.get("world_name") or merged_profile.get("world_name") or ""
+    series_name = (
+        hydrated.get("series_name")
+        or merged_profile.get("series_name")
+        or f"《{public_client.baby_name}的成长连环画》"
+    )
+    signature = hydrated.get("signature") or merged_profile.get("signature_line") or ""
+    catchphrase = hydrated.get("catchphrase") or merged_profile.get("catchphrase") or ""
+    hero_archetype = hydrated.get("hero_archetype") or merged_profile.get("hero_archetype") or ""
+    signature_traits = hydrated.get("signature_traits") or merged_profile.get("signature_traits") or []
+    world_rules = hydrated.get("world_rules") or merged_profile.get("world_rules") or []
+    story_engine = hydrated.get("story_engine") or merged_profile.get("story_engine") or ""
+    story_motifs = hydrated.get("story_motifs") or merged_profile.get("story_motifs") or []
+    top_growth_clues = hydrated.get("top_growth_clues") or merged_profile.get("top_growth_clues") or []
+    ability_tracks = hydrated.get("ability_tracks") or merged_profile.get("ability_tracks") or []
+    gear_tracks = hydrated.get("gear_tracks") or merged_profile.get("gear_tracks") or []
+    skill_progress = hydrated.get("skill_progress") or ""
+    gear_unlock = hydrated.get("gear_unlock") or ""
+
+    hydrated["role_name"] = role_name
+    hydrated["world_name"] = world_name
+    hydrated["series_name"] = series_name
+    hydrated["signature"] = signature
+    hydrated["catchphrase"] = catchphrase
+    hydrated["hero_archetype"] = hero_archetype
+    hydrated["signature_traits"] = signature_traits
+    hydrated["world_rules"] = world_rules
+    hydrated["story_engine"] = story_engine
+    hydrated["story_motifs"] = story_motifs
+    hydrated["top_growth_clues"] = top_growth_clues
+    hydrated["ability_tracks"] = ability_tracks
+    hydrated["gear_tracks"] = gear_tracks
+    hydrated["skill_progress"] = skill_progress
+    hydrated["gear_unlock"] = gear_unlock
+    hydrated["fantasy_mission"] = hydrated.get("fantasy_mission") or ""
+    hydrated["real_world_thread"] = hydrated.get("real_world_thread") or ""
+
+    story_profile_payload = dict(merged_profile)
+    story_profile_payload["role_name"] = role_name
+    story_profile_payload["world_name"] = world_name
+    story_profile_payload["series_name"] = series_name
+    story_profile_payload["catchphrase"] = catchphrase
+    story_profile_payload["signature_line"] = signature
+    story_profile_payload["hero_archetype"] = hero_archetype
+    story_profile_payload["signature_traits"] = signature_traits
+    story_profile_payload["world_rules"] = world_rules
+    story_profile_payload["story_engine"] = story_engine
+    story_profile_payload["story_motifs"] = story_motifs
+    story_profile_payload["top_growth_clues"] = top_growth_clues
+    story_profile_payload["ability_tracks"] = ability_tracks
+    story_profile_payload["gear_tracks"] = gear_tracks
+    hydrated["series_profile"] = story_profile_payload
+    return hydrated
+
+
+def get_story_feedback_records(client_id: str, limit: int = 4) -> list:
+    """读取最近画像反馈，帮助故事更贴近本人。"""
+    try:
+        from sqlmodel import Session, select
+        from database import get_user_engine
+        from models import ProfileFeedback
+
+        engine = get_user_engine(client_id)
+        with Session(engine) as session:
+            rows = session.exec(
+                select(ProfileFeedback)
+                .order_by(ProfileFeedback.created_at.desc(), ProfileFeedback.id.desc())
+                .limit(limit)
+            ).all()
+        return [_story_trim_text(row.feedback_text, 40) for row in rows if row.feedback_text]
+    except Exception as e:
+        logger.info(f"[Story] 获取画像反馈失败: {e}")
+        return []
+
+
+def get_story_tag_records(client_id: str, filenames: list = None, limit: int = 8) -> list:
+    """读取近期手动标签，避免故事角色过度模板化。"""
+    try:
+        from sqlmodel import Session, select
+        from database import get_user_engine
+        from models import PhotoTag
+
+        engine = get_user_engine(client_id)
+        filenames = [name for name in (filenames or []) if name]
+        with Session(engine) as session:
+            query = select(PhotoTag).order_by(PhotoTag.updated_at.desc(), PhotoTag.id.desc())
+            rows = session.exec(query).all()
+
+        def collect(only_match: bool) -> list:
+            picked = []
+            seen = set()
+            for row in rows:
+                if only_match and filenames and row.filename not in filenames:
+                    continue
+                text = _story_trim_text(row.tag or "", 18)
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                picked.append(text)
+                if len(picked) >= limit:
+                    break
+            return picked
+
+        matched = collect(only_match=True)
+        if matched or not filenames:
+            return matched
+        return collect(only_match=False)
+    except Exception as e:
+        logger.info(f"[Story] 获取手动标签失败: {e}")
+        return []
+
+
+def get_story_profile_bundle(client_id: str) -> dict:
+    """提取适合故事系统使用的长期画像信号。"""
+    profile = get_local_profile_data() or {}
+    dimensions = profile.get("dimensions", {}) or {}
+    personality = dimensions.get("personality", {}) or {}
+    interests = dimensions.get("interests", {}) or {}
+    guidance = profile.get("guidance", {}) or {}
+    evolution = profile.get("evolution", {}) or {}
+
+    traits = personality.get("traits", []) or []
+    if isinstance(traits, list) and traits and isinstance(traits[0], dict):
+        trait_texts = [item.get("trait") or item.get("name") or "" for item in traits]
+    else:
+        trait_texts = list(traits)
+
+    tags = profile.get("tags", []) or []
+    tag_texts = []
+    for item in tags:
+        if isinstance(item, dict):
+            tag_texts.append(item.get("tag") or item.get("name") or "")
+        elif isinstance(item, str):
+            tag_texts.append(item)
+
+    bundle = {
+        "age": profile.get("age") or "",
+        "traits": _story_dedup_texts(trait_texts, limit=4, max_len=14),
+        "interest_current": _story_dedup_texts(interests.get("current", []), limit=4, max_len=14),
+        "interest_emerging": _story_dedup_texts(interests.get("emerging", []), limit=3, max_len=14),
+        "strengths": _story_dedup_texts(guidance.get("strengths", []), limit=3, max_len=18),
+        "suggestions": _story_dedup_texts(guidance.get("activities", []), limit=3, max_len=18),
+        "recent_changes": _story_dedup_texts(evolution.get("recent_changes", []), limit=3, max_len=20),
+        "profile_tags": _story_dedup_texts(tag_texts, limit=6, max_len=14),
+        "guidance_summary": _story_trim_text(guidance.get("summary") or "", 80),
+    }
+    return bundle
+
+
+def _get_story_candidate_dates(client_id: str = None) -> list:
+    dates = set()
+    index_manager = _get_storybook_index_manager()
+    if index_manager is not None:
+        try:
+            dates.update(index_manager.get_all_dates())
+        except Exception as e:
+            logger.info(f"[StoryBook] 获取照片日期失败: {e}")
+
+    return sorted(
+        [item for item in dates if re.match(r"^\d{4}-\d{2}-\d{2}$", str(item))],
+        reverse=False,
+    )
+
+
+def _get_storybook_index_manager():
+    data_dir = str(getattr(public_client, "data_dir", "") or "")
+    if not data_dir:
+        return None
+
+    index_file = Path(data_dir) / "photo_index" / "photo_index.json"
+    index_mtime_ns = index_file.stat().st_mtime_ns if index_file.exists() else 0
+    cached_data_dir = ALBUM_INDEX_CACHE.get("data_dir")
+    cached_mtime_ns = ALBUM_INDEX_CACHE.get("index_mtime_ns", 0)
+    cached_manager = ALBUM_INDEX_CACHE.get("index_manager")
+    if cached_manager is not None and cached_data_dir == data_dir and cached_mtime_ns == index_mtime_ns:
+        return cached_manager
+
+    try:
+        from photo_index_manager import PhotoIndexManager
+
+        manager = PhotoIndexManager(Path(data_dir), source_folders=None)
+    except Exception as e:
+        logger.info(f"[Album] 初始化 PhotoIndexManager 失败: {e}")
+        return None
+
+    ALBUM_INDEX_CACHE["data_dir"] = data_dir
+    ALBUM_INDEX_CACHE["index_manager"] = manager
+    ALBUM_INDEX_CACHE["index_mtime_ns"] = index_mtime_ns
+    return manager
+
+
+def _get_story_collection_cache_key(
+    client_id: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    max_episodes: int = 0,
+) -> tuple:
+    data_dir = Path(str(getattr(public_client, "data_dir", "") or ""))
+    index_file = data_dir / "photo_index" / "photo_index.json"
+    index_mtime_ns = index_file.stat().st_mtime_ns if index_file.exists() else 0
+    return (
+        client_id or "",
+        date_from or "",
+        date_to or "",
+        int(max_episodes or 0),
+        str(data_dir),
+        index_mtime_ns,
+    )
+
+
+def _get_story_collection_cache(cache_key: tuple):
+    now_ts = time.time()
+    with ALBUM_COLLECTION_CACHE_LOCK:
+        cached = ALBUM_COLLECTION_CACHE.get(cache_key)
+        if not cached:
+            return None
+        if now_ts >= cached.get("expires_at", 0):
+            ALBUM_COLLECTION_CACHE.pop(cache_key, None)
+            return None
+        return cached.get("payload")
+
+
+def _set_story_collection_cache(cache_key: tuple, payload: dict) -> dict:
+    with ALBUM_COLLECTION_CACHE_LOCK:
+        ALBUM_COLLECTION_CACHE[cache_key] = {
+            "expires_at": time.time() + ALBUM_COLLECTION_CACHE_TTL,
+            "payload": payload,
+        }
+    return payload
+
+
+def _clear_story_collection_cache(client_id: str = "") -> None:
+    with ALBUM_COLLECTION_CACHE_LOCK:
+        if not client_id:
+            ALBUM_COLLECTION_CACHE.clear()
+            return
+        for key in list(ALBUM_COLLECTION_CACHE.keys()):
+            if key and key[0] == client_id:
+                ALBUM_COLLECTION_CACHE.pop(key, None)
+
+
+def _get_story_media_entries_by_dates(index_manager, candidate_dates: list[str]) -> dict[str, list]:
+    if index_manager is None or not candidate_dates:
+        return {}
+
+    raw_index = getattr(index_manager, "index", None)
+    if not isinstance(raw_index, dict):
+        return {}
+
+    allowed_dates = set(candidate_dates)
+    grouped = defaultdict(list)
+    for key in ("photos", "videos"):
+        for file_hash, entry in (raw_index.get(key) or {}).items():
+            date_str = entry.get("date")
+            if date_str not in allowed_dates:
+                continue
+            path_str = entry.get("path", "")
+            if not path_str or not Path(path_str).exists():
+                continue
+            path_obj = Path(path_str)
+            grouped[date_str].append(
+                {
+                    "hash": file_hash,
+                    "filename": entry.get("filename") or path_obj.name,
+                    "path": path_str,
+                    "url": f"/photo/{quote(entry.get('filename') or path_obj.name)}",
+                    "date": date_str,
+                    "is_video": entry.get("is_video", False),
+                    "size": entry.get("size", 0),
+                    "folder": str(path_obj.parent),
+                }
+            )
+
+    for rows in grouped.values():
+        rows.sort(key=lambda item: item.get("filename") or "")
+    return grouped
+
+
+def _album_format_display_date(date_str: str) -> str:
+    try:
+        dt = datetime.strptime((date_str or "")[:10], "%Y-%m-%d")
+        return dt.strftime("%Y.%m.%d")
+    except Exception:
+        return date_str or ""
+
+
+@lru_cache(maxsize=2048)
+def _read_album_image_meta(path_str: str) -> dict:
+    meta = {
+        "width": 0,
+        "height": 0,
+        "aspect_ratio": 1.0,
+        "frame_shape": "square",
+        "quality_bonus": 0,
+    }
+    path = Path(path_str or "")
+    if not path.exists():
+        return meta
+
+    try:
+        from PIL import Image
+        from PIL import ImageOps
+
+        with Image.open(path) as img:
+            img = ImageOps.exif_transpose(img)
+            width, height = img.size
+    except Exception:
+        return meta
+
+    if width <= 0 or height <= 0:
+        return meta
+
+    aspect_ratio = round(width / max(height, 1), 3)
+    megapixels = (width * height) / 1_000_000
+    file_kb = path.stat().st_size / 1024 if path.exists() else 0
+    quality_bonus = min(18, round(megapixels * 3))
+    if file_kb >= 280:
+        quality_bonus += 4
+    if 0.82 <= aspect_ratio <= 1.45:
+        quality_bonus += 3
+
+    if 0.92 <= aspect_ratio <= 1.08:
+        frame_shape = "circle"
+    elif aspect_ratio < 0.82:
+        frame_shape = "arch"
+    elif aspect_ratio > 1.45:
+        frame_shape = "ticket"
+    else:
+        frame_shape = "square"
+
+    return {
+        "width": width,
+        "height": height,
+        "aspect_ratio": aspect_ratio,
+        "frame_shape": frame_shape,
+        "quality_bonus": quality_bonus,
+    }
+
+
+def _score_album_candidate(record: dict, featured_filename: str, meta: dict) -> tuple[int, list]:
+    description = (record.get("description") or "").strip()
+    scene = (record.get("scene") or "").strip()
+    activity = (record.get("activity") or "").strip()
+    has_baby = bool(record.get("has_baby", True))
+    filename = Path(record.get("path") or "").name
+    is_featured = bool(featured_filename) and filename == Path(featured_filename).name
+
+    score = 42 + int(meta.get("quality_bonus", 0))
+    if is_featured:
+        score += 32
+    if has_baby:
+        score += 18
+    if scene:
+        score += 8
+    if activity:
+        score += 8
+    if description:
+        score += min(16, max(6, len(description) // 3))
+
+    reasons = []
+    if is_featured:
+        reasons.append("当天精选")
+    if meta.get("quality_bonus", 0) >= 12:
+        reasons.append("画质稳定")
+    if scene:
+        reasons.append(f"{scene}有记忆点")
+    if activity:
+        reasons.append(f"{activity}动作清楚")
+    if description:
+        reasons.append("描述完整")
+
+    return score, reasons[:3]
+
+
+def _quick_score_album_candidate(record: dict, featured_filename: str) -> int:
+    description = (record.get("description") or "").strip()
+    scene = (record.get("scene") or "").strip()
+    activity = (record.get("activity") or "").strip()
+    has_baby = bool(record.get("has_baby", True))
+    filename = Path(record.get("path") or "").name
+    is_featured = bool(featured_filename) and filename == Path(featured_filename).name
+
+    score = 42
+    if is_featured:
+        score += 32
+    if has_baby:
+        score += 18
+    if scene:
+        score += 8
+    if activity:
+        score += 8
+    if description:
+        score += min(16, max(6, len(description) // 3))
+    return score
+
+
+def _build_album_moment_title(record: dict, baby_name: str) -> str:
+    scene = (record.get("scene") or "").strip()
+    activity = (record.get("activity") or "").strip()
+    description = (record.get("description") or "").strip()
+
+    if any(word in activity for word in ["睡", "午睡", "休息", "安睡"]):
+        return "把困意和夜灯收进相框"
+    if any(word in activity for word in ["玩", "探索", "散步", "跑"]):
+        return "把好奇心摆到画面中央"
+    if any(word in scene for word in ["公园", "户外", "街道", "广场"]):
+        return "风吹过的这一格"
+    if any(word in scene for word in ["家里", "客厅", "卧室"]):
+        return "在家里发亮的一小段"
+    if description:
+        return description[:16] + ("…" if len(description) > 16 else "")
+    return f"{baby_name}被好好记住的一刻"
+
+
+def _quality_label_from_score(score: int) -> str:
+    if score >= 112:
+        return "封面级"
+    if score >= 96:
+        return "长卷主镜头"
+    if score >= 78:
+        return "适合入册"
+    return "补充页"
+
+
+def _compress_album_days(day_items: list, max_moments: int) -> list:
+    if len(day_items) <= max_moments:
+        return list(day_items)
+
+    if max_moments <= 2:
+        return [day_items[0], day_items[-1]][:max_moments]
+
+    selected = [day_items[0], day_items[-1]]
+    used_dates = set()
+    for item in selected:
+        if item.get("date"):
+            used_dates.add(item["date"])
+
+    middle_items = day_items[1:-1]
+    middle_slots = max(max_moments - 2, 0)
+    step = len(middle_items) / float(middle_slots) if middle_slots else 0
+
+    for index in range(middle_slots):
+        start = int(index * step)
+        end = max(start + 1, int((index + 1) * step))
+        bucket = middle_items[start:end] or [middle_items[min(start, len(middle_items) - 1)]]
+        chosen = max(
+            bucket,
+            key=lambda item: (
+                item.get("score", 0),
+                int(bool(item.get("primary", {}).get("is_featured"))),
+                item.get("date") or "",
+            ),
+        )
+        if chosen.get("date") in used_dates:
+            continue
+        used_dates.add(chosen.get("date"))
+        selected.append(chosen)
+
+    if len(selected) < max_moments:
+        ranked_rest = sorted(
+            day_items,
+            key=lambda item: (
+                -(item.get("score", 0)),
+                -int(bool(item.get("primary", {}).get("is_featured"))),
+                item.get("date") or "",
+            ),
+        )
+        for item in ranked_rest:
+            if item.get("date") in used_dates:
+                continue
+            used_dates.add(item.get("date"))
+            selected.append(item)
+            if len(selected) >= max_moments:
+                break
+
+    return sorted(selected, key=lambda item: item.get("date") or "")
+
+
+def _build_album_chapter_title(month_key: str, moment_rows: list) -> str:
+    label = month_key.replace("-", "年", 1) + "月"
+    scene_counter = Counter()
+    activity_counter = Counter()
+    for row in moment_rows:
+        if row.get("scene"):
+            scene_counter[row["scene"]] += 1
+        if row.get("activity"):
+            activity_counter[row["activity"]] += 1
+    top_scene = scene_counter.most_common(1)[0][0] if scene_counter else ""
+    top_activity = activity_counter.most_common(1)[0][0] if activity_counter else ""
+    if top_scene and top_activity:
+        return f"{label} · {top_scene}里的{top_activity}"
+    if top_scene:
+        return f"{label} · {top_scene}这一章"
+    if top_activity:
+        return f"{label} · {top_activity}这一章"
+    return f"{label} · 被认真存下来的日常"
+
+
+def get_story_collection_data(
+    client_id: str = None,
+    date_from: str = "",
+    date_to: str = "",
+    generate_missing: bool = False,
+    max_episodes: int = 0,
+) -> dict:
+    started_at = time.perf_counter()
+    target_client = client_id or getattr(public_client, "client_id", None)
+    if not target_client:
+        return {"moments": [], "chapters": [], "cover_collage": []}
+
+    cache_key = _get_story_collection_cache_key(
+        target_client,
+        date_from=date_from,
+        date_to=date_to,
+        max_episodes=max_episodes,
+    )
+    cached_collection = _get_story_collection_cache(cache_key)
+    if cached_collection is not None:
+        logger.info(
+            f"[Album] 缓存命中: client={target_client} range={date_from or '*'}~{date_to or '*'} "
+            f"moments={len(cached_collection.get('moments') or [])}"
+        )
+        return cached_collection
+
+    def in_range(date_str: str) -> bool:
+        if date_from and date_str < date_from:
+            return False
+        if date_to and date_str > date_to:
+            return False
+        return True
+
+    candidate_dates = [item for item in _get_story_candidate_dates(target_client) if in_range(item)]
+
+    index_manager = _get_storybook_index_manager()
+    if index_manager is None:
+        return _set_story_collection_cache(cache_key, {
+            "title": f"{public_client.baby_name}时光相册",
+            "subtitle": "先完成照片索引，系统才能自动装订时光相册。",
+            "moments": [],
+            "chapters": [],
+            "cover_collage": [],
+            "candidate_count": len(candidate_dates),
+            "selected_count": 0,
+            "selected_photo_count": 0,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+
+    try:
+        from database import (
+            get_featured_photos_by_dates,
+            get_photo_descriptions_by_dates,
+        )
+
+        media_entries_by_date = _get_story_media_entries_by_dates(index_manager, candidate_dates)
+        description_rows_by_date = get_photo_descriptions_by_dates(target_client, candidate_dates)
+        featured_rows_by_date = get_featured_photos_by_dates(target_client, candidate_dates)
+    except Exception as e:
+        logger.warning(f"[Album] 初始化失败: {e}")
+        return _set_story_collection_cache(cache_key, {
+            "title": f"{public_client.baby_name}时光相册",
+            "subtitle": "相册初始化失败，请检查媒体索引和数据库。",
+            "moments": [],
+            "chapters": [],
+            "cover_collage": [],
+            "candidate_count": len(candidate_dates),
+            "selected_count": 0,
+            "selected_photo_count": 0,
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+
+    day_items = []
+    total_photo_count = 0
+    for date_str in candidate_dates:
+        media_entries = media_entries_by_date.get(date_str) or []
+        image_entries = [
+            item
+            for item in media_entries
+            if not item.get("is_video", False)
+        ]
+        if not image_entries:
+            continue
+        total_photo_count += len(image_entries)
+
+        entry_map = {Path(item.get("path", "")).name: item for item in image_entries}
+        description_rows = description_rows_by_date.get(date_str) or []
+        featured = featured_rows_by_date.get(date_str) or {}
+
+        featured_filename = (featured.get("filename") or "").strip()
+        candidates = []
+        pre_candidates = []
+
+        for row in description_rows:
+            row_path = Path(row.get("path", "")).name
+            entry = entry_map.get(row_path)
+            if not entry or is_semantic_skip_photo_record(row):
+                continue
+            entry_name = Path(entry["path"]).name
+            pre_candidates.append(
+                {
+                    "path": str(entry["path"]),
+                    "url": f"/photo/{quote(entry_name)}",
+                    "thumb_url": f"/photo/thumb/{quote(entry_name)}",
+                    "album_url": f"/photo/album/{quote(entry_name)}",
+                    "date": date_str,
+                    "description": (row.get("description") or "").strip(),
+                    "has_baby": bool(row.get("has_baby", True)),
+                    "scene": (row.get("scene") or "").strip(),
+                    "activity": (row.get("activity") or "").strip(),
+                    "is_featured": bool(featured_filename and row_path == Path(featured_filename).name),
+                    "quick_score": _quick_score_album_candidate(row, featured_filename),
+                }
+            )
+
+        if pre_candidates:
+            candidates = sorted(
+                pre_candidates,
+                key=lambda item: (
+                    -(item.get("quick_score") or 0),
+                    -int(bool(item.get("is_featured"))),
+                    item.get("path") or "",
+                ),
+            )
+
+        if not candidates:
+            for entry in image_entries[:6]:
+                entry_name = Path(entry.get("path", "")).name
+                featured_hit = bool(featured_filename and entry_name == Path(featured_filename).name)
+                candidates.append(
+                    {
+                        "path": str(entry["path"]),
+                        "url": f"/photo/{quote(entry_name)}",
+                        "thumb_url": f"/photo/thumb/{quote(entry_name)}",
+                        "album_url": f"/photo/album/{quote(entry_name)}",
+                        "date": date_str,
+                        "description": "",
+                        "has_baby": True,
+                        "scene": "",
+                        "activity": "",
+                        "is_featured": featured_hit,
+                        "quick_score": 58 + (28 if featured_hit else 0),
+                    }
+                )
+
+        if not candidates:
+            continue
+
+        candidates = sorted(
+            candidates,
+            key=lambda item: (
+                -(item.get("quick_score") or 0),
+                -int(bool(item.get("is_featured"))),
+                item.get("path") or "",
+            ),
+        )
+
+        primary = candidates[0]
+        secondary = []
+        for candidate in candidates[1:]:
+            if len(secondary) >= 2:
+                break
+            if (
+                candidate.get("scene") != primary.get("scene")
+                or candidate.get("activity") != primary.get("activity")
+                or candidate.get("quick_score", 0) >= primary.get("quick_score", 0) - 12
+            ):
+                secondary.append(candidate)
+
+        title = _build_album_moment_title(primary, public_client.baby_name)
+        summary = primary.get("description") or "这一天值得被放进时间轴里慢慢回看。"
+        day_items.append(
+            {
+                "date": date_str,
+                "month_key": date_str[:7],
+                "score": primary.get("quick_score", 0),
+                "title": title,
+                "summary": summary[:72] + ("…" if len(summary) > 72 else ""),
+                "primary": primary,
+                "secondary": secondary,
+            }
+        )
+
+    moment_limit = 24 if len(day_items) <= 30 else 20
+    selected_days = _compress_album_days(day_items, moment_limit)
+
+    moments = []
+    selected_photo_paths = []
+    for index, item in enumerate(selected_days, start=1):
+        primary = dict(item.get("primary") or {})
+        secondary = [dict(row) for row in (item.get("secondary") or [])[:2]]
+        featured_filename = Path(primary.get("path") or "").name if primary.get("is_featured") else ""
+        primary_meta = _read_album_image_meta(primary.get("path") or "")
+        primary_score, primary_reasons = _score_album_candidate(primary, featured_filename, primary_meta)
+        primary_frame_shape = primary_meta.get("frame_shape") or "square"
+        primary_quality_label = _quality_label_from_score(primary_score)
+
+        processed_secondary = []
+        for row in secondary:
+            secondary_meta = _read_album_image_meta(row.get("path") or "")
+            row["frame_shape"] = secondary_meta.get("frame_shape") or "square"
+            processed_secondary.append(row)
+
+        selected_photo_paths.append(primary.get("path") or "")
+        selected_photo_paths.extend([row.get("path") or "" for row in processed_secondary])
+        moments.append(
+            {
+                "index": index,
+                "date": item.get("date") or "",
+                "date_display": _album_format_display_date(item.get("date") or ""),
+                "chapter_key": item.get("month_key") or "",
+                "score": primary_score,
+                "title": item.get("title") or "",
+                "summary": item.get("summary") or "",
+                "scene": primary.get("scene") or "",
+                "activity": primary.get("activity") or "",
+                "quality_label": primary_quality_label,
+                "frame_shape": primary_frame_shape,
+                "photo": primary.get("url") or "",
+                "thumb": primary.get("thumb_url") or primary.get("url") or "",
+                "album": primary.get("album_url") or primary.get("url") or "",
+                "secondary_photos": [
+                    {
+                        "photo": row.get("url") or "",
+                        "thumb": row.get("thumb_url") or row.get("url") or "",
+                        "album": row.get("album_url") or row.get("url") or "",
+                        "frame_shape": row.get("frame_shape") or "square",
+                    }
+                    for row in processed_secondary
+                    if row.get("url")
+                ],
+                "reason_lines": primary_reasons,
+                "layout": "cluster" if len(processed_secondary) >= 2 else ("split" if processed_secondary else "feature"),
+                "is_featured": bool(primary.get("is_featured")),
+            }
+        )
+
+    chapters_map = defaultdict(list)
+    for moment in moments:
+        chapters_map[moment.get("chapter_key") or "未分组"].append(moment)
+
+    chapters = []
+    for month_key, rows in sorted(chapters_map.items()):
+        chapters.append(
+            {
+                "key": month_key,
+                "title": _build_album_chapter_title(month_key, rows),
+                "count": len(rows),
+                "date_span": f"{rows[0]['date_display']} - {rows[-1]['date_display']}",
+            }
+        )
+
+    cover_moment = max(
+        moments,
+        key=lambda item: (
+            item.get("score", 0),
+            int(bool(item.get("is_featured"))),
+            item.get("date") or "",
+        ),
+        default={},
+    )
+    cover_collage = [
+        {
+            "photo": moment.get("photo") or "",
+            "thumb": moment.get("thumb") or moment.get("photo") or "",
+        }
+        for moment in moments[:3]
+        if moment.get("photo")
+    ]
+    date_span = ""
+    if moments:
+        date_span = f"{moments[0].get('date')} 至 {moments[-1].get('date')}"
+    candidate_date_span = ""
+    if candidate_dates:
+        candidate_date_span = f"{candidate_dates[0]} 至 {candidate_dates[-1]}"
+
+    payload = {
+        "title": f"{public_client.baby_name}时光相册",
+        "cover_image": cover_moment.get("photo") or "",
+        "cover_thumb": cover_moment.get("thumb") or cover_moment.get("photo") or "",
+        "cover_album": cover_moment.get("album") or cover_moment.get("photo") or "",
+        "cover_title": "沐沐成长日志系统 mumu.ftir.fun",
+        "cover_summary": cover_moment.get("summary") or "",
+        "cover_collage": cover_collage,
+        "date_span": date_span,
+        "candidate_date_span": candidate_date_span,
+        "date_from": date_from,
+        "date_to": date_to,
+        "has_date_filter": bool(date_from or date_to),
+        "candidate_count": len(candidate_dates),
+        "selected_count": len(moments),
+        "selected_photo_count": len([p for p in selected_photo_paths if p]),
+        "total_photo_count": total_photo_count,
+        "moments": moments,
+        "chapters": chapters,
+        "chapters_count": len(chapters),
+        "missing_dates": [],
+        "missing_count": 0,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+    }
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+    logger.info(
+        f"[Album] 构建完成: client={target_client} range={date_from or '*'}~{date_to or '*'} "
+        f"dates={len(candidate_dates)} total_photos={total_photo_count} "
+        f"moments={len(moments)} elapsed_ms={elapsed_ms}"
+    )
+    return _set_story_collection_cache(cache_key, payload)
+
+
+def render_storybook_pdf(print_url: str) -> bytes:
+    """使用 Playwright 将打印版时光相册页面导出为 PDF。"""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1400, "height": 1800})
+        page.goto(print_url, wait_until="networkidle", timeout=120000)
+        pdf_bytes = page.pdf(
+            format="A4",
+            print_background=True,
+            margin={"top": "10mm", "right": "8mm", "bottom": "12mm", "left": "8mm"},
+        )
+        browser.close()
+        return pdf_bytes
+
+
+def _list_story_media_entries(date: str) -> list:
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        return []
+
+    try:
+        from photo_manager import PhotoManager
+
+        pm = PhotoManager(media_folders, public_client.data_dir)
+        return pm.get_photos_by_date(date) or []
+    except Exception as e:
+        logger.info(f"[Story] 获取原始素材失败: {e}")
+        return []
+
+
+def _build_processed_photo_map(processed_photos: list) -> dict:
+    processed_map = {}
+    for item in processed_photos or []:
+        name = Path(item.get("path", "")).name
+        if not name:
+            continue
+        processed_map[name] = dict(item)
+    return processed_map
+
+
+def _order_processed_photo_records(image_entries: list, processed_map: dict) -> list:
+    ordered = []
+    seen = set()
+    for item in image_entries or []:
+        name = item.get("filename", "")
+        if not name or name not in processed_map or name in seen:
+            continue
+        seen.add(name)
+        ordered.append(processed_map[name])
+    for name, item in (processed_map or {}).items():
+        if name in seen:
+            continue
+        seen.add(name)
+        ordered.append(item)
+    return ordered
+
+
+def _ensure_photo_descriptions_for_entries(
+    date: str,
+    client_id: str,
+    child_id: str = "",
+    processed_photos: list = None,
+    media_entries: list = None,
+    max_photos: int | None = None,
+    log_prefix: str = "[Photo]",
+) -> dict:
+    media_entries = media_entries if media_entries is not None else _list_story_media_entries(date)
+    image_entries = [
+        item
+        for item in media_entries or []
+        if not item.get("is_video", False) and Path(item.get("path", "")).exists()
+    ]
+    if not image_entries:
+        return {
+            "photos": processed_photos or [],
+            "missing_count": 0,
+            "analyzed_count": 0,
+            "blurry": [],
+            "duplicates": [],
+            "no_baby": [],
+        }
+
+    processed_map = _build_processed_photo_map(processed_photos)
+    entry_by_name = {}
+    for item in image_entries:
+        filename = item.get("filename", "") or Path(item.get("path", "")).name
+        if filename:
+            entry_by_name[filename] = item
+
+    missing_entries = [
+        item
+        for item in image_entries
+        if (item.get("filename") or Path(item.get("path", "")).name) not in processed_map
+    ]
+    target_paths = [
+        item.get("path", "") for item in missing_entries if item.get("path")
+    ]
+    if max_photos is not None and max_photos > 0:
+        target_paths = target_paths[:max_photos]
+
+    describe_result = {
+        "blurry_filenames": [],
+        "duplicate_filenames": [],
+        "no_baby_filenames": [],
+    }
+    if target_paths:
+        try:
+            from select_best_photo import analyze_all_photos
+
+            logger.info(
+                f"{log_prefix} 补齐素材分析: date={date}, to_analyze={len(target_paths)}, existing={len(processed_map)}"
+            )
+            describe_result, skipped_records = _describe_photos_with_block_fallback(
+                target_paths,
+                child_id=child_id or client_id,
+                client_id=client_id,
+                date=date,
+                log_prefix=log_prefix,
+            )
+
+            for item in skipped_records:
+                name = Path(item.get("path", "")).name
+                if not name:
+                    continue
+                processed_map[name] = {
+                    "path": item.get("path", ""),
+                    "hash": item.get("hash", "") or item.get("file_hash", ""),
+                    "description": item.get("description", "") or "",
+                    "has_baby": item.get("has_baby", True),
+                    "scene": item.get("scene", "") or "",
+                    "activity": item.get("activity", "") or "",
+                    "processed_status": item.get("processed_status", "") or PHOTO_STATUS_OK,
+                    "processed_error_code": item.get("processed_error_code", "") or "",
+                    "processed_error_detail": item.get("processed_error_detail", "") or "",
+                }
+
+            analysis = {"photos": []}
+            if describe_result:
+                analysis = analyze_all_photos(
+                    target_paths,
+                    max_photos=len(target_paths),
+                    client_id=client_id,
+                    date=date,
+                    ai_result=describe_result,
+                )
+
+            for item in analysis.get("photos", []) or []:
+                name = Path(item.get("path", "")).name
+                if not name:
+                    continue
+                source_entry = entry_by_name.get(name, {})
+                processed_map[name] = {
+                    "path": item.get("path", ""),
+                    "hash": source_entry.get("hash", "") or item.get("hash", ""),
+                    "description": item.get("description", "") or "",
+                    "has_baby": item.get("has_baby", True),
+                    "scene": item.get("scene", "") or "",
+                    "activity": item.get("activity", "") or "",
+                    "processed_status": item.get("processed_status", "") or PHOTO_STATUS_OK,
+                    "processed_error_code": item.get("processed_error_code", "") or "",
+                    "processed_error_detail": item.get("processed_error_detail", "") or "",
+                }
+        except Exception as e:
+            logger.warning(f"{log_prefix} 补齐素材分析失败，继续使用现有数据: {e}")
+
+    return {
+        "photos": _order_processed_photo_records(image_entries, processed_map),
+        "missing_count": len(missing_entries),
+        "analyzed_count": len(target_paths),
+        "blurry": describe_result.get("blurry_filenames", []) or [],
+        "duplicates": describe_result.get("duplicate_filenames", []) or [],
+        "no_baby": describe_result.get("no_baby_filenames", []) or [],
+    }
+
+
+def _pick_featured_photo_from_records(photo_records: list, child_id: str = "") -> tuple:
+    photo_records = _filter_semantic_skip_photo_records(photo_records)
+    if not photo_records:
+        return None, "", {}
+
+    from select_best_photo import select_featured_photo_from_descriptions
+
+    selection = select_featured_photo_from_descriptions(
+        photo_records,
+        select_n=1,
+        child_id=child_id or public_client.client_id,
+    )
+    selected_paths = selection.get("selected", []) or []
+    if not selected_paths:
+        return None, "", selection
+
+    selected_name = Path(selected_paths[0]).name
+    selected_record = None
+    for item in photo_records:
+        if Path(item.get("path", "")).name == selected_name:
+            selected_record = item
+            break
+
+    reasons = selection.get("reasons") or []
+    description = (
+        (selected_record or {}).get("description", "") or (reasons[0] if reasons else "") or "今日照片"
+    )
+    return selected_record, description, selection
+
+
+def _build_photo_analysis_from_records(photo_records: list) -> dict:
+    photo_records = _filter_semantic_skip_photo_records(photo_records)
+    valid_photos = []
+    all_scenes = set()
+    all_activities = set()
+    baby_count = 0
+    scenery_count = 0
+
+    for item in photo_records or []:
+        photo_info = {
+            "path": item.get("path", ""),
+            "description": item.get("description", "") or "",
+            "has_baby": item.get("has_baby", True),
+            "scene": item.get("scene", "") or "",
+            "activity": item.get("activity", "") or "",
+        }
+        valid_photos.append(photo_info)
+
+        if photo_info["has_baby"]:
+            baby_count += 1
+        else:
+            scenery_count += 1
+        if photo_info["scene"]:
+            all_scenes.add(photo_info["scene"])
+        if photo_info["activity"]:
+            all_activities.add(photo_info["activity"])
+
+    combined_parts = []
+    if baby_count > 0:
+        combined_parts.append(f"共{baby_count}张宝宝照片")
+    if scenery_count > 0:
+        combined_parts.append(f"{scenery_count}张场景照片")
+
+    descriptions = [p["description"] for p in valid_photos if p["description"]]
+    if descriptions:
+        combined_parts.append("活动：" + "、".join(descriptions[:10]))
+
+    combined_summary = "。".join(combined_parts) if combined_parts else ""
+    return {
+        "photos": valid_photos,
+        "scenes": list(all_scenes),
+        "activities": list(all_activities),
+        "baby_photos": baby_count,
+        "scenery_photos": scenery_count,
+        "combined_summary": combined_summary,
+    }
+
+
+def _analyze_story_photos_if_needed(date: str, client_id: str, processed_photos: list) -> list:
+    """故事生成前补齐图片分析，确保场景图不会因为未分析而漏掉。"""
+    child_id = get_ai_identity_client_id(client_id)
+    ensured = _ensure_photo_descriptions_for_entries(
+        date,
+        client_id,
+        child_id=child_id,
+        processed_photos=processed_photos,
+        log_prefix="[Story]",
+    )
+    return ensured.get("photos", [])
+
+
+def get_story_speech_records(date: str, client_id: str) -> list:
+    """获取某天视频语音转写，用于故事台词。"""
     try:
         resp = public_client.signed_request(
             "GET",
-            f"{public_client.server_url}/czrz/feedback/check",
+            f"{public_client.server_url}/czrz/speech/records",
             params={"client_id": client_id, "date": date},
             timeout=30,
         )
         if resp.status_code == 200:
             result = resp.json()
             if result.get("success"):
-                return result.get("has_new", False)
+                return result.get("records", [])
     except Exception as e:
-        logger.info(f"[AI回顾] 检查新反馈失败: {e}")
-    return False
+        logger.info(f"[Story] 获取语音记录失败: {e}")
+    return []
 
 
-def check_new_health_metrics(date: str, client_id: str) -> bool:
-    """检查某天是否有新的健康指标"""
+def get_story_log_bundle(date: str, client_id: str) -> dict:
+    """获取某天日志、天气和新闻信息。"""
     try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/health/check",
-            params={"client_id": client_id, "date": date},
-            timeout=30,
-        )
+        user_city = getattr(public_client, "user_city", None) or "上海"
+        log_url = f"{public_client.server_url}/czrz/baby/log?city={user_city}&date={date}"
+        if client_id:
+            log_url += f"&client_id={client_id}"
+
+        resp = public_client.signed_request("GET", log_url, timeout=30)
         if resp.status_code == 200:
             result = resp.json()
             if result.get("success"):
-                return result.get("has_new", False)
+                return result
     except Exception as e:
-        logger.info(f"[AI回顾] 检查新健康指标失败: {e}")
-    return False
+        logger.info(f"[Story] 获取日志素材失败: {e}")
+    return {}
+
+
+def _resolve_story_media_entry(date: str, filename_or_path: str) -> dict:
+    media_folders = getattr(public_client, "media_folders", [])
+    from photo_manager import PhotoManager
+
+    pm = PhotoManager(media_folders, public_client.data_dir) if media_folders else None
+
+    text = filename_or_path or ""
+    candidate_path = Path(text) if text else None
+    if candidate_path and candidate_path.exists():
+        return {
+            "path": str(candidate_path),
+            "filename": candidate_path.name,
+            "is_video": candidate_path.suffix.lower() in [".mp4", ".mov", ".avi"],
+        }
+
+    if pm and text:
+        filename = Path(text).name
+        entry = pm.get_photo_by_filename(filename)
+        if entry and Path(entry.get("path", "")).exists():
+            return {
+                "path": entry["path"],
+                "filename": entry["filename"],
+                "is_video": entry.get("is_video", False),
+                "hash": entry.get("hash", ""),
+            }
+
+    if pm:
+        for item in pm.get_photos_by_date(date):
+            if item.get("filename") == Path(text).name:
+                return {
+                    "path": item.get("path", ""),
+                    "filename": item.get("filename", ""),
+                    "is_video": item.get("is_video", False),
+                    "hash": item.get("hash", ""),
+                }
+
+    return {
+        "path": text,
+        "filename": Path(text).name if text else "",
+        "is_video": Path(text).suffix.lower() in [".mp4", ".mov", ".avi"],
+    }
+
+
+def _prepare_story_photo_records(
+    date: str,
+    client_id: str,
+    *,
+    allow_media_fallback: bool = True,
+    diagnostics: dict | None = None,
+) -> list:
+    media_entries = _list_story_media_entries(date)
+    image_entries = [
+        item
+        for item in media_entries or []
+        if not item.get("is_video", False) and Path(item.get("path", "")).exists()
+    ]
+    child_id = get_ai_identity_client_id(client_id)
+    ensured = _ensure_photo_descriptions_for_entries(
+        date,
+        client_id,
+        child_id=child_id,
+        processed_photos=get_processed_photos(date, client_id),
+        media_entries=media_entries,
+        log_prefix="[Story]",
+    )
+    processed_photos = _filter_semantic_skip_photo_records(ensured.get("photos", []))
+
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update(
+            {
+                "image_count": len(image_entries),
+                "processed_count": len(ensured.get("photos", []) or []),
+                "usable_count": len(processed_photos),
+                "missing_count": int(ensured.get("missing_count") or 0),
+                "analyzed_count": int(ensured.get("analyzed_count") or 0),
+                "blurry_count": len(ensured.get("blurry", []) or []),
+                "duplicate_count": len(ensured.get("duplicates", []) or []),
+                "no_baby_count": len(ensured.get("no_baby", []) or []),
+            }
+        )
+
+    records = []
+    seen = set()
+
+    for item in processed_photos:
+        media_entry = _resolve_story_media_entry(date, item.get("path") or "")
+        filename = media_entry.get("filename") or Path(item.get("path", "")).name
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        records.append(
+            {
+                "date": date,
+                "filename": filename,
+                "path": media_entry.get("path", item.get("path", "")),
+                "is_video": media_entry.get("is_video", False),
+                "hash": media_entry.get("hash", ""),
+                "description": item.get("description", "") or "",
+                "has_baby": item.get("has_baby", True),
+                "scene": item.get("scene", "") or "",
+                "activity": item.get("activity", "") or "",
+            }
+        )
+
+    if records:
+        return records
+
+    if not allow_media_fallback:
+        return []
+
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        return []
+
+    from photo_manager import PhotoManager
+
+    pm = PhotoManager(media_folders, public_client.data_dir)
+    for item in pm.get_photos_by_date(date):
+        if item.get("filename") in seen:
+            continue
+        seen.add(item.get("filename"))
+        records.append(
+            {
+                "date": date,
+                "filename": item.get("filename", ""),
+                "path": item.get("path", ""),
+                "is_video": item.get("is_video", False),
+                "hash": item.get("hash", ""),
+                "description": f"{public_client.baby_name}这一天记录下来的一个片段",
+                "has_baby": True,
+                "scene": "",
+                "activity": "",
+            }
+        )
+
+    return records
+
+
+def _build_comic_generation_unavailable_message(
+    diagnostics: dict,
+    *,
+    missing_requested: list | None = None,
+) -> str:
+    image_count = int(diagnostics.get("image_count") or 0)
+    analyzed_count = int(diagnostics.get("analyzed_count") or 0)
+    usable_count = int(diagnostics.get("usable_count") or 0)
+    blurry_count = int(diagnostics.get("blurry_count") or 0)
+    duplicate_count = int(diagnostics.get("duplicate_count") or 0)
+    no_baby_count = int(diagnostics.get("no_baby_count") or 0)
+
+    reason_parts = []
+    if blurry_count > 0:
+        reason_parts.append(f"模糊 {blurry_count} 张")
+    if duplicate_count > 0:
+        reason_parts.append(f"重复 {duplicate_count} 张")
+    if no_baby_count > 0:
+        reason_parts.append(f"未识别到宝宝 {no_baby_count} 张")
+    reason_text = f"（{'，'.join(reason_parts)}）" if reason_parts else ""
+
+    if image_count <= 0:
+        return "当前日期没有可用于生成漫画的照片。"
+
+    if missing_requested:
+        names = "、".join(str(name) for name in missing_requested[:3])
+        return (
+            f"所选照片当前无法生成漫画：{names}。"
+            f"这些照片尚未完成图片解读，或已被判定为不适合生成漫画{reason_text}。"
+        )
+
+    if usable_count > 0:
+        return "当前日期已有可用素材，但当前选择的照片无法用于生成漫画。"
+
+    if analyzed_count > 0 or reason_parts:
+        return f"当前日期照片已尝试解读，但没有可用于生成漫画的照片{reason_text}。"
+
+    return "当前日期照片尚未完成图片解读，暂时无法生成漫画。"
+
+
+def _pick_story_panel_sources(photo_records: list) -> list:
+    if not photo_records:
+        return []
+
+    unique = []
+    seen = set()
+    for item in photo_records:
+        filename = item.get("filename", "")
+        if not filename or filename in seen:
+            continue
+        seen.add(filename)
+        unique.append(item)
+
+    scenery = [p for p in unique if not p.get("has_baby", True) and not p.get("is_video")]
+    baby = [p for p in unique if p.get("has_baby", True) and not p.get("is_video")]
+    explorer = [
+        p
+        for p in baby
+        if any(word in (p.get("description", "") + p.get("activity", "")) for word in ["看", "摸", "探索", "观察", "研究", "找"])
+    ]
+    energetic = [
+        p
+        for p in baby
+        if any(word in (p.get("description", "") + p.get("activity", "")) for word in ["玩", "笑", "爬", "走", "跑", "拿"])
+    ]
+    calm = [
+        p
+        for p in unique
+        if any(word in (p.get("description", "") + p.get("activity", "")) for word in ["睡", "安静", "休息", "看", "发呆", "靠"])
+        and not p.get("is_video")
+    ]
+
+    selected = []
+
+    def add_candidate(candidate):
+        if not candidate:
+            return
+        filename = candidate.get("filename")
+        if not filename or any(item.get("filename") == filename for item in selected):
+            return
+        selected.append(candidate)
+
+    add_candidate(scenery[0] if scenery else None)
+    add_candidate(baby[0] if baby else (unique[0] if unique else None))
+    add_candidate(explorer[0] if explorer else (energetic[0] if energetic else (baby[1] if len(baby) > 1 else None)))
+    add_candidate(calm[-1] if calm else (energetic[-1] if energetic else (scenery[-1] if scenery else unique[-1])))
+
+    for item in unique:
+        if len(selected) >= 4:
+            break
+        add_candidate(item)
+
+    if selected:
+        while len(selected) < 4:
+            selected.append(dict(selected[-1]))
+
+    return selected[:4]
+
+
+def _get_story_recent_episode_memory(client_id: str, before_date: str, limit: int = 3) -> list:
+    candidate_dates = [
+        item for item in _get_story_candidate_dates(client_id) if item and item < before_date
+    ]
+    memories = []
+    for date_str in sorted(candidate_dates, reverse=True):
+        story = load_daily_story(date_str, client_id)
+        if not story:
+            continue
+        memories.append(
+            {
+                "date": date_str,
+                "title": story.get("title") or "",
+                "summary": story.get("summary") or "",
+                "fantasy_mission": story.get("fantasy_mission") or "",
+                "skill_progress": story.get("skill_progress") or "",
+                "gear_unlock": story.get("gear_unlock") or "",
+                "hook": story.get("hook") or "",
+                "hero_archetype": story.get("hero_archetype") or "",
+                "signature": story.get("signature") or "",
+            }
+        )
+        if len(memories) >= limit:
+            break
+    return list(reversed(memories))
+
+
+def _get_story_prior_episodes(client_id: str, before_date: str, limit: int = 6) -> list:
+    candidate_dates = [
+        item for item in _get_story_candidate_dates(client_id) if item and item < before_date
+    ]
+    episodes = []
+    for date_str in sorted(candidate_dates, reverse=True):
+        story = load_daily_story(date_str, client_id)
+        if not story:
+            continue
+        episodes.append(story)
+        if len(episodes) >= limit:
+            break
+    return list(reversed(episodes))
+
+
+def _build_story_prompt(
+    date: str,
+    log_bundle: dict,
+    panels: list,
+    speech_records: list,
+    series_profile: dict,
+) -> str:
+    log_text = (log_bundle.get("log") or "").strip()
+    news_list = log_bundle.get("news") or []
+    speech_lines = _story_dedup_texts(
+        [(item.get("transcript") or "").strip() for item in speech_records[:4]],
+        limit=4,
+        max_len=40,
+    )
+    client_id = public_client.client_id
+    panel_filenames = [panel.get("filename", "") for panel in panels if panel.get("filename")]
+    tag_lines = get_story_tag_records(client_id, panel_filenames, limit=6)
+    feedback_lines = get_story_feedback_records(client_id, limit=4)
+    profile_bundle = get_story_profile_bundle(client_id)
+    recent_episodes = _get_story_recent_episode_memory(client_id, date, limit=3)
+
+    material_lines = []
+    for index, panel in enumerate(panels, start=1):
+        material_lines.append(
+            f"panel_{index}: 描述={panel.get('description', '')}; 场景={panel.get('scene', '')}; 活动={panel.get('activity', '')}; has_baby={panel.get('has_baby', True)}"
+        )
+
+    profile_lines = [
+        f"年龄：{profile_bundle.get('age') or '未知'}",
+        f"性格关键词：{'、'.join(profile_bundle.get('traits', [])) or '暂无'}",
+        f"当前兴趣：{'、'.join(profile_bundle.get('interest_current', [])) or '暂无'}",
+        f"新冒头兴趣：{'、'.join(profile_bundle.get('interest_emerging', [])) or '暂无'}",
+        f"画像标签：{'、'.join(profile_bundle.get('profile_tags', [])) or '暂无'}",
+        f"优势线索：{'、'.join(profile_bundle.get('strengths', [])) or '暂无'}",
+        f"近期变化：{'、'.join(profile_bundle.get('recent_changes', [])) or '暂无'}",
+        f"家长反馈：{'；'.join(feedback_lines) or '暂无'}",
+        f"家长手动标签：{'、'.join(tag_lines) or '暂无'}",
+        f"成长建议摘要：{profile_bundle.get('guidance_summary') or '暂无'}",
+    ]
+
+    continuity_lines = [
+        (
+            f"{item.get('date')}｜标题={item.get('title') or '上一集'}；"
+            f"主线={item.get('fantasy_mission') or item.get('summary') or '暂无'}；"
+            f"能力推进={item.get('skill_progress') or '暂无'}；"
+            f"道具线索={item.get('gear_unlock') or '暂无'}；"
+            f"摘要={item.get('summary') or item.get('hook') or '暂无'}"
+        )
+        for item in recent_episodes
+    ]
+    hero_archetype = (series_profile.get("hero_archetype") or "").strip()
+    world_name = (series_profile.get("world_name") or "").strip()
+    signature_line = (series_profile.get("signature_line") or "").strip()
+    catchphrase = (series_profile.get("catchphrase") or "").strip()
+    series_name = (
+        series_profile.get("series_name")
+        or f"《{public_client.baby_name}的成长连环画》"
+    ).strip()
+    hero_rule = (
+        f"8. `hero_archetype` 字段必须原样沿用：{hero_archetype}"
+        if hero_archetype
+        else "8. `hero_archetype` 字段请完全根据长期画像、标签和真实素材自行定义，并在本集后续与后续剧集中保持稳定。"
+    )
+    world_rule = (
+        f"9. `world_name` 字段必须原样沿用：{world_name}"
+        if world_name
+        else "9. `world_name` 字段请由你根据主角画像与长期叙事气质自行命名；不要套用通用世界名。"
+    )
+    signature_rule = (
+        f"10. `signature` 字段必须优先原样沿用这句稳定识别句：{signature_line}"
+        if signature_line
+        else "10. `signature` 字段请你为这个主角首次写出一句稳定识别句，后续剧集应沿用。"
+    )
+    output_hero_hint = hero_archetype or "根据画像生成的稳定主角身份"
+    output_world_hint = world_name or "根据画像生成的固定世界名"
+    output_signature_hint = signature_line or "根据画像生成的稳定识别句"
+    series_lines = [
+        f"稳定主角名：{public_client.baby_name}",
+        f"稳定主角身份：{hero_archetype or '当前还没有历史锁定值，本集请首次定义后保持稳定'}",
+        f"固定世界名：{world_name or '当前还没有历史锁定值，本集请首次定义后保持稳定'}",
+        f"固定系列名：{series_name}",
+        f"稳定识别句：{signature_line or '当前还没有历史锁定值，本集请首次定义后保持稳定'}",
+        f"旁白口吻：{catchphrase or '当前还没有历史锁定值，可由你根据主角气质首次定义'}",
+    ]
+
+    return f"""你是一位给低幼儿童写日更连环画的漫画作者，不是做词语替换的机器。请把下面真实素材写成同一主角、同一世界观下的一集四格漫画脚本。
+
+核心要求：
+1. 主角永远只有宝宝一个人，人设必须稳定；主角气质、说话口吻、做事方式要连续。
+2. 如果最近几集信息存在，你要优先承接同一条主线；如果当天素材不适合强承接，也可以写成独立单集，但主角身份和叙事气质不能漂移。
+3. 这是基于真实日常长出来的儿童漫画连载。你可以决定它更偏轻幻想、现实冒险、生活喜剧、童话比喻或其他合适表达，但必须由真实素材支撑；不要机械改词，也不要脱离素材乱编。
+4. 你要自己根据当天真实素材，决定哪些动作、观察、情绪、互动值得被写成剧情推进；不要脱离照片、日志、语音与画像线索乱编。
+5. 这集必须是一个完整单集漫画，固定 4 格，按给定 panel_1 ~ panel_4 顺序写，并形成清晰结构：
+   - 第1格：开场和今日目标
+   - 第2格：遇到小挑战或新线索
+   - 第3格：宝宝主动行动，最好体现一种能力或装备
+   - 第4格：任务完成，落到温柔、有结果的收尾
+6. 无人像场景照片也很重要，它们可以作为开场、转场、氛围镜头或任务线索镜头。
+7. `role_name` 字段必须原样输出为 {public_client.baby_name}
+{hero_rule}
+{world_rule}
+{signature_rule}
+11. `skill_progress` 必须体现本集能力成长，优先沿用既有能力线，写成“今天又推进了一格”的具体结果。
+12. `gear_unlock` 不是玄幻装备名，而是本集真正用上的真实道具、熟悉物件或稳定辅助物。
+13. 你要同时为每一格生成 `image_prompt`，让画图模型直接按该格剧本作画。
+14. `image_prompt` 必须明确镜头、动作、情绪、剧情补画元素和环境细节，重点是“根据剧本重组画面”，不是“把照片直接卡通化”。
+15. 输出严格为 JSON，不要 markdown，不要解释。
+
+输出格式：
+{{
+  "title": "故事标题",
+  "summary": "80字内故事摘要",
+  "hook": "一句吸引人的追更文案",
+  "role_name": "{public_client.baby_name}",
+  "hero_archetype": "{output_hero_hint}",
+  "signature": "{output_signature_hint}",
+  "world_name": "{output_world_hint}",
+  "fantasy_mission": "本集在故事世界里的主线任务，18字内",
+  "real_world_thread": "这集对应现实里的主线，18字内",
+  "skill_progress": "本集能力成长，18字内",
+  "gear_unlock": "本集真实道具或辅助物线索，18字内",
+  "panels": [
+    {{"panel": 1, "title": "小标题", "caption": "这一格的旁白，30字内", "image_prompt": "给画图模型的详细中文提示词，80-140字"}},
+    {{"panel": 2, "title": "小标题", "caption": "这一格的旁白，30字内", "image_prompt": "给画图模型的详细中文提示词，80-140字"}},
+    {{"panel": 3, "title": "小标题", "caption": "这一格的旁白，30字内", "image_prompt": "给画图模型的详细中文提示词，80-140字"}},
+    {{"panel": 4, "title": "小标题", "caption": "这一格的旁白，30字内", "image_prompt": "给画图模型的详细中文提示词，80-140字"}}
+  ]
+}}
+
+日期：{date}
+宝宝名字：{public_client.baby_name}
+已有日志：{log_text or "暂无正式日志"}
+新闻参考：{"；".join(news_list[:2]) if news_list else "无"}
+语音线索：{"；".join(speech_lines) if speech_lines else "无"}
+固定连载设定：
+{chr(10).join(series_lines)}
+最近几集延续线索：
+{chr(10).join(continuity_lines) if continuity_lines else "暂无历史剧集，可先写成稳定人设下的独立单集"}
+长期画像与个性线索：
+{chr(10).join(profile_lines)}
+面板素材：
+{chr(10).join(material_lines)}
+"""
+
+
+def _generate_story_script(
+    date: str,
+    log_bundle: dict,
+    panel_sources: list,
+    speech_records: list,
+    series_profile: dict,
+) -> dict:
+    prompt = _build_story_prompt(
+        date, log_bundle, panel_sources, speech_records, series_profile
+    )
+    response = public_client.signed_request(
+        "POST",
+        f"{public_client.server_url}/czrz/ai/proxy/text",
+        json={
+            "client_id": public_client.client_id,
+            "prompt": prompt,
+            "max_tokens": 1400,
+            "operation": "daily_story_script",
+        },
+        timeout=1200,
+    )
+    if response.status_code != 200:
+        raise Exception(f"故事脚本生成失败: {response.status_code}")
+
+    result = response.json()
+    if not result.get("success"):
+        raise Exception(result.get("message") or result.get("error") or "故事脚本生成失败")
+
+    payload = _extract_json_payload(result.get("result", {}).get("content", ""))
+    if not payload:
+        raise Exception("故事脚本解析失败")
+    return payload
+
+
+def _image_to_data_url(image_path: str) -> str:
+    from PIL import Image
+    import io
+    import base64
+
+    img = Image.open(image_path).convert("RGB")
+    img.thumbnail((1600, 1600))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=88)
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _generate_image_with_reference(
+    prompt: str,
+    source_path: str,
+    *,
+    operation: str = "daily_story_comic",
+    model_name: str = DEFAULT_STORY_IMAGE_MODEL,
+    size: str = DEFAULT_STORY_IMAGE_SIZE,
+) -> str:
+    image_url, _error = _generate_image_with_reference_result(
+        prompt,
+        source_path,
+        operation=operation,
+        model_name=model_name,
+        size=size,
+    )
+    return image_url
+
+
+def _generate_image_with_reference_result(
+    prompt: str,
+    source_path: str,
+    *,
+    operation: str = "daily_story_comic",
+    model_name: str = DEFAULT_STORY_IMAGE_MODEL,
+    size: str = DEFAULT_STORY_IMAGE_SIZE,
+) -> tuple[str, str]:
+    if not source_path or not Path(source_path).exists():
+        return "", "参考照片不存在或文件已被移动。"
+
+    try:
+        response = public_client.signed_request(
+            "POST",
+            f"{public_client.server_url}/czrz/ai/proxy/image",
+            json={
+                "client_id": public_client.client_id,
+                "prompt": prompt,
+                "images": [_image_to_data_url(source_path)],
+                "model_name": model_name,
+                "size": size,
+                "operation": operation,
+            },
+            timeout=1200,
+        )
+    except Exception as e:
+        logger.warning(f"[Image] 参考图生成请求失败: {e}")
+        return "", f"图片模型请求失败：{e}"
+
+    if response.status_code != 200:
+        return "", f"图片模型接口返回异常状态：HTTP {response.status_code}"
+
+    try:
+        result = response.json()
+    except Exception:
+        return "", "图片模型返回内容无法解析。"
+
+    if not result.get("success"):
+        error_text = result.get("message") or result.get("error") or "未返回具体原因"
+        logger.warning(f"[Image] 参考图生成失败: {error_text}")
+        return "", f"图片模型生成失败：{error_text}"
+
+    image_url = (result.get("result") or {}).get("image_url", "")
+    if not image_url:
+        return "", "图片模型未返回图片结果。"
+    return image_url, ""
+
+
+def _generate_story_panel_image(panel_prompt: str, source_path: str) -> str:
+    return _generate_image_with_reference(
+        panel_prompt,
+        source_path,
+        operation="daily_story_comic",
+        model_name=DEFAULT_STORY_IMAGE_MODEL,
+        size=DEFAULT_STORY_IMAGE_SIZE,
+    )
+
+
+def _download_story_image(image_url: str, target_path: Path) -> bool:
+    if not image_url:
+        return False
+    try:
+        if image_url.startswith("data:image/"):
+            import base64
+
+            header, encoded = image_url.split(",", 1)
+            image_bytes = base64.b64decode(encoded)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(target_path, "wb") as f:
+                f.write(image_bytes)
+            return True
+        resp = requests.get(image_url, timeout=120, verify=False)
+        if resp.status_code != 200:
+            return False
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_path, "wb") as f:
+            f.write(resp.content)
+        return True
+    except Exception as e:
+        logger.warning(f"[Story] 下载故事图片失败: {e}")
+        return False
+
+
+def _save_generated_asset_image(
+    image_url: str,
+    target_path: Path,
+    *,
+    max_side: int = 1280,
+    quality: int = 84,
+) -> bool:
+    if not image_url:
+        return False
+    try:
+        if image_url.startswith("data:image/"):
+            import base64
+
+            _header, encoded = image_url.split(",", 1)
+            image_bytes = base64.b64decode(encoded)
+        else:
+            resp = requests.get(image_url, timeout=120, verify=False)
+            if resp.status_code != 200:
+                return False
+            image_bytes = resp.content
+
+        from PIL import Image, ImageOps
+
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            img = ImageOps.exif_transpose(img)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(
+                target_path,
+                format="JPEG",
+                quality=quality,
+                optimize=True,
+                progressive=True,
+            )
+        return True
+    except Exception as e:
+        logger.warning(f"[Comic] 保存生成图失败: {e}")
+        return False
+
+
+def build_daily_story(date: str, regenerate: bool = False, progress_callback=None) -> dict:
+    client_id = public_client.client_id
+    logger.info(f"[Story] 开始生成: date={date}, regenerate={regenerate}")
+    if callable(progress_callback):
+        progress_callback("preparing", "正在准备故事素材...", 5)
+    if not regenerate:
+        cached_story = load_daily_story(date, client_id)
+        if cached_story:
+            logger.info(f"[Story] 命中缓存: date={date}")
+            if callable(progress_callback):
+                progress_callback("done", "故事已存在，直接返回缓存", 100)
+            return cached_story
+
+    panel_sources = _pick_story_panel_sources(_prepare_story_photo_records(date, client_id))
+    if not panel_sources:
+        raise Exception("这一天还没有可用素材，先上传或分析照片后再试")
+    if callable(progress_callback):
+        progress_callback("materials", "素材已准备，正在整理日志和语音...", 18)
+
+    log_bundle = get_story_log_bundle(date, client_id)
+    speech_records = get_story_speech_records(date, client_id)
+    series_profile = get_story_series_profile(
+        client_id,
+        panel_sources=panel_sources,
+        episodes=_get_story_prior_episodes(client_id, date, limit=6),
+    )
+
+    try:
+        if callable(progress_callback):
+            progress_callback("script", "正在编写今日故事脚本...", 32)
+        script = _generate_story_script(
+            date, log_bundle, panel_sources, speech_records, series_profile
+        )
+    except Exception as e:
+        logger.warning(f"[Story] LLM故事脚本生成失败: {e}")
+        raise Exception(f"LLM故事脚本生成失败，请检查模型或提示词: {e}")
+    if callable(progress_callback):
+        progress_callback("script_done", "故事脚本完成，开始绘制漫画分镜...", 46)
+
+    story_dir = _story_dir(date, client_id)
+    panels = []
+    story_panels = script.get("panels") or []
+    role_name = public_client.baby_name
+    hero_archetype = script.get("hero_archetype") or series_profile.get("hero_archetype") or ""
+    signature = script.get("signature") or series_profile.get("signature_line") or ""
+    world_name = script.get("world_name") or series_profile.get("world_name") or ""
+    ability_tracks = list(series_profile.get("ability_tracks") or [])
+    gear_tracks = list(series_profile.get("gear_tracks") or [])
+    story_engine = series_profile.get("story_engine") or ""
+    story_motifs = list(series_profile.get("story_motifs") or [])
+    top_growth_clues = list(series_profile.get("top_growth_clues") or [])
+    skill_progress = script.get("skill_progress") or ""
+    gear_unlock = script.get("gear_unlock") or ""
+    fantasy_mission = script.get("fantasy_mission") or ""
+    real_world_thread = script.get("real_world_thread") or ""
+    story_profile_payload = dict(series_profile or {})
+    story_profile_payload.update(
+        {
+            "role_name": role_name,
+            "hero_archetype": hero_archetype,
+            "world_name": world_name,
+            "series_name": story_profile_payload.get("series_name")
+            or f"《{public_client.baby_name}的成长连环画》",
+            "catchphrase": story_profile_payload.get("catchphrase") or "",
+            "signature_line": signature,
+            "signature_traits": story_profile_payload.get("signature_traits") or [],
+            "world_rules": story_profile_payload.get("world_rules") or [],
+            "story_engine": story_engine,
+            "story_motifs": story_motifs,
+            "top_growth_clues": top_growth_clues,
+            "ability_tracks": ability_tracks,
+            "gear_tracks": gear_tracks,
+        }
+    )
+    for index, source in enumerate(panel_sources[:4], start=1):
+        if callable(progress_callback):
+            progress_callback(
+                f"panel_{index}",
+                f"正在生成第 {index} 格漫画...",
+                min(92, 46 + index * 12),
+            )
+        script_panel = story_panels[index - 1] if index - 1 < len(story_panels) else {}
+        panel_title = script_panel.get("title") or f"第{index}格"
+        panel_caption = script_panel.get("caption") or source.get("description") or ""
+        panel_visual_prompt = (script_panel.get("image_prompt") or "").strip()
+        source_filename = source.get("filename", "")
+        scene_name = source.get("scene") or story_profile_payload.get("top_scene") or ""
+        trait_anchor = "；".join((story_profile_payload.get("signature_traits") or [])[:2])
+        prompt = (
+            f"请基于这张真实照片和既定分镜剧本，绘制一格温暖、自然、细腻的无字儿童漫画分镜。"
+            f"不要把原图直接卡通化，也不要只做描边上色；你需要根据剧情重新组织镜头、动作和环境细节，让它成为真正的漫画画面。"
+            f"主角固定为{role_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色、真实场景关键元素和光线氛围，不要换脸，不要换人，不要添加陌生主角。"
+            f"整体是柔和手绘漫画/儿童绘本风，属于同一部持续连载《{story_profile_payload.get('series_name') or f'《{public_client.baby_name}的成长连环画》'}》。"
+        )
+        if signature:
+            prompt += f" 这个主角的长期识别句是：{signature}。"
+        if hero_archetype:
+            prompt += f" 主角气质是：{hero_archetype}。"
+        if trait_anchor:
+            prompt += f" 角色识别点：{trait_anchor}。"
+        if fantasy_mission:
+            prompt += f" 这一集的主线任务是：{fantasy_mission}。"
+        if real_world_thread:
+            prompt += f" 现实里的主线是：{real_world_thread}。"
+        if scene_name:
+            prompt += f" 当前真实场景是：{scene_name}。"
+        if panel_title:
+            prompt += f" 这一格的画面主题是“{panel_title}”。"
+        if panel_caption:
+            prompt += f" 这一格需要表现的动作和情绪是：{panel_caption}。"
+        if panel_visual_prompt:
+            prompt += f" 这格的剧本分镜提示词是：{panel_visual_prompt}。"
+        if not source.get("has_baby", True):
+            prompt += " 这是场景建立镜头，请保留地点与氛围感，让它像真正的开场或转场分镜。"
+        else:
+            prompt += " 画面只聚焦宝宝一个明确角色；请按剧本补出必要的动作延伸、环境线索和情节细节，但不要让其他人变成独立人物。"
+        prompt += (
+            " 只输出画面，不要在图中出现任何中文、英文、数字、拟声字、对白气泡、旁白框、字幕条、标题条、路牌、标牌、logo、水印。"
+            " 不要把标题或旁白直接写在图片上，所有文字都留给页面排版。"
+        )
+
+        image_url = ""
+        image_file = ""
+        if not source.get("is_video") and source.get("path"):
+            remote_url = _generate_story_panel_image(prompt, source["path"])
+            if remote_url:
+                image_file = f"panel_{index}.png"
+                saved = _download_story_image(remote_url, story_dir / image_file)
+                if saved:
+                    image_url = _story_asset_url(date, image_file)
+                else:
+                    image_file = ""
+
+        panel_data = {
+            "index": index,
+            "title": panel_title,
+            "caption": panel_caption,
+            "image_prompt": panel_visual_prompt,
+            "source_filename": source_filename,
+            "source_description": source.get("description", ""),
+            "has_baby": source.get("has_baby", True),
+            "is_video": source.get("is_video", False),
+            "image_file": image_file,
+            "image_url": image_url or _story_panel_image_url(date, {"source_filename": source_filename, "is_video": source.get("is_video", False)}),
+        }
+        panels.append(panel_data)
+        logger.info(
+            f"[Story] 面板完成: date={date}, panel={index}, "
+            f"source={source_filename or 'unknown'}, image_file={image_file or 'fallback'}"
+        )
+        if callable(progress_callback):
+            progress_callback(
+                f"panel_{index}_done",
+                f"第 {index} 格已完成",
+                min(95, 50 + index * 11),
+            )
+
+    story_data = {
+        "date": date,
+        "title": script.get("title") or f"{public_client.baby_name}的今日故事",
+        "summary": script.get("summary") or "把这一天的片段整理成了一个小连载。",
+        "hook": script.get("hook") or "点开看看今天这一集。",
+        "role_name": role_name,
+        "hero_archetype": hero_archetype,
+        "series_name": story_profile_payload.get("series_name")
+        or f"《{public_client.baby_name}的成长连环画》",
+        "world_name": world_name,
+        "signature": signature,
+        "catchphrase": story_profile_payload.get("catchphrase") or "",
+        "fantasy_mission": fantasy_mission,
+        "real_world_thread": real_world_thread,
+        "skill_progress": skill_progress,
+        "gear_unlock": gear_unlock,
+        "story_engine": story_profile_payload.get("story_engine") or "",
+        "story_motifs": story_profile_payload.get("story_motifs") or [],
+        "top_growth_clues": story_profile_payload.get("top_growth_clues") or [],
+        "signature_traits": story_profile_payload.get("signature_traits") or [],
+        "world_rules": story_profile_payload.get("world_rules") or [],
+        "ability_tracks": ability_tracks,
+        "gear_tracks": gear_tracks,
+        "series_profile": story_profile_payload,
+        "style": "comic_4panel",
+        "source_mode": "ai_comic" if any(p.get("image_file") for p in panels) else "photo_fallback",
+        "panels": panels,
+        "log_excerpt": (log_bundle.get("log") or "")[:240],
+    }
+    story_data = _hydrate_story_series_fields(
+        date, story_data, client_id, series_profile=story_profile_payload
+    )
+
+    saved_story = save_daily_story(date, story_data, client_id)
+    logger.info(
+        f"[Story] 生成完成: date={date}, source_mode={saved_story.get('source_mode')}, "
+        f"panels={len(saved_story.get('panels') or [])}"
+    )
+    if callable(progress_callback):
+        progress_callback("done", "故事生成完成", 100)
+    return saved_story
 
 
 def get_processed_videos(date: str, client_id: str) -> list:
@@ -8269,501 +10997,12 @@ def get_processed_videos(date: str, client_id: str) -> list:
         if resp.status_code == 200:
             result = resp.json()
             if result.get("success"):
-                return result.get("videos", [])
+                return _backfill_missing_video_hashes(
+                    date, client_id, result.get("videos", [])
+                )
     except Exception as e:
         logger.info(f"[AI回顾] 获取已处理视频失败: {e}")
     return []
-
-
-# ==================== 画像输入变更检测（方案2完整版）====================
-
-
-def _get_input_sync_state_file() -> Path:
-    """获取输入同步状态文件路径（统一存储所有画像输入的状态）"""
-    if hasattr(sys, "_MEIPASS"):
-        data_dir = Path.home() / "Documents" / "CZRZ"
-    else:
-        data_dir = Path(__file__).parent / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir / "profile_input_sync_state.json"
-
-
-def _load_input_sync_state() -> dict:
-    """加载输入同步状态"""
-    state_file = _get_input_sync_state_file()
-    logger.info(f"[DEBUG-STATE] 加载状态文件: {state_file}")
-    logger.info(f"[DEBUG-STATE] 文件存在: {state_file.exists()}")
-    if state_file.exists():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                content = f.read()
-                logger.info(f"[DEBUG-STATE] 文件内容长度: {len(content)} 字符")
-                data = json.loads(content)
-                logger.info(f"[DEBUG-STATE] 解析成功，顶层keys: {list(data.keys())}")
-                return data
-        except Exception as e:
-            logger.info(f"[DEBUG-STATE] 加载失败: {e}")
-            pass
-    logger.info(f"[DEBUG-STATE] 返回空状态")
-    return {}
-
-
-def _save_input_sync_state(state: dict):
-    """保存输入同步状态"""
-    state_file = _get_input_sync_state_file()
-    try:
-        with open(state_file, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.info(f"[输入同步] 保存状态失败: {e}")
-
-
-def _get_input_hash(date: str, client_id: str, input_type: str) -> str:
-    """获取某天的某种输入的保存 hash"""
-    state = _load_input_sync_state()
-    logger.info(
-        f"[DEBUG-HASH-READ] 查询: client_id={client_id[:8]}..., date={date}, type={input_type}"
-    )
-    client_state = state.get(client_id, {})
-    date_state = client_state.get(date, {})
-    result = date_state.get(input_type, "")
-    logger.info(f"[DEBUG-HASH-READ] 结果: '{result[:16] if result else '<空>'}'")
-    return result
-
-
-def _save_input_hash(date: str, client_id: str, input_type: str, hash_value: str):
-    """保存某天某种输入的 hash"""
-    logger.info(
-        f"[DEBUG-HASH-SAVE] 保存: date={date}, type={input_type}, hash={hash_value[:16] if hash_value else '<空>'}"
-    )
-    state = _load_input_sync_state()
-    if client_id not in state:
-        state[client_id] = {}
-    if date not in state[client_id]:
-        state[client_id][date] = {}
-    state[client_id][date][input_type] = hash_value
-    _save_input_sync_state(state)
-
-
-# ========== 1. 标签变更检测 ==========
-
-
-def get_photo_tags_hash(date: str, client_id: str) -> str:
-    """
-    计算某天所有照片标签的 hash
-    通过文件名解析日期，获取当天的所有标签
-    """
-    try:
-        from photo_tags import get_all_photo_tags
-
-        all_tags = get_all_photo_tags(client_id)
-        if not all_tags:
-            return ""
-
-        # 筛选当天的标签（从文件名解析日期）
-        day_tags = []
-        for filename, tag_info in all_tags.items():
-            try:
-                # 文件名格式: 2024-03-07_143022.jpg
-                file_date = filename.split("_")[0]
-                if file_date == date:
-                    day_tags.append(
-                        {
-                            "filename": filename,
-                            "tag": tag_info.get("tag", ""),
-                            "note": tag_info.get("note", ""),
-                            "updated_at": tag_info.get("updated_at", ""),
-                        }
-                    )
-            except Exception:
-                continue
-
-        if not day_tags:
-            return ""
-
-        # 按文件名排序，确保一致性
-        day_tags.sort(key=lambda x: x["filename"])
-
-        # 计算 hash：包含标签内容、备注和更新时间
-        hash_content = json.dumps(day_tags, sort_keys=True, ensure_ascii=True)
-        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
-
-    except Exception as e:
-        logger.info(f"[标签同步] 计算标签 hash 失败: {e}")
-        return ""
-
-
-def check_tag_changes(date: str, client_id: str) -> bool:
-    """检查某天的标签是否有变化"""
-    logger.info(f"[DEBUG-TAG] ========== 开始检查标签变化: {date} ==========")
-    current_hash = get_photo_tags_hash(date, client_id)
-    saved_hash = _get_input_hash(date, client_id, "tags")
-
-    logger.info(f"[DEBUG-TAG] 当前hash: '{current_hash}'")
-    logger.info(f"[DEBUG-TAG] 保存hash: '{saved_hash}'")
-    logger.info(f"[DEBUG-TAG] hash相等: {current_hash == saved_hash}")
-
-    if not current_hash and not saved_hash:
-        logger.info(f"[DEBUG-TAG] 结果: 无标签数据，返回False")
-        return False
-    if current_hash and not saved_hash:
-        logger.info(f"[DEBUG-TAG] 结果: 新增标签，返回True")
-        return True
-
-    has_changes = current_hash != saved_hash
-    logger.info(f"[DEBUG-TAG] 结果: 是否有变化={has_changes}")
-    return has_changes
-
-
-# ========== 2. 照片描述变更检测 ==========
-
-
-def get_photo_descriptions_hash(date: str, client_id: str) -> str:
-    """
-    计算某天所有照片描述的 hash
-    """
-    try:
-        all_descriptions = get_processed_photos(date, client_id)
-        if not all_descriptions:
-            return ""
-
-        # 提取关键字段计算 hash
-        desc_list = []
-        for desc in all_descriptions:
-            desc_list.append(
-                {
-                    "path": desc.get("path", ""),
-                    "description": desc.get("description", ""),
-                    "has_baby": desc.get("has_baby", True),
-                    "scene": desc.get("scene", ""),
-                    "activity": desc.get("activity", ""),
-                }
-            )
-
-        # 按路径排序
-        desc_list.sort(key=lambda x: x["path"])
-
-        hash_content = json.dumps(desc_list, sort_keys=True, ensure_ascii=True)
-        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
-
-    except Exception as e:
-        logger.info(f"[描述同步] 计算描述 hash 失败: {e}")
-        return ""
-
-
-def check_photo_description_changes(date: str, client_id: str) -> bool:
-    """检查某天的照片描述是否有变化"""
-    logger.info(f"[DEBUG-DESC] ========== 开始检查描述变化: {date} ==========")
-    current_hash = get_photo_descriptions_hash(date, client_id)
-    saved_hash = _get_input_hash(date, client_id, "photo_descriptions")
-
-    logger.info(f"[DEBUG-DESC] 当前hash: '{current_hash}'")
-    logger.info(f"[DEBUG-DESC] 保存hash: '{saved_hash}'")
-    logger.info(f"[DEBUG-DESC] hash相等: {current_hash == saved_hash}")
-
-    if not current_hash and not saved_hash:
-        logger.info(f"[DEBUG-DESC] 结果: 无描述数据，返回False")
-        return False
-    if current_hash and not saved_hash:
-        logger.info(f"[DEBUG-DESC] 结果: 新增描述，返回True")
-        return True
-
-    has_changes = current_hash != saved_hash
-    logger.info(f"[DEBUG-DESC] 结果: 是否有变化={has_changes}")
-    return has_changes
-
-
-# ========== 3. 语音记录变更检测 ==========
-
-
-def get_speech_records_hash(date: str, client_id: str) -> str:
-    """
-    计算某天所有语音记录的 hash
-    """
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/speech/records",
-            params={"client_id": client_id, "date": date},
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            return ""
-
-        result = resp.json()
-        if not result.get("success"):
-            return ""
-
-        records = result.get("records", [])
-        if not records:
-            return ""
-
-        # 提取关键字段
-        speech_list = []
-        for record in records:
-            speech_list.append(
-                {
-                    "video_path": record.get("video_path", ""),
-                    "transcript": record.get("transcript", ""),
-                    "duration": record.get("duration", 0),
-                    "language_analysis": record.get("language_analysis", {}),
-                }
-            )
-
-        # 按视频路径排序
-        speech_list.sort(key=lambda x: x["video_path"])
-
-        hash_content = json.dumps(speech_list, sort_keys=True, ensure_ascii=True)
-        return hashlib.md5(hash_content.encode()).hexdigest()[:16]
-
-    except Exception as e:
-        logger.info(f"[语音同步] 计算语音 hash 失败: {e}")
-        return ""
-
-
-def check_speech_changes(date: str, client_id: str) -> bool:
-    """检查某天的语音记录是否有变化"""
-    logger.info(f"[DEBUG-SPEECH] ========== 开始检查语音变化: {date} ==========")
-    current_hash = get_speech_records_hash(date, client_id)
-    saved_hash = _get_input_hash(date, client_id, "speech_records")
-
-    logger.info(f"[DEBUG-SPEECH] 当前hash: '{current_hash}'")
-    logger.info(f"[DEBUG-SPEECH] 保存hash: '{saved_hash}'")
-    logger.info(f"[DEBUG-SPEECH] hash相等: {current_hash == saved_hash}")
-
-    if not current_hash and not saved_hash:
-        logger.info(f"[DEBUG-SPEECH] 结果: 无语音数据，返回False")
-        return False
-    if current_hash and not saved_hash:
-        logger.info(f"[DEBUG-SPEECH] 结果: 新增语音，返回True")
-        return True
-
-    has_changes = current_hash != saved_hash
-    logger.info(f"[DEBUG-SPEECH] 结果: 是否有变化={has_changes}")
-    return has_changes
-
-
-# ========== 状态初始化（避免重复处理）==========
-
-
-def _init_sync_state_for_processed_dates(client_id: str, dates_to_check: list):
-    """
-    为已处理的日期初始化状态文件
-    避免首次运行时误判已有数据为"新增"
-    只处理最近30天，避免初始化时间过长
-    """
-    # 只处理最近30天，避免初始化时间过长
-    recent_dates = dates_to_check[:30]
-    print(f"[状态初始化] 检查最近 {len(recent_dates)} 个日期...")
-    initialized_count = 0
-    initialized_dates = []
-
-    for date in recent_dates:
-        # 检查是否已有数据
-        has_data = False
-
-        # 检查照片描述
-        desc_hash = get_photo_descriptions_hash(date, client_id)
-        if desc_hash:
-            _save_input_hash(date, client_id, "photo_descriptions", desc_hash)
-            has_data = True
-
-        # 检查标签
-        tag_hash = get_photo_tags_hash(date, client_id)
-        if tag_hash:
-            _save_input_hash(date, client_id, "tags", tag_hash)
-            has_data = True
-
-        # 检查语音
-        speech_hash = get_speech_records_hash(date, client_id)
-        if speech_hash:
-            _save_input_hash(date, client_id, "speech_records", speech_hash)
-            has_data = True
-
-        if has_data:
-            initialized_count += 1
-            initialized_dates.append(date)
-
-    print(f"[状态初始化] 已为 {initialized_count} 个日期初始化状态")
-    return initialized_dates  # 返回初始化的日期列表
-
-
-# ========== 4. 日志内容变更检测 ==========
-
-
-def get_log_content_hash(date: str, client_id: str) -> str:
-    """
-    计算某天日志内容的 hash
-    """
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/baby/log",
-            params={"client_id": client_id, "date": date},
-            timeout=30,
-        )
-        if resp.status_code != 200:
-            return ""
-
-        result = resp.json()
-        if not result.get("success"):
-            return ""
-
-        log = result.get("log", {})
-        if not log:
-            return ""
-
-        # log 可能是 dict 或 str
-        if isinstance(log, dict):
-            content = log.get("content", "")
-        else:
-            content = str(log) if log else ""
-        if not content:
-            return ""
-
-        return hashlib.md5(content.encode()).hexdigest()[:16]
-
-    except Exception as e:
-        logger.info(f"[日志同步] 计算日志 hash 失败: {e}")
-        return ""
-
-
-def check_log_changes(date: str, client_id: str) -> bool:
-    """检查某天的日志内容是否有变化"""
-    logger.info(f"[DEBUG-LOG] ========== 开始检查日志变化: {date} ==========")
-    current_hash = get_log_content_hash(date, client_id)
-    saved_hash = _get_input_hash(date, client_id, "log_content")
-
-    logger.info(f"[DEBUG-LOG] 当前hash: '{current_hash}'")
-    logger.info(f"[DEBUG-LOG] 保存hash: '{saved_hash}'")
-    logger.info(f"[DEBUG-LOG] hash相等: {current_hash == saved_hash}")
-
-    if not current_hash and not saved_hash:
-        logger.info(f"[DEBUG-LOG] 结果: 无日志数据，返回False")
-        return False
-    if current_hash and not saved_hash:
-        logger.info(f"[DEBUG-LOG] 结果: 新增日志，返回True")
-        return True
-
-    has_changes = current_hash != saved_hash
-    logger.info(f"[DEBUG-LOG] 结果: 是否有变化={has_changes}")
-    return has_changes
-
-
-# ========== 统一保存所有输入状态 ==========
-
-
-def save_input_sync_state(date: str, client_id: str):
-    """在画像生成完成后保存所有输入的 hash"""
-    try:
-        # 保存标签 hash
-        tag_hash = get_photo_tags_hash(date, client_id)
-        logger.info(f"[DEBUG-SAVE] 标签hash: '{tag_hash}'")
-        if tag_hash:
-            _save_input_hash(date, client_id, "tags", tag_hash)
-
-        # 保存照片描述 hash
-        desc_hash = get_photo_descriptions_hash(date, client_id)
-        logger.info(f"[DEBUG-SAVE] 描述hash: '{desc_hash}'")
-        if desc_hash:
-            _save_input_hash(date, client_id, "photo_descriptions", desc_hash)
-
-        # 保存语音记录 hash
-        speech_hash = get_speech_records_hash(date, client_id)
-        logger.info(f"[DEBUG-SAVE] 语音hash: '{speech_hash}'")
-        if speech_hash:
-            _save_input_hash(date, client_id, "speech_records", speech_hash)
-
-        # 保存日志内容 hash
-        log_hash = get_log_content_hash(date, client_id)
-        logger.info(f"[DEBUG-SAVE] 日志hash: '{log_hash}'")
-        if log_hash:
-            _save_input_hash(date, client_id, "log_content", log_hash)
-
-        logger.info(f"[DEBUG-SAVE] 已保存所有输入状态: {date}")
-    except Exception as e:
-        logger.info(f"[输入同步] 保存状态失败: {e}")
-
-
-def select_best_photo_ai(photo_paths: list, max_photos: int = 20) -> tuple:
-    """AI选择最佳照片，同时返回描述和无宝宝照片列表
-
-    优化：
-    - 跳过预处理（AI会识别模糊/重复/无宝宝）
-    - 后处理校验：如果选中的照片明显模糊，换下一张
-    - 返回无宝宝照片列表，用于后续分析排除
-
-    Returns:
-        tuple: (best_photo, ai_description, no_baby_list)
-    """
-    if not photo_paths:
-        return None, None, []
-
-    try:
-        from select_best_photo import ai_select, is_blurry, CV2_AVAILABLE
-
-        IMAGE_EXTENSIONS = (
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".gif",
-            ".webp",
-            ".heic",
-            ".heif",
-            ".bmp",
-        )
-        images = [p for p in photo_paths if p.lower().endswith(IMAGE_EXTENSIONS)]
-
-        if not images:
-            return None, None, []
-
-        limited = images[:max_photos]
-
-        result = ai_select(limited, select_n=1)
-        selected = result.get("selected", [])
-        blurry_list = result.get("blurry", [])
-        no_baby_list = result.get("no_baby", [])
-
-        if selected:
-            best_photo = selected[0]
-
-            # 后处理：如果选中的照片明显模糊，尝试换一张
-            if CV2_AVAILABLE and is_blurry(best_photo):
-                print(f"[AI选图] AI选中的照片模糊，尝试换一张")
-                # 从非模糊、有宝宝的照片中选一张
-                non_blurry = [
-                    p
-                    for p in limited
-                    if p not in blurry_list
-                    and p not in no_baby_list
-                    and not is_blurry(p)
-                ]
-                if non_blurry:
-                    best_photo = non_blurry[0]
-
-            reasons = result.get("reasons", [])
-            ai_description = reasons[0] if reasons else "今日照片"
-            return best_photo, ai_description, no_baby_list
-
-    except Exception as e:
-        logger.info(f"[AI回顾] AI选图失败: {e}")
-        import traceback
-
-        traceback.print_exc()
-
-    # 降级：选第一张非模糊照片
-    if photo_paths:
-        try:
-            from select_best_photo import is_blurry
-
-            for p in photo_paths[:5]:
-                if not is_blurry(p):
-                    return p, "今日照片", []
-        except:
-            pass
-        return photo_paths[0], "今日照片", []
-
-    return None, None, []
 
 
 def save_featured_photo_server(
@@ -8860,26 +11099,6 @@ def _report_token_usage(usage: dict, operation: str = "ai_call", context: dict =
         print(f"[Token] 上报失败: {e}")
 
 
-@app.route("/api/today-news")
-def api_today_news():
-    """获取今日新闻 - 代理到服务端"""
-    try:
-        resp = public_client.signed_request(
-            "GET",
-            f"{public_client.server_url}/czrz/today-news",
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            return jsonify(resp.json())
-        else:
-            return jsonify(
-                {"success": False, "message": f"服务端错误: {resp.status_code}"}
-            )
-    except Exception as e:
-        print(f"[新闻] 获取今日新闻失败: {e}")
-        return jsonify({"success": False, "message": str(e)})
-
-
 def get_today_news():
     """从服务端获取今日新闻（内部调用）"""
     try:
@@ -8919,7 +11138,7 @@ def generate_ai_log(
     news_list = get_today_news() if include_news else []
 
     style_instructions = {
-        "简练": "用简洁明了的语言，像日常记录，100字左右",
+        "简练": "用温馨平淡、像真人随手记下生活的口吻来写，克制自然，不堆砌辞藻，少用感叹词和语气词，120字左右",
         "诗意": "用文艺清新的语言，可以加入诗意的比喻，150字左右",
         "东北腔": "用东北话的口吻写，幽默风趣，可以说'这孩子咋这么招人稀罕'、'杠杠的'等，100字左右",
         "详细": "详细记录当天的活动细节，时间、地点、做了什么，200字左右",
@@ -8950,10 +11169,13 @@ def generate_ai_log(
 风格要求：{style_instruction}
 
 注意事项：
-1. 语言要自然、温馨，像父母写的日记
+1. 语言要自然、温和、平实，像父母随手写下的真实日记
 2. 内容要基于照片描述，不要虚构
 3. 如果照片中有风景、活动场景但看不到宝宝，说明是活动场景记录，也要记录
-{"4. 如果有今日新闻，可以根据新闻内容与照片描述的关联性，自然地融入日志中。例如：宝宝爬得很快，恰好今天是马拉松比赛，可以联想宝宝以后会不会也喜欢跑步；宝宝在看球赛视频，恰好今天有足球比赛新闻，可以联系起来。不要生硬地附加在末尾，而是找到合适的切入点自然融入。如果新闻与照片内容没有关联，则不必强行加入。" if news_list else ""}
+4. 少用或不用“呀、呢、啦、哦、真是、太...”这类语气词和感叹词，不要写得像低龄化模板作文
+5. 不要堆砌形容词，不要刻意煽情，不要写成鸡汤或营销文案
+6. 多写具体动作、场景和细节，让内容像真人回看当天生活的短记录
+{"7. 如果有今日新闻，可以根据新闻内容与照片描述的关联性，自然地融入日志中。例如：宝宝爬得很快，恰好今天是马拉松比赛，可以联想宝宝以后会不会也喜欢跑步；宝宝在看球赛视频，恰好今天有足球比赛新闻，可以联系起来。不要生硬地附加在末尾，而是找到合适的切入点自然融入。如果新闻与照片内容没有关联，则不必强行加入。" if news_list else ""}
 
 请直接输出日志内容，不要其他说明："""
 
@@ -8995,13 +11217,15 @@ def save_log_server(
 ):
     """保存日志到服务端数据库"""
     try:
-        public_client.signed_request(
+        resp = public_client.signed_request(
             "POST",
             f"{public_client.server_url}/czrz/log/save",
             json={
                 "client_id": client_id,
                 "date": date,
                 "content": log_content,
+                "source_kind": "auto",
+                "allow_overwrite_manual": False,
                 "metadata": {
                     "photo_description": photo_description,
                     "generated_by": "ai_auto_review",
@@ -9009,11 +11233,21 @@ def save_log_server(
             },
             timeout=30,
         )
-        logger.info(f"[AI回顾] 日志已保存到服务端: {date}")
-        return True
+        result = resp.json() if resp is not None else {}
+        if result.get("success"):
+            if result.get("skipped"):
+                logger.info(f"[AI回顾] {date} 已有手动日志，跳过自动覆盖")
+            else:
+                logger.info(f"[AI回顾] 日志已保存到服务端: {date}")
+            return result
+        logger.info(f"[AI回顾] 保存日志到服务端失败: {result}")
+        return {
+            "success": False,
+            "message": result.get("message", "服务端保存失败"),
+        }
     except Exception as e:
         logger.info(f"[AI回顾] 保存日志到服务端失败: {e}")
-        return False
+        return {"success": False, "message": str(e)}
 
 
 def get_weather_for_date(date: str) -> str:
@@ -9038,6 +11272,7 @@ def get_weather_for_date(date: str) -> str:
 
 
 @app.route("/api/ai/auto-review/status/<task_id>")
+@require_local_password_or_signature
 def get_ai_review_status(task_id):
     """获取AI智能回顾任务状态"""
     if task_id in AI_REVIEW_TASKS:
@@ -9046,32 +11281,6 @@ def get_ai_review_status(task_id):
         )
     else:
         return jsonify({"success": False, "message": "任务不存在"})
-
-
-@app.route("/api/ai/auto-review/status/latest")
-def get_latest_ai_review_status():
-    """获取最新的AI智能回顾任务状态"""
-    if not AI_REVIEW_TASKS:
-        return jsonify({"success": False, "message": "没有任务"})
-
-    # 找到最新的未完成任务
-    latest_task_id = None
-    latest_task = None
-
-    for task_id, task in AI_REVIEW_TASKS.items():
-        if not task.get("completed", False):
-            if latest_task is None or task.get("started_at", "") > latest_task.get(
-                "started_at", ""
-            ):
-                latest_task_id = task_id
-                latest_task = task
-
-    if latest_task_id:
-        return jsonify(
-            {"success": True, "status": latest_task, "task_id": latest_task_id}
-        )
-    else:
-        return jsonify({"success": False, "message": "没有运行中的任务"})
 
 
 # ==================== 压缩服务 API ====================
@@ -9102,37 +11311,6 @@ def get_compression_status():
                     },
                 }
             )
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/compression/settings", methods=["GET", "POST"])
-@require_local_or_password
-def compression_settings():
-    """获取或保存压缩设置"""
-    try:
-        from video_compressor import get_compression_manager
-
-        manager = get_compression_manager()
-
-        if not manager:
-            return jsonify({"success": False, "message": "压缩管理器未初始化"})
-
-        if request.method == "GET":
-            settings = manager.get_settings()
-            return jsonify({"success": True, "data": settings})
-
-        else:
-            # POST请求需要权限验证（使用统一的 session 检查）
-            check_result = check_local_or_password()
-            if check_result:
-                return check_result
-
-            data = request.get_json()
-            if data:
-                manager.save_settings(data)
-            return jsonify({"success": True, "message": "设置已保存"})
-
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
 
@@ -9230,79 +11408,6 @@ def check_ffmpeg():
         return jsonify({"success": False, "available": False, "message": str(e)})
 
 
-photo_index_rebuild_status = {"running": False, "result": None, "error": None}
-
-
-@app.route("/api/photo-index/rebuild", methods=["POST"])
-@require_local_or_password
-def rebuild_photo_index():
-    """重建素材索引（后台执行）"""
-    global photo_index_rebuild_status
-
-    if photo_index_rebuild_status["running"]:
-        return jsonify({"success": False, "message": "索引重建正在进行中..."})
-
-    def do_rebuild():
-        global photo_index_rebuild_status
-        try:
-            from photo_index_manager import PhotoIndexManager
-
-            media_folders = getattr(public_client, "media_folders", [])
-            data_dir = getattr(public_client, "data_dir", None)
-
-            print(f"[索引重建] media_folders: {media_folders}")
-            print(f"[索引重建] data_dir: {data_dir}")
-
-            if not data_dir:
-                photo_index_rebuild_status = {
-                    "running": False,
-                    "result": None,
-                    "error": "数据目录未初始化",
-                }
-                return
-
-            if not media_folders:
-                photo_index_rebuild_status = {
-                    "running": False,
-                    "result": None,
-                    "error": "未设置媒体文件夹，请先在设置页面添加媒体文件夹",
-                }
-                return
-
-            manager = PhotoIndexManager(data_dir, media_folders)
-            manager.index = {"photos": {}, "videos": {}}
-            manager._save_index()
-
-            result = manager.scan_source_folders()
-            photo_index_rebuild_status = {
-                "running": False,
-                "result": result,
-                "error": None,
-            }
-            print(f"✅ 索引重建完成: {result}")
-
-        except Exception as e:
-            photo_index_rebuild_status = {
-                "running": False,
-                "result": None,
-                "error": str(e),
-            }
-            print(f"❌ 索引重建失败: {e}")
-
-    photo_index_rebuild_status = {"running": True, "result": None, "error": None}
-    threading.Thread(target=do_rebuild, daemon=True).start()
-
-    return jsonify(
-        {"success": True, "message": "索引重建已开始，请稍后刷新页面查看结果"}
-    )
-
-
-@app.route("/api/photo-index/status")
-def photo_index_status():
-    """获取索引重建状态"""
-    return jsonify(photo_index_rebuild_status)
-
-
 @app.route("/video/compressed/<filename>")
 def get_compressed_video(filename):
     """获取压缩后的视频（用于自动降级）"""
@@ -9338,6 +11443,70 @@ def get_compressed_video(filename):
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/storybook")
+def storybook_page():
+    """时光相册在线页。"""
+    collection = get_story_collection_data(
+        public_client.client_id,
+        generate_missing=False,
+    )
+    return render_template(
+        "storybook.html",
+        baby_name=public_client.baby_name,
+        collection=collection,
+    )
+
+
+@app.route("/storybook/print")
+def storybook_print_page():
+    """时光相册长卷打印版，用于浏览器打印或 PDF 导出。"""
+    collection = get_story_collection_data(
+        public_client.client_id,
+        generate_missing=False,
+    )
+    return render_template(
+        "storybook_print.html",
+        baby_name=public_client.baby_name,
+        collection=collection,
+    )
+
+
+@app.route("/api/storybook")
+def api_storybook():
+    collection = get_story_collection_data(
+        public_client.client_id,
+        generate_missing=False,
+    )
+    return jsonify({"success": True, "collection": collection})
+
+
+@app.route("/api/storybook/generate", methods=["POST"])
+@require_local_or_password
+def api_generate_storybook():
+    """兼容旧接口：时光相册改为实时整理，不再依赖故事补齐。"""
+    try:
+        _clear_story_collection_cache(public_client.client_id)
+        collection = get_story_collection_data(
+            public_client.client_id,
+            generate_missing=False,
+        )
+        return jsonify(
+            {
+                "success": True,
+                "message": "时光相册现在会实时整理，无需再补齐故事缓存。",
+                "collection": collection,
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/storybook/pdf")
+def storybook_pdf():
+    """PDF 导出已下线，统一改为长图分享。"""
+    return "PDF 导出已下线，请改用“下载长图”。", 410
 
 
 @app.route("/image/compressed/<filename>")
@@ -9461,26 +11630,30 @@ def auto_process_and_upload_materials(target_date: str = None):
 
         result = {"photos": 0, "videos": 0, "errors": []}
 
-        # 处理照片（最多10张）
+        # 处理照片
         if photos:
             try:
-                from select_best_photo import analyze_all_photos
+                image_entries = [p for p in photos if Path(p.get("path", "")).exists()]
 
-                photo_paths = [
-                    p["path"] for p in photos[:15] if Path(p.get("path", "")).exists()
-                ]
-
-                if photo_paths:
-                    print(f"[素材处理] 分析 {len(photo_paths)} 张照片...")
+                if image_entries:
+                    print(f"[素材处理] 分析 {len(image_entries)} 张照片...")
                     step_start = time.time()
-                    photo_analysis = analyze_all_photos(
-                        photo_paths,
-                        max_photos=10,
-                        client_id=client_id,
-                        date=target_date,
+                    child_id = get_ai_identity_client_id(client_id)
+                    ensured = _ensure_photo_descriptions_for_entries(
+                        target_date,
+                        client_id,
+                        child_id=child_id,
+                        processed_photos=get_processed_photos(target_date, client_id),
+                        media_entries=image_entries,
+                        max_photos=None,
+                        log_prefix="[素材处理]",
+                    )
+                    photo_analysis = _build_photo_analysis_from_records(
+                        ensured.get("photos", [])
                     )
                     print(
-                        f"[素材处理] 照片分析完成，耗时 {time.time() - step_start:.1f}s"
+                        f"[素材处理] 照片分析完成，耗时 {time.time() - step_start:.1f}s，"
+                        f"新增描述 {ensured.get('analyzed_count', 0)} 张"
                     )
 
                     upload_resp = public_client.signed_request(
@@ -9502,7 +11675,7 @@ def auto_process_and_upload_materials(target_date: str = None):
                 print(f"[素材处理] 照片处理失败: {e}")
                 report_error("material_photo", f"照片处理失败", str(e))
 
-        # 处理视频语音（最多5个，按时长排序）
+        # 处理视频语音
         if videos:
             try:
                 from video_audio_processor import (
@@ -9511,10 +11684,34 @@ def auto_process_and_upload_materials(target_date: str = None):
                 )
 
                 video_results = []
+                video_entry_map = {
+                    item.get("path", ""): item for item in videos if item.get("path")
+                }
 
                 for video in videos:
                     video_path = Path(video.get("path", ""))
                     if not video_path.exists():
+                        indexed_video_hash = (
+                            video_entry_map.get(str(video_path), {}).get("hash") or ""
+                        ).strip()
+                        public_client.signed_request(
+                            "POST",
+                            f"{public_client.server_url}/czrz/speech/record",
+                            json={
+                                "client_id": client_id,
+                                "date": target_date,
+                                "video_path": str(video_path),
+                                "file_hash": indexed_video_hash,
+                                "transcript": "",
+                                "duration": 0,
+                                "analysis": _build_terminal_video_analysis(
+                                    "索引存在但磁盘文件不存在",
+                                    error_code="missing_source_file",
+                                    note="视频文件不存在，按已处理跳过",
+                                ),
+                            },
+                            timeout=30,
+                        )
                         continue
 
                     try:
@@ -9532,17 +11729,64 @@ def auto_process_and_upload_materials(target_date: str = None):
                             video_results.append(
                                 {
                                     "path": str(video_path),
+                                    "file_hash": (
+                                        video_entry_map.get(str(video_path), {}).get("hash")
+                                        or _resolve_media_hash(str(video_path))
+                                    ),
                                     "transcript": speech_result["transcript"],
                                     "duration": speech_result.get("duration", 0),
                                 }
                             )
+                        else:
+                            indexed_video_hash = (
+                                video_entry_map.get(str(video_path), {}).get("hash") or ""
+                            ).strip()
+                            public_client.signed_request(
+                                "POST",
+                                f"{public_client.server_url}/czrz/speech/record",
+                                json={
+                                    "client_id": client_id,
+                                    "date": target_date,
+                                    "video_path": str(video_path),
+                                    "file_hash": indexed_video_hash
+                                    or _resolve_media_hash(str(video_path)),
+                                    "transcript": "",
+                                    "duration": speech_result.get("duration", 0),
+                                    "analysis": _build_terminal_video_analysis(
+                                        speech_result.get("error", "未知错误"),
+                                        error_code="no_audio",
+                                        note="语音识别失败或无有效语音",
+                                    ),
+                                },
+                                timeout=30,
+                            )
                     except Exception as e:
                         print(f"[素材处理] 视频处理失败 {video_path}: {e}")
+                        indexed_video_hash = (
+                            video_entry_map.get(str(video_path), {}).get("hash") or ""
+                        ).strip()
+                        public_client.signed_request(
+                            "POST",
+                            f"{public_client.server_url}/czrz/speech/record",
+                            json={
+                                "client_id": client_id,
+                                "date": target_date,
+                                "video_path": str(video_path),
+                                "file_hash": indexed_video_hash
+                                or _resolve_media_hash(str(video_path)),
+                                "transcript": "",
+                                "duration": 0,
+                                "analysis": _build_terminal_video_analysis(
+                                    str(e),
+                                    error_code="video_process_error",
+                                ),
+                            },
+                            timeout=30,
+                        )
 
-                # 按时长排序，取前5个
+                # 按时长排序，优先先处理长视频，但不再截断数量
                 if video_results:
                     video_results.sort(key=lambda x: x.get("duration", 0), reverse=True)
-                    video_results = video_results[:5]
 
                     baby_info = getattr(public_client, "baby_info", {}) or {}
                     baby_name = baby_info.get("baby_name", "宝宝")
@@ -9560,6 +11804,7 @@ def auto_process_and_upload_materials(target_date: str = None):
                                 "client_id": client_id,
                                 "date": target_date,
                                 "video_path": vr["path"],
+                                "file_hash": vr.get("file_hash", "") or "",
                                 "transcript": vr["transcript"],
                                 "duration": vr["duration"],
                                 "analysis": analysis,
@@ -9765,12 +12010,6 @@ if __name__ == "__main__":
                 print("✅ 压缩服务已启动")
         except Exception as e:
             print(f"⚠️ 压缩服务初始化失败: {e}")
-
-        # 启动AI数据同步循环
-        ai_config = CLIENT_CONFIG.get("ai_service", {})
-        if ai_config.get("enabled", False) and ai_config.get("child_id", ""):
-            public_client.start_ai_sync_loop()
-            print("✅ AI数据同步循环已启动")
 
         # 启动素材处理定时任务
         if public_client.client_id:

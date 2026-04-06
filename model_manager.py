@@ -88,17 +88,6 @@ class ModelManager:
                         },
                     },
                 },
-                "embedding_model": {
-                    "provider": "tongyi",
-                    "api_token": "",
-                    "model_name": "",
-                    "provider_configs": {
-                        "tongyi": {
-                            "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings",
-                            "description": "阿里通义千问向量模型",
-                        }
-                    },
-                },
             }
             self._save_config(default_config)
             return default_config
@@ -106,6 +95,7 @@ class ModelManager:
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
+                changed = False
                 # 如果旧配置没有profile_model，添加它
                 if "profile_model" not in config:
                     config["profile_model"] = {
@@ -127,6 +117,11 @@ class ModelManager:
                             },
                         },
                     }
+                    changed = True
+                # 向量模型链路已废弃，加载时主动清理历史残留配置。
+                if config.pop("embedding_model", None) is not None:
+                    changed = True
+                if changed:
                     self._save_config(config)
                 return config
         except Exception as e:
@@ -195,20 +190,6 @@ class ModelManager:
             "provider": provider,
             "api_token": profile_cfg.get("api_token", ""),
             "model_name": profile_cfg.get("model_name", ""),
-            "api_url": provider_cfg.get("api_url", ""),
-            "description": provider_cfg.get("description", ""),
-        }
-
-    def get_embedding_config(self) -> Dict[str, Any]:
-        """获取向量模型配置"""
-        embedding_cfg = self.config.get("embedding_model", {})
-        provider = embedding_cfg.get("provider", "tongyi")
-        provider_cfg = embedding_cfg.get("provider_configs", {}).get(provider, {})
-
-        return {
-            "provider": provider,
-            "api_token": embedding_cfg.get("api_token", ""),
-            "model_name": embedding_cfg.get("model_name", ""),
             "api_url": provider_cfg.get("api_url", ""),
             "description": provider_cfg.get("description", ""),
         }
@@ -285,24 +266,6 @@ class ModelManager:
             print(f"[ModelManager] 更新画像配置失败: {e}")
             return False
 
-    def update_embedding_config(
-        self, provider: str, api_token: str, model_name: str
-    ) -> bool:
-        """更新向量模型配置"""
-        try:
-            if "embedding_model" not in self.config:
-                self.config["embedding_model"] = {}
-
-            self.config["embedding_model"]["provider"] = provider
-            self.config["embedding_model"]["api_token"] = api_token
-            self.config["embedding_model"]["model_name"] = model_name
-
-            self._save_config(self.config)
-            return True
-        except Exception as e:
-            print(f"[ModelManager] 更新向量配置失败: {e}")
-            return False
-
     def get_all_providers(self) -> Dict[str, Dict[str, list]]:
         """获取所有支持的厂商（仅作参考，实际模型名称由用户输入）"""
         return {
@@ -337,9 +300,6 @@ class ModelManager:
                 "deepseek": ["deepseek-chat"],
                 "doubao": ["ep-20250224000000-2x5l8"],
             },
-            "embedding": {
-                "tongyi": ["text-embedding-v3", "text-embedding-v4"],
-            },
         }
 
     def get_current_config(self) -> Dict[str, Any]:
@@ -349,7 +309,6 @@ class ModelManager:
             "vision_model": self.get_vision_config(),
             "speech_model": self.get_speech_config(),
             "profile_model": self.get_profile_config(),
-            "embedding_model": self.get_embedding_config(),
         }
 
 

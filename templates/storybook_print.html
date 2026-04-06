@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ collection.title }}</title>
+    <style>
+    @page {
+        size: A4;
+        margin: 10mm 8mm 12mm;
+    }
+    body {
+        margin: 0;
+        color: #2f2926;
+        background: #f7f0e7;
+        font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    .print-shell {
+        max-width: 180mm;
+        margin: 0 auto;
+        padding: 8mm 0 12mm;
+    }
+    .print-poster {
+        position: relative;
+        overflow: hidden;
+        border-radius: 18px;
+        padding: 10mm;
+        background:
+            radial-gradient(circle at top left, rgba(255, 224, 187, 0.92), transparent 34%),
+            radial-gradient(circle at top right, rgba(198, 234, 255, 0.92), transparent 28%),
+            linear-gradient(180deg, #fbf5ee 0%, #f7f0e6 48%, #fffaf4 100%);
+        box-sizing: border-box;
+    }
+    .cover-grid {
+        display: grid;
+        grid-template-columns: 1.02fr 0.98fr;
+        gap: 8mm;
+        align-items: stretch;
+    }
+    .cover-hero {
+        position: relative;
+        min-height: 120mm;
+        border-radius: 16px;
+        overflow: hidden;
+        background: linear-gradient(145deg, #dfb67d 0%, #f7e6cf 48%, #d7edf5 100%);
+    }
+    .cover-hero img.hero-main {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .cover-overlay {
+        position: absolute;
+        inset: 0;
+        padding: 10mm;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        background: linear-gradient(180deg, rgba(36, 31, 27, 0.08), rgba(36, 31, 27, 0.5));
+        color: white;
+    }
+    .cover-kicker {
+        display: inline-block;
+        width: fit-content;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.16);
+        font-size: 10pt;
+        font-weight: 800;
+        margin-bottom: 10px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .cover-title {
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", serif;
+        font-size: 26pt;
+        line-height: 1.12;
+        margin-bottom: 8px;
+        font-weight: 700;
+    }
+    .cover-chip {
+        margin-top: 10px;
+        display: inline-block;
+        width: fit-content;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.18);
+        font-size: 9.5pt;
+        font-weight: 700;
+    }
+    .cover-summary {
+        display: grid;
+        gap: 6mm;
+        padding: 7mm;
+        border-radius: 16px;
+        background: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255,255,255,0.66);
+    }
+    .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4mm;
+    }
+    .stat-card {
+        border-radius: 12px;
+        background: rgba(255,255,255,0.94);
+        padding: 4mm;
+    }
+    .stat-label {
+        color: #918377;
+        font-size: 8.5pt;
+        margin-bottom: 4px;
+    }
+    .stat-value {
+        font-size: 12.5pt;
+        font-weight: 800;
+    }
+    .section {
+        margin-top: 8mm;
+    }
+    .section-title {
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", serif;
+        font-size: 18pt;
+        font-weight: 700;
+        margin-bottom: 5px;
+    }
+    .chapter-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4mm;
+    }
+    .chapter-card {
+        border-radius: 12px;
+        background: rgba(255,255,255,0.82);
+        border: 1px solid rgba(255,255,255,0.7);
+        padding: 4mm;
+    }
+    .chapter-title {
+        font-weight: 800;
+        margin-bottom: 4px;
+    }
+    .chapter-meta {
+        color: #83786f;
+        font-size: 9pt;
+    }
+    .timeline {
+        display: grid;
+        gap: 6mm;
+        position: relative;
+    }
+    .timeline::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 15mm;
+        width: 1.3px;
+        background: linear-gradient(180deg, rgba(156, 120, 83, 0.18), rgba(156, 120, 83, 0.54), rgba(93, 146, 173, 0.22));
+    }
+    .moment {
+        display: grid;
+        grid-template-columns: 24mm 1fr;
+        gap: 5mm;
+        align-items: start;
+        position: relative;
+    }
+    .moment-axis {
+        display: grid;
+        justify-items: center;
+        gap: 3mm;
+        padding-top: 3mm;
+    }
+    .axis-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #d69357, #d7c7b1);
+        border: 3px solid rgba(255,255,255,0.96);
+    }
+    .axis-date {
+        color: #8c7a6c;
+        font-size: 8pt;
+        font-weight: 700;
+        writing-mode: vertical-rl;
+        letter-spacing: 0.08em;
+    }
+    .moment-card {
+        border-radius: 14px;
+        background: rgba(255,255,255,0.84);
+        padding: 5mm;
+        border: 1px solid rgba(255,255,255,0.72);
+    }
+    .moment-media {
+        display: grid;
+        grid-template-columns: 1fr 40mm;
+        gap: 4mm;
+        align-items: start;
+    }
+    .memory-frame {
+        overflow: hidden;
+        background: #efe7dc;
+        border: 7px solid rgba(255,255,255,0.86);
+        box-shadow: 0 10px 24px rgba(71, 56, 43, 0.12);
+    }
+    .memory-frame img {
+        width: 100%;
+        display: block;
+        object-fit: cover;
+        aspect-ratio: 4 / 5;
+    }
+    .frame-circle { border-radius: 50%; }
+    .frame-circle img { aspect-ratio: 1 / 1; }
+    .frame-arch { border-radius: 160px 160px 20px 20px; }
+    .frame-square { border-radius: 18px; }
+    .frame-ticket { border-radius: 18px; clip-path: polygon(0 0, 90% 0, 100% 10%, 100% 100%, 10% 100%, 0 90%); }
+    .frame-oval { border-radius: 48% 48% 44% 44% / 56% 56% 40% 40%; }
+    .secondary-stack {
+        display: grid;
+        gap: 3mm;
+    }
+    .secondary-stack .memory-frame {
+        border-width: 5px;
+    }
+    .secondary-stack .memory-frame img {
+        aspect-ratio: 1 / 1;
+    }
+    .moment-kicker {
+        display: inline-block;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, rgba(254, 230, 186, 0.92), rgba(215, 234, 244, 0.92));
+        color: #7a5a43;
+        font-size: 8.2pt;
+        font-weight: 800;
+        margin-bottom: 3mm;
+    }
+    .moment-title {
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Songti SC", serif;
+        font-size: 15pt;
+        line-height: 1.2;
+        font-weight: 700;
+        margin-bottom: 2mm;
+    }
+    .moment-summary {
+        color: #635954;
+        line-height: 1.8;
+        font-size: 9.8pt;
+        margin-bottom: 3mm;
+    }
+    .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(247, 242, 235, 0.96);
+        color: #6d6259;
+        font-size: 8.4pt;
+        font-weight: 700;
+    }
+    .empty {
+        padding: 32mm 12mm;
+        text-align: center;
+        color: #71665d;
+        background: rgba(255,255,255,0.72);
+        border-radius: 18px;
+    }
+    </style>
+</head>
+<body>
+    <div class="print-shell">
+        <div class="print-poster">
+            {% if collection.moments %}
+            <section class="cover-grid">
+                <div class="cover-hero">
+                    {% if collection.cover_image %}
+                    <img class="hero-main" src="{{ collection.cover_album or collection.cover_image or collection.cover_thumb }}" alt="相册封面">
+                    {% endif %}
+                    <div class="cover-overlay">
+                        <div class="cover-kicker">Time Album</div>
+                        <div class="cover-title">{{ collection.title }}</div>
+                        {% if collection.cover_title %}
+                        <div class="cover-chip">{{ collection.cover_title }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="cover-summary">
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">入册节点</div>
+                            <div class="stat-value">{{ collection.selected_count }} 个</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">入册照片</div>
+                            <div class="stat-value">{{ collection.selected_photo_count }} 张</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">时间跨度</div>
+                            <div class="stat-value">{{ collection.date_span }}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">照片底库</div>
+                            <div class="stat-value">{{ collection.total_photo_count }} 张</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {% if collection.chapters %}
+            <section class="section">
+                <div class="section-title">章节索引</div>
+                <div class="chapter-grid">
+                    {% for chapter in collection.chapters %}
+                    <div class="chapter-card">
+                        <div class="chapter-title">{{ chapter.title }}</div>
+                        <div class="chapter-meta">{{ chapter.date_span }} · {{ chapter.count }} 个节点</div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            <section class="section">
+                <div class="section-title">时间轴长卷</div>
+                <div class="timeline">
+                    {% for moment in collection.moments %}
+                    <article class="moment">
+                        <div class="moment-axis">
+                            <div class="axis-dot"></div>
+                            <div class="axis-date">{{ moment.date_display }}</div>
+                        </div>
+                        <div class="moment-card">
+                            <div class="moment-kicker">{{ moment.quality_label }}{% if moment.is_featured %} · 当天精选{% endif %}</div>
+                            <div class="moment-media">
+                                <div class="memory-frame frame-{{ moment.frame_shape }}">
+                                    <img src="{{ moment.album or moment.photo or moment.thumb }}" alt="{{ moment.title }}">
+                                </div>
+                                {% if moment.secondary_photos %}
+                                <div class="secondary-stack">
+                                    {% for secondary in moment.secondary_photos %}
+                                    <div class="memory-frame frame-{{ secondary.frame_shape }}">
+                                            <img src="{{ secondary.album or secondary.photo or secondary.thumb }}" alt="辅助照片 {{ loop.index }}">
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <div class="moment-title">{{ moment.title }}</div>
+                            <div class="moment-summary">{{ moment.summary }}</div>
+                            <div class="pill-row">
+                                {% if moment.scene %}<span class="pill">{{ moment.scene }}</span>{% endif %}
+                                {% if moment.activity %}<span class="pill">{{ moment.activity }}</span>{% endif %}
+                                <span class="pill">第 {{ moment.index }} 节点</span>
+                                {% for reason in moment.reason_lines or [] %}
+                                <span class="pill">{{ reason }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% else %}
+            <div class="empty">
+                <div style="font-size:24pt; margin-bottom:8px;">🕰️</div>
+                <div style="font-family:'Iowan Old Style','Songti SC',serif; font-size:22pt; margin-bottom:6px;">时光相册还没装订起来</div>
+                <div style="line-height:1.9; max-width:110mm; margin:0 auto;">先让系统积累更多照片描述和精选照片。相册会优先挑出更适合分享的照片，再排成一张长图。</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

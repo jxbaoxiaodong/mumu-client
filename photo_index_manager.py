@@ -72,6 +72,7 @@ class PhotoIndexManager:
         }
         self.video_extensions = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
         self.all_extensions = self.image_extensions | self.video_extensions
+        self.sample_hash_bytes = 1024 * 1024
 
     def _load_index(self) -> Dict:
         """加载索引文件"""
@@ -122,9 +123,12 @@ class PhotoIndexManager:
         self._save_config()
         print(f"✅ 已更新源文件夹: {len(self.source_folders)} 个")
 
-    def _calculate_hash(self, file_path: Path) -> str:
+    def _calculate_hash(self, file_path: Path, fast: bool = False) -> str:
         """计算文件哈希（用于唯一标识）"""
         try:
+            if fast:
+                return self._calculate_sample_hash(file_path)
+
             hash_md5 = hashlib.md5()
             with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
@@ -134,6 +138,48 @@ class PhotoIndexManager:
             # 如果读取失败，使用文件路径+修改时间作为唯一标识
             stat = file_path.stat()
             return hashlib.md5(f"{file_path}_{stat.st_mtime}".encode()).hexdigest()
+
+    def _calculate_sample_hash(self, file_path: Path) -> str:
+        """为大文件生成抽样哈希，减少上传请求内的整文件读取时间"""
+        stat = file_path.stat()
+        sample_size = self.sample_hash_bytes
+        hasher = hashlib.md5()
+        hasher.update(str(file_path.suffix.lower()).encode("utf-8"))
+        hasher.update(str(stat.st_size).encode("utf-8"))
+        hasher.update(str(stat.st_mtime_ns).encode("utf-8"))
+
+        with open(file_path, "rb") as f:
+            hasher.update(f.read(sample_size))
+            if stat.st_size > sample_size:
+                tail_size = min(sample_size, stat.st_size)
+                f.seek(max(stat.st_size - tail_size, 0))
+                hasher.update(f.read(tail_size))
+
+        return hasher.hexdigest()
+
+    def _get_upload_dir(self) -> Path:
+        """获取上传目录，权限不足时自动回退到 data/original"""
+        if self.source_folders and len(self.source_folders) > 0:
+            upload_dir = self.source_folders[0] / "new_upload"
+        else:
+            upload_dir = self.original_dir
+
+        try:
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            test_file = upload_dir / ".write_test"
+            test_file.touch()
+            test_file.unlink()
+            return upload_dir
+        except PermissionError:
+            self.original_dir.mkdir(parents=True, exist_ok=True)
+            return self.original_dir
+        except Exception:
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            return upload_dir
+
+    def get_upload_target_path(self, original_filename: str) -> Path:
+        """返回上传文件最终落盘路径"""
+        return self._get_upload_dir() / original_filename
 
     def _extract_date_from_filename(self, filename: str) -> Optional[str]:
         """从文件名中提取日期"""
@@ -428,6 +474,25 @@ class PhotoIndexManager:
 
         return self._add_file_with_date(temp_path, original_filename, file_date)
 
+    def register_saved_upload_with_date(
+        self,
+        saved_path: Path,
+        original_filename: str,
+        date: str = None,
+        fast_hash: bool = False,
+    ) -> Dict:
+        """
+        为已直接保存到目标目录的上传文件建立索引，不再重复复制文件
+        """
+        if date and self._is_valid_date(date):
+            file_date = date
+        else:
+            file_date = self._get_file_date(saved_path)
+
+        return self._index_existing_file(
+            saved_path, original_filename, file_date, fast_hash=fast_hash
+        )
+
     def _is_valid_date(self, date_str: str) -> bool:
         """验证日期格式是否为 YYYY-MM-DD"""
         import re
@@ -448,34 +513,7 @@ class PhotoIndexManager:
         Returns:
             索引条目信息
         """
-        ext = Path(original_filename).suffix.lower()
-        is_video = ext in self.video_extensions
-
-        # 使用原始文件名，不重命名
-        new_filename = original_filename
-
-        # 保存到第一个媒体文件夹的 new_upload 子目录
-        if self.source_folders and len(self.source_folders) > 0:
-            upload_dir = self.source_folders[0] / "new_upload"
-        else:
-            # 如果没有设置源文件夹，使用 data/original 作为备选
-            upload_dir = self.original_dir
-
-        # 尝试创建目录并检测写入权限
-        try:
-            upload_dir.mkdir(parents=True, exist_ok=True)
-            # 测试写入权限
-            test_file = upload_dir / ".write_test"
-            test_file.touch()
-            test_file.unlink()
-        except PermissionError:
-            # 权限不足，使用备选目录
-            upload_dir = self.original_dir
-            upload_dir.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            upload_dir.mkdir(parents=True, exist_ok=True)
-
-        target_path = upload_dir / new_filename
+        target_path = self.get_upload_target_path(original_filename)
 
         import shutil
 
@@ -484,14 +522,24 @@ class PhotoIndexManager:
             shutil.copy2(temp_path, target_path)
         except PermissionError as e:
             raise PermissionError(
-                f"无法写入到 {upload_dir}，请检查文件夹权限或选择其他保存位置"
+                f"无法写入到 {target_path.parent}，请检查文件夹权限或选择其他保存位置"
             ) from e
 
-        # 计算哈希
-        file_hash = self._calculate_hash(target_path)
+        return self._index_existing_file(target_path, original_filename, file_date)
 
-        # 检查并删除同路径的旧条目（避免重复索引）
-        target_path_str = str(target_path)
+    def _index_existing_file(
+        self,
+        file_path: Path,
+        original_filename: str,
+        file_date: str,
+        fast_hash: bool = False,
+    ) -> Dict:
+        """为已存在的媒体文件建立索引并触发后台压缩"""
+        ext = Path(original_filename).suffix.lower()
+        is_video = ext in self.video_extensions
+        file_hash = self._calculate_hash(file_path, fast=fast_hash)
+        target_path_str = str(file_path)
+
         for key in ["photos", "videos"]:
             to_remove = [
                 h
@@ -500,16 +548,15 @@ class PhotoIndexManager:
             ]
             for h in to_remove:
                 del self.index[key][h]
-                print(f"🔄 替换旧索引: {new_filename}")
+                print(f"🔄 替换旧索引: {original_filename}")
 
-        # 添加到索引
         entry = {
             "hash": file_hash,
             "path": target_path_str,
-            "filename": new_filename,
+            "filename": original_filename,
             "date": file_date,
-            "size": target_path.stat().st_size,
-            "modified": target_path.stat().st_mtime,
+            "size": file_path.stat().st_size,
+            "modified": file_path.stat().st_mtime,
             "is_video": is_video,
             "original_name": original_filename,
         }
@@ -521,16 +568,18 @@ class PhotoIndexManager:
 
         self._save_index()
 
-        print(f"✅ 文件已添加: {new_filename} (日期: {file_date}, 路径: {target_path})")
+        hash_mode = "抽样哈希" if fast_hash else "完整哈希"
+        print(
+            f"✅ 文件已添加: {original_filename} (日期: {file_date}, 路径: {file_path}, {hash_mode})"
+        )
 
-        # 触发后台压缩
         try:
             from video_compressor import get_compression_manager
 
             manager = get_compression_manager()
             if manager:
                 file_type = "video" if is_video else "image"
-                manager.add_to_queue(target_path, file_type)
+                manager.add_to_queue(file_path, file_type)
         except Exception as e:
             print(f"⚠️ 添加到压缩队列失败: {e}")
 
@@ -627,80 +676,3 @@ class PhotoIndexManager:
                 return True
 
         return False
-
-    def get_stats(self) -> Dict:
-        """获取统计信息"""
-        photo_count = len(self.index["photos"])
-        video_count = len(self.index["videos"])
-        total_size = sum(e.get("size", 0) for e in self.index["photos"].values())
-        total_size += sum(e.get("size", 0) for e in self.index["videos"].values())
-
-        return {
-            "photo_count": photo_count,
-            "video_count": video_count,
-            "total_files": photo_count + video_count,
-            "total_size_mb": round(total_size / (1024 * 1024), 2),
-            "dates_count": len(self.get_all_dates()),
-            "source_folders": len(self.source_folders),
-        }
-
-
-# 兼容旧接口的适配器
-class PhotoManagerAdapter:
-    """兼容旧 PhotoManager 接口的适配器"""
-
-    def __init__(self, media_folders: list, data_dir: Path = None):
-        """
-        初始化适配器
-
-        Args:
-            media_folders: 媒体文件夹列表
-            data_dir: 数据目录，默认使用 ~/Documents/CZRZ/data
-        """
-        if data_dir is None:
-            data_dir = Path.home() / "Documents" / "CZRZ" / "data"
-
-        self.index_manager = PhotoIndexManager(data_dir, media_folders)
-
-    def save_uploaded_photo(self, file_path: Path, filename: str = None) -> dict:
-        """保存上传的照片（兼容旧接口）"""
-        if filename is None:
-            filename = file_path.name
-        return self.index_manager.add_uploaded_file(file_path, filename)
-
-    def get_photos_by_date(self, date: str) -> list:
-        """获取指定日期的照片（兼容旧接口）"""
-        return self.index_manager.get_photos_by_date(date)
-
-    def get_all_dates(self) -> list:
-        """获取所有日期（兼容旧接口）"""
-        return self.index_manager.get_all_dates()
-
-    def scan_existing_photos(self):
-        """扫描已有照片（兼容旧接口，实际调用 scan_source_folders）"""
-        return self.index_manager.scan_source_folders()
-
-
-if __name__ == "__main__":
-    # 测试代码
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # 创建测试文件
-        test_dir = Path(tmpdir) / "test_photos"
-        test_dir.mkdir()
-
-        # 创建索引管理器
-        pim = PhotoIndexManager(Path(tmpdir), [str(test_dir)])
-
-        print("测试索引管理器...")
-        print(f"索引文件: {pim.index_file}")
-        print(f"Original 目录: {pim.original_dir}")
-
-        # 扫描
-        result = pim.scan_source_folders()
-        print(f"扫描结果: {result}")
-
-        # 统计
-        stats = pim.get_stats()
-        print(f"统计: {stats}")

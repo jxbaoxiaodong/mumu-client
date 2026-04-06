@@ -24,10 +24,19 @@ CARD_LAYOUTS = {
     "sleep_pose_collection_card": "photo_grid",
     "expression_mimic_card": "photo_pair",
     "user_annotation_card": "user_annotation",
+    "time_album_card": "album_timeline",
+    "generated_comic_card": "generated_comic",
+    "virtual_role_card": "virtual_role",
+    "story_character_card": "story_profile",
+    "story_episode_card": "story_cover",
+    "story_quote_card": "quote_spotlight",
+    "story_skill_card": "skill_badge",
+    "story_weather_card": "story_weather",
+    "story_update_card": "story_update",
+    "care_guide_card": "care_guide",
     "data_portrait_card": "stats_only",
     "emotion_weather_card": "stats_only",
     "home_to_world_card": "timeline_gallery",
-    "special_milestone_card": "milestone_story",
     "collage_card": "tag_collage",
 }
 
@@ -160,6 +169,145 @@ def normalize_card(card: Dict) -> Dict:
         assets["photo_date"] = normalized.get("photo_date") or ""
         assets["photo_label"] = format_card_date(normalized.get("photo_date") or "")
 
+    elif card_type == "time_album_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = normalized.get("cover_photo") or photo_paths[0]
+        assets["timeline_entries"] = normalized.get("timeline_entries") or []
+        assets["cover_title"] = normalized.get("cover_title") or ""
+        assets["cover_summary"] = normalized.get("cover_summary") or ""
+        assets["selected_days"] = normalized.get("selected_days")
+        assets["source_days"] = normalized.get("source_days")
+        assets["date_span"] = normalized.get("date_span") or ""
+        assets["share_url"] = normalized.get("share_url") or "/storybook"
+
+    elif card_type == "generated_comic_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["style_name"] = normalized.get("style_name") or ""
+        assets["style_tagline"] = normalized.get("style_tagline") or ""
+        assets["style_palette"] = normalized.get("style_palette") or []
+        assets["style_theme"] = normalized.get("style_theme") or ""
+        assets["frame_shape"] = normalized.get("frame_shape") or "square"
+        assets["reason_lines"] = normalized.get("reason_lines") or []
+        assets["photo_date"] = normalized.get("photo_date") or ""
+        assets["photo_label"] = format_card_date(normalized.get("photo_date") or "")
+        assets["scene_label"] = normalized.get("scene_label") or ""
+        assets["activity_label"] = normalized.get("activity_label") or ""
+        assets["quality_label"] = normalized.get("quality_label") or ""
+        assets["narrative_line"] = normalized.get("narrative_line") or ""
+        assets["prompt_hint"] = normalized.get("prompt_hint") or ""
+        assets["generated_image"] = (
+            normalized.get("generated_image")
+            or normalized.get("generated_image_url")
+            or ""
+        )
+        assets["source_photo"] = normalized.get("source_photo") or ""
+        assets["generation_mode"] = normalized.get("generation_mode") or ""
+        assets["custom_prompt"] = normalized.get("custom_prompt") or ""
+
+    elif card_type == "virtual_role_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["generated_image"] = (
+            normalized.get("generated_image")
+            or normalized.get("generated_image_url")
+            or ""
+        )
+        assets["source_photo"] = normalized.get("source_photo") or ""
+        assets["generation_mode"] = normalized.get("generation_mode") or ""
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["role_subtitle"] = normalized.get("role_subtitle") or ""
+        assets["role_storyline"] = normalized.get("role_storyline") or ""
+        assets["role_signature"] = normalized.get("role_signature") or ""
+        assets["role_palette"] = normalized.get("role_palette") or []
+        assets["frame_shape"] = normalized.get("frame_shape") or "arch"
+        assets["match_score"] = normalized.get("match_score")
+
+    elif card_type == "story_character_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+        assets["world_name"] = normalized.get("world_name") or ""
+        assets["catchphrase"] = normalized.get("catchphrase") or ""
+        assets["signature_traits"] = normalized.get("signature_traits") or []
+        assets["ability_tracks"] = normalized.get("ability_tracks") or []
+        assets["gear_tracks"] = normalized.get("gear_tracks") or []
+        assets["story_engine"] = normalized.get("story_engine") or ""
+        assets["story_motifs"] = normalized.get("story_motifs") or []
+        assets["world_rules"] = normalized.get("world_rules") or []
+
+    elif card_type == "story_episode_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        if len(photo_paths) >= 2:
+            assets["supporting_photos"] = photo_paths[1:]
+        assets["episode_no"] = normalized.get("episode_no")
+        assets["episode_date"] = normalized.get("episode_date") or ""
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+        assets["scene_label"] = normalized.get("scene_label") or ""
+        assets["fantasy_mission"] = normalized.get("fantasy_mission") or ""
+        assets["skill_progress"] = normalized.get("skill_progress") or ""
+        assets["gear_unlock"] = normalized.get("gear_unlock") or ""
+        assets["quote"] = normalized.get("quote") or ""
+        assets["story_tags"] = normalized.get("story_tags") or []
+
+    elif card_type == "story_quote_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["quote"] = normalized.get("quote") or ""
+        assets["episode_date"] = normalized.get("episode_date") or ""
+        assets["scene_label"] = normalized.get("scene_label") or ""
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+
+    elif card_type == "story_skill_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["skill_name"] = normalized.get("skill_name") or ""
+        assets["level"] = normalized.get("level")
+        assets["reason"] = normalized.get("reason") or ""
+        assets["evidence_count"] = normalized.get("evidence_count")
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+
+    elif card_type == "story_weather_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["mood_mix"] = normalized.get("mood_mix") or []
+        assets["dominant_emotion"] = normalized.get("dominant_emotion") or ""
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+        assets["world_name"] = normalized.get("world_name") or ""
+
+    elif card_type == "story_update_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["before_text"] = normalized.get("before_text") or ""
+        assets["after_text"] = normalized.get("after_text") or ""
+        assets["feedback_hint"] = normalized.get("feedback_hint") or ""
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+
+    elif card_type == "care_guide_card":
+        photo_paths = normalized.get("photo_paths") or []
+        if len(photo_paths) >= 1:
+            assets["cover_photo"] = photo_paths[0]
+        assets["guide_items"] = normalized.get("guide_items") or []
+        assets["role_name"] = normalized.get("role_name") or ""
+        assets["hero_archetype"] = normalized.get("hero_archetype") or ""
+        assets["scene_label"] = normalized.get("scene_label") or ""
+
     elif card_type == "same_day_different_year_card":
         year_samples = normalized.get("year_samples") or []
         if isinstance(year_samples, list):
@@ -179,10 +327,6 @@ def normalize_card(card: Dict) -> Dict:
     elif card_type in {"data_portrait_card", "emotion_weather_card"}:
         if normalized.get("stats"):
             assets["stats"] = normalized["stats"]
-
-    elif card_type == "special_milestone_card":
-        assets["milestone_name"] = normalized.get("milestone_name") or normalized.get("title", "")
-        assets["show_date"] = normalized.get("show_date") or normalized.get("date") or ""
 
     normalized["assets"] = assets
     return normalized

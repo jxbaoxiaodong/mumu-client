@@ -138,6 +138,7 @@
                         <th>状态</th>
                         <th>付费</th>
                         <th>Token使用</th>
+                        <th>图片生成</th>
                         <th>公网地址</th>
                         <th>IP:端口</th>
                         <th>MAC</th>
@@ -171,6 +172,9 @@
                             {% if client.custom_token_limit %}
                             <span class="badge bg-info ms-1" title="自定义限额">自</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            <span class="quota-info">{{ "{:,}".format(client.generated_image_count or 0) }} 张</span>
                         </td>
                         <td>
                             <a href="{{ client.public_url }}" target="_blank" class="public-url" title="{{ client.public_url }}">
@@ -349,7 +353,7 @@
             
             if (!clientId) return;
             
-            if (!confirm('确定要关联AI服务吗？\n\n这将：\n1. 在Baby Health AI中创建或更新宝宝记录（ID=' + clientId + '）\n2. 自动配置child_id\n3. 启用AI数据同步功能\n\n请确保Baby Health AI服务正在运行。')) {
+            if (!confirm('确定要关联AI服务吗？\n\n这将：\n1. 在Baby Health AI中创建或更新宝宝记录（ID=' + clientId + '）\n2. 统一使用 client_id 作为宝宝标识\n3. 启用成长画像相关功能\n\n请确保Baby Health AI服务正在运行。')) {
                 return;
             }
             
@@ -374,7 +378,7 @@
                     button.setAttribute('title', '已关联到Baby Health AI服务');
                     button.onclick = null; // 移除点击事件
                     
-                    alert('✅ ' + data.message + '\n\nChild ID: ' + data.child_id + '\n宝宝名字: ' + data.child_name + '\n\n请重启客户端使配置生效。');
+                    alert('✅ ' + data.message + '\n\nClient ID: ' + (data.client_id || data.child_id) + '\n宝宝名字: ' + data.child_name + '\n\n请重启客户端使配置生效。');
                 } else {
                     // 关联失败，恢复按钮状态
                     updateAILinkButton(button);

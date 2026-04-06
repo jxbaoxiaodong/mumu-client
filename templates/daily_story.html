@@ -1,0 +1,854 @@
+{% extends "base.html" %}
+
+{% block title %}今日故事 - {{ baby_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.story-page {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 18px 48px;
+}
+.story-page-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.story-page-title {
+    font-size: 2rem;
+    color: #2f3142;
+    margin-bottom: 8px;
+    font-weight: 800;
+}
+.story-page-subtitle {
+    color: #6b7280;
+    font-size: 0.98rem;
+}
+.story-page-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.story-meta-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+.story-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.9);
+    color: #4b5563;
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+.story-shell {
+    background: linear-gradient(180deg, #fff8ef 0%, #fffdf8 100%);
+    border-radius: 28px;
+    box-shadow: 0 18px 60px rgba(44, 42, 67, 0.08);
+    padding: 24px;
+}
+.story-status-banner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    font-weight: 600;
+}
+.story-status-banner.is-visible {
+    display: flex;
+}
+.story-status-banner.is-info {
+    background: rgba(224, 244, 255, 0.85);
+    color: #2563eb;
+}
+.story-status-banner.is-success {
+    background: rgba(226, 250, 235, 0.9);
+    color: #15803d;
+}
+.story-status-banner.is-error {
+    background: rgba(255, 233, 233, 0.92);
+    color: #b42318;
+}
+.story-summary {
+    border-radius: 18px;
+    background: rgba(255,255,255,0.85);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    color: #4b5563;
+    line-height: 1.8;
+}
+.story-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+.story-panel-card {
+    background: white;
+    border-radius: 22px;
+    padding: 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.06);
+}
+.story-panel-image {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 16px;
+    object-fit: cover;
+    display: block;
+    background: #f3f4f6;
+}
+.story-panel-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffcf8b 0%, #ff9f7f 100%);
+    color: white;
+    font-weight: 800;
+    margin-top: -17px;
+    position: relative;
+    left: 10px;
+    box-shadow: 0 8px 20px rgba(255, 159, 127, 0.35);
+}
+.story-panel-title {
+    margin: 12px 0 8px;
+    font-size: 1.08rem;
+    font-weight: 800;
+    color: #2f3142;
+}
+.story-panel-caption {
+    color: #4b5563;
+    line-height: 1.7;
+    min-height: 3.4em;
+}
+.story-hook {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(255, 227, 190, 0.78), rgba(224, 244, 255, 0.78));
+    color: #374151;
+    font-weight: 600;
+}
+.story-series-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+.story-series-card {
+    border-radius: 18px;
+    background: rgba(255,255,255,0.92);
+    padding: 16px 18px;
+}
+.story-series-card-full {
+    grid-column: 1 / -1;
+}
+.story-series-label {
+    color: #8a8f98;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.story-series-value {
+    color: #2f3142;
+    font-size: 1.02rem;
+    font-weight: 800;
+    line-height: 1.6;
+}
+.story-pill-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.story-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #fff2df, #eef7ff);
+    color: #4b5563;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+.story-empty {
+    text-align: center;
+    padding: 72px 20px;
+    color: #6b7280;
+}
+@media (max-width: 700px) {
+    .story-page-head {
+        flex-direction: column;
+    }
+    .story-grid {
+        grid-template-columns: 1fr;
+    }
+    .story-series-grid {
+        grid-template-columns: 1fr;
+    }
+    .story-page-title {
+        font-size: 1.6rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="story-page">
+    <div class="story-page-head">
+        <div>
+            <div class="story-page-title">今日故事</div>
+            <div class="story-page-subtitle">{{ target_date }} · {{ baby_name }}的四格连载</div>
+        </div>
+        <div class="story-page-actions">
+            <a class="btn btn-outline-secondary" href="/?date={{ target_date }}">
+                <i class="fas fa-arrow-left me-1"></i>返回首页
+            </a>
+            <a class="btn btn-outline-secondary" href="/storybook">
+                <i class="fas fa-images me-1"></i>时光相册
+            </a>
+            {% if story %}
+            <button class="btn btn-outline-secondary" onclick="copyStoryLink()">
+                <i class="fas fa-link me-1"></i>复制链接
+            </button>
+            <button class="btn btn-outline-secondary" onclick="downloadStoryPoster()">
+                <i class="fas fa-download me-1"></i>下载分享图
+            </button>
+            {% endif %}
+            <button class="btn btn-primary" data-story-action-date="{{ target_date }}" onclick="regenerateStory(this)">
+                <i class="fas fa-wand-magic-sparkles me-1"></i>重做故事
+            </button>
+        </div>
+    </div>
+
+    <div id="storyStatusBanner" class="story-status-banner" aria-live="polite"></div>
+
+    {% if story %}
+    <div class="story-shell">
+        <div class="story-summary">
+            <h2 style="margin:0 0 8px 0;color:#2f3142;font-size:1.35rem;font-weight:800;">{{ story.title }}</h2>
+            <div>{{ story.summary }}</div>
+            {% if story.hero_archetype or story.signature or story.skill_progress or story.gear_unlock or story.fantasy_mission %}
+            <div class="story-meta-row">
+                {% if story.hero_archetype %}
+                <div class="story-meta-pill"><i class="fas fa-sparkles"></i>{{ story.hero_archetype }}</div>
+                {% endif %}
+                {% if story.signature %}
+                <div class="story-meta-pill"><i class="fas fa-feather-pointed"></i>{{ story.signature }}</div>
+                {% endif %}
+                {% if story.skill_progress %}
+                <div class="story-meta-pill"><i class="fas fa-wand-magic-sparkles"></i>{{ story.skill_progress }}</div>
+                {% endif %}
+                {% if story.gear_unlock %}
+                <div class="story-meta-pill"><i class="fas fa-toolbox"></i>{{ story.gear_unlock }}</div>
+                {% endif %}
+                {% if story.fantasy_mission %}
+                <div class="story-meta-pill"><i class="fas fa-compass"></i>{{ story.fantasy_mission }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% if story.series_name or story.hero_archetype or story.real_world_thread or story.signature_traits or story.world_rules or story.ability_tracks or story.gear_tracks or story.story_engine or story.story_motifs %}
+        <div class="story-series-grid">
+            <div class="story-series-card">
+                <div class="story-series-label">连载主线</div>
+                <div class="story-series-value">{{ story.series_name or '持续更新的四格连载' }}</div>
+                {% if story.catchphrase %}
+                <div style="margin-top:8px;color:#6b7280;line-height:1.7;">{{ story.catchphrase }}</div>
+                {% endif %}
+            </div>
+            <div class="story-series-card">
+                <div class="story-series-label">今日任务</div>
+                <div class="story-series-value">{{ story.fantasy_mission or '把真实日常写成新的一集' }}</div>
+            </div>
+            <div class="story-series-card">
+                <div class="story-series-label">现实主线</div>
+                <div class="story-series-value">{{ story.real_world_thread or '把真实日常写成新的一集' }}</div>
+            </div>
+            {% if story.hero_archetype or story.signature %}
+            <div class="story-series-card">
+                <div class="story-series-label">主角气质</div>
+                <div class="story-series-value">{{ story.hero_archetype or '由真实画像长出来的小主角' }}</div>
+                {% if story.signature %}
+                <div style="margin-top:8px;color:#6b7280;line-height:1.7;">{{ story.signature }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if story.story_engine %}
+            <div class="story-series-card">
+                <div class="story-series-label">叙事引擎</div>
+                <div class="story-series-value">{{ story.story_engine }}</div>
+            </div>
+            {% endif %}
+            {% if story.skill_progress or story.ability_tracks %}
+            <div class="story-series-card">
+                <div class="story-series-label">能力成长</div>
+                {% if story.skill_progress %}
+                <div class="story-series-value">{{ story.skill_progress }}</div>
+                {% endif %}
+                {% if story.ability_tracks %}
+                <div class="story-pill-list" style="margin-top:10px;">
+                    {% for item in story.ability_tracks %}
+                    <span class="story-pill">{{ item }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if story.gear_unlock or story.gear_tracks %}
+            <div class="story-series-card">
+                <div class="story-series-label">道具线索</div>
+                {% if story.gear_unlock %}
+                <div class="story-series-value">{{ story.gear_unlock }}</div>
+                {% endif %}
+                {% if story.gear_tracks %}
+                <div class="story-pill-list" style="margin-top:10px;">
+                    {% for item in story.gear_tracks %}
+                    <span class="story-pill">{{ item }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if story.signature_traits %}
+            <div class="story-series-card">
+                <div class="story-series-label">主角识别点</div>
+                <div class="story-pill-list">
+                    {% for item in story.signature_traits %}
+                    <span class="story-pill">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if story.world_rules %}
+            <div class="story-series-card">
+                <div class="story-series-label">世界规则</div>
+                <div class="story-pill-list">
+                    {% for item in story.world_rules %}
+                    <span class="story-pill">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+            {% if story.story_motifs %}
+            <div class="story-series-card story-series-card-full">
+                <div class="story-series-label">视觉母题</div>
+                <div class="story-pill-list">
+                    {% for item in story.story_motifs %}
+                    <span class="story-pill">{{ item }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        <div class="story-grid">
+            {% for panel in story.panels %}
+            <div class="story-panel-card">
+                <img class="story-panel-image" src="{{ panel.image_url }}" alt="第{{ panel.index }}格">
+                <div class="story-panel-index">{{ panel.index }}</div>
+                <div class="story-panel-title">{{ panel.title }}</div>
+                <div class="story-panel-caption">{{ panel.caption }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if story.hook %}
+        <div class="story-hook">{{ story.hook }}</div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="story-shell">
+        <div class="story-empty">
+            <div style="font-size:3rem;margin-bottom:14px;">🎬</div>
+            <h3 style="color:#2f3142;font-weight:800;">这一天的故事还没生成</h3>
+            <p>点一下按钮，把照片和日志变成一集可追更的四格连环画。</p>
+            <button class="btn btn-primary" data-story-action-date="{{ target_date }}" onclick="regenerateStory(this)">
+                <i class="fas fa-wand-magic-sparkles me-1"></i>立即生成
+            </button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const storyPayload = {% if story %}{{ story|tojson }}{% else %}null{% endif %};
+const storyTargetDate = '{{ target_date }}';
+const storyPendingJobsKey = 'pending_story_jobs';
+const storyGenerationState = {
+    timer: null,
+    busyText: null
+};
+
+function loadPendingStoryJobs() {
+    try {
+        const raw = localStorage.getItem(storyPendingJobsKey);
+        return raw ? JSON.parse(raw) : {};
+    } catch (err) {
+        console.error('读取故事后台任务失败:', err);
+        return {};
+    }
+}
+
+function savePendingStoryJobs(jobs) {
+    try {
+        localStorage.setItem(storyPendingJobsKey, JSON.stringify(jobs || {}));
+    } catch (err) {
+        console.error('保存故事后台任务失败:', err);
+    }
+}
+
+function markPendingStoryJob(meta = {}) {
+    const jobs = loadPendingStoryJobs();
+    jobs[storyTargetDate] = Object.assign({
+        date: storyTargetDate,
+        updatedAt: new Date().toISOString()
+    }, jobs[storyTargetDate] || {}, meta || {});
+    savePendingStoryJobs(jobs);
+}
+
+function clearPendingStoryJob() {
+    const jobs = loadPendingStoryJobs();
+    if (!jobs[storyTargetDate]) return;
+    delete jobs[storyTargetDate];
+    savePendingStoryJobs(jobs);
+}
+
+function hasPendingStoryJob() {
+    const jobs = loadPendingStoryJobs();
+    return Boolean(jobs[storyTargetDate]);
+}
+
+function getStoryActionButtons() {
+    return Array.from(document.querySelectorAll(`[data-story-action-date="${storyTargetDate}"]`));
+}
+
+function setStoryStatus(message, tone = 'info') {
+    const banner = document.getElementById('storyStatusBanner');
+    if (!banner) return;
+    banner.className = `story-status-banner is-visible is-${tone}`;
+    const iconMap = {
+        info: 'fa-spinner fa-spin',
+        success: 'fa-circle-check',
+        error: 'fa-circle-exclamation'
+    };
+    const iconClass = iconMap[tone] || iconMap.info;
+    banner.innerHTML = `<i class="fas ${iconClass}"></i><span>${message}</span>`;
+}
+
+function clearStoryStatus() {
+    const banner = document.getElementById('storyStatusBanner');
+    if (!banner) return;
+    banner.className = 'story-status-banner';
+    banner.innerHTML = '';
+}
+
+function setStoryActionsBusy(busyText) {
+    getStoryActionButtons().forEach(function(button) {
+        if (!button.dataset.originalHtml) {
+            button.dataset.originalHtml = button.innerHTML;
+        }
+        button.disabled = true;
+        button.classList.add('disabled');
+        button.innerHTML = `<i class="fas fa-spinner fa-spin me-1"></i>${busyText}`;
+    });
+}
+
+function restoreStoryActions() {
+    getStoryActionButtons().forEach(function(button) {
+        button.disabled = false;
+        button.classList.remove('disabled');
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+        }
+    });
+}
+
+function storyStageLabel(job, fallbackText) {
+    if (!job) return fallbackText;
+    if (job.message) return job.message;
+    const stage = job.stage || '';
+    if (stage.startsWith('panel_')) return '正在绘制漫画画面...';
+    if (stage === 'script' || stage === 'script_done') return '正在编写今日故事...';
+    if (stage === 'materials' || stage === 'preparing') return '正在整理今天的素材...';
+    return fallbackText;
+}
+
+function stopStoryPolling() {
+    if (storyGenerationState.timer) {
+        window.clearInterval(storyGenerationState.timer);
+        storyGenerationState.timer = null;
+    }
+}
+
+function fetchStoryGenerate(options) {
+    return fetch('/api/story/generate', options)
+        .then(async function(r) {
+            const text = await r.text();
+            try {
+                return JSON.parse(text);
+            } catch (err) {
+                return {success: false, message: text || '服务返回异常'};
+            }
+        })
+        .then(function(data) {
+            if (data.require_family_code && data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return Promise.reject('require_family_code');
+            }
+            return data;
+        });
+}
+
+function pollStoryGeneration(options = {}) {
+    const preferredBusyText = options.busyText || storyGenerationState.busyText || '生成中...';
+    storyGenerationState.busyText = preferredBusyText;
+
+    const tick = function() {
+        fetch(`/api/story/status/${storyTargetDate}`)
+            .then(r => r.json())
+            .then(function(data) {
+                const job = data.job || {};
+                if (job.status === 'queued' || job.status === 'running') {
+                    markPendingStoryJob({
+                        status: job.status,
+                        stage: job.stage || ''
+                    });
+                    const message = storyStageLabel(job, preferredBusyText);
+                    setStoryActionsBusy(message);
+                    setStoryStatus(message, 'info');
+                    return;
+                }
+                if (job.status === 'success' && data.story) {
+                    stopStoryPolling();
+                    clearPendingStoryJob();
+                    setStoryStatus('今日故事已生成，正在刷新页面...', 'success');
+                    restoreStoryActions();
+                    window.setTimeout(function() {
+                        window.location.reload();
+                    }, 600);
+                    return;
+                }
+                if (job.status === 'error') {
+                    stopStoryPolling();
+                    clearPendingStoryJob();
+                    restoreStoryActions();
+                    const message = job.message || '故事生成失败';
+                    setStoryStatus(message, 'error');
+                    if (typeof showNotification === 'function') {
+                        showNotification(message, 'error');
+                    } else {
+                        alert(message);
+                    }
+                    return;
+                }
+                if (data.story) {
+                    stopStoryPolling();
+                    clearPendingStoryJob();
+                    setStoryStatus('今日故事已生成，正在刷新页面...', 'success');
+                    restoreStoryActions();
+                    window.setTimeout(function() {
+                        window.location.reload();
+                    }, 600);
+                    return;
+                }
+                stopStoryPolling();
+                clearPendingStoryJob();
+                restoreStoryActions();
+                clearStoryStatus();
+            })
+            .catch(function(err) {
+                console.error('轮询故事状态失败:', err);
+            });
+    };
+
+    tick();
+    if (!storyGenerationState.timer) {
+        storyGenerationState.timer = window.setInterval(tick, 3000);
+    }
+}
+
+function regenerateStory(triggerEl) {
+    if (storyGenerationState.timer) {
+        const message = '这一集还在生成中，请稍等一会儿';
+        if (typeof showNotification === 'function') {
+            showNotification(message, 'info');
+        } else {
+            alert(message);
+        }
+        return;
+    }
+
+    const isRegenerate = Boolean(storyPayload);
+    const busyText = isRegenerate ? '重做中...' : '生成中...';
+    storyGenerationState.busyText = busyText;
+    setStoryActionsBusy(busyText);
+    markPendingStoryJob({
+        regenerate: isRegenerate,
+        status: 'queued',
+        stage: 'queued'
+    });
+    setStoryStatus(
+        isRegenerate
+            ? '故事已转入后台重做。你可以先离开这个页面，稍后回来会自动续上状态。'
+            : '故事已转入后台生成。你可以先离开这个页面，稍后回来会自动续上状态。',
+        'info'
+    );
+
+    window.setTimeout(function() {
+        if (storyGenerationState.timer) {
+            setStoryStatus('故事仍在后台生成中。你可以继续浏览其他页面，稍后回来查看。', 'info');
+        }
+    }, 15000);
+
+    fetchStoryGenerate({
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({date: storyTargetDate, regenerate: true, async: true})
+    })
+    .then(function(data) {
+        if (data.require_family_code && data.redirect_url) {
+            window.location.href = data.redirect_url;
+            return;
+        }
+        if (data && data.success && data.job && (data.job.status === 'queued' || data.job.status === 'running')) {
+            pollStoryGeneration({
+                busyText: storyStageLabel(data.job, busyText)
+            });
+            return;
+        }
+        if (data && data.story && data.story.panels && data.story.panels.length) {
+            clearPendingStoryJob();
+            setStoryStatus(isRegenerate ? '故事已重做，正在刷新页面...' : '今日故事已生成，正在刷新页面...', 'success');
+            window.setTimeout(function() {
+                window.location.reload();
+            }, 600);
+            return;
+        }
+        if (data && data.success && data.job) {
+            pollStoryGeneration({
+                busyText: storyStageLabel(data.job, busyText)
+            });
+            return;
+        }
+        clearPendingStoryJob();
+        restoreStoryActions();
+        const message = (data && data.message) || '生成失败';
+        setStoryStatus(message, 'error');
+        if (typeof showNotification === 'function') {
+            showNotification(message, 'error');
+        } else {
+            alert(message);
+        }
+    })
+    .catch(function(err) {
+        clearPendingStoryJob();
+        restoreStoryActions();
+        if (err === 'require_family_code') {
+            return;
+        }
+        const message = '生成失败: ' + (err && err.message ? err.message : err);
+        setStoryStatus(message, 'error');
+        if (typeof showNotification === 'function') {
+            showNotification(message, 'error');
+        } else {
+            alert(message);
+        }
+    })
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (hasPendingStoryJob()) {
+        setStoryActionsBusy('后台生成中...');
+        setStoryStatus('这一集还在后台处理中。你不需要一直停留在这个页面。', 'info');
+    }
+    fetch(`/api/story/status/${storyTargetDate}`)
+        .then(r => r.json())
+        .then(function(data) {
+            const job = data.job || {};
+            if (job.status === 'queued' || job.status === 'running') {
+                pollStoryGeneration({
+                    busyText: storyStageLabel(job, '生成中...')
+                });
+                return;
+            }
+            if (job.status === 'error') {
+                clearPendingStoryJob();
+                setStoryStatus(job.message || '上一次生成失败，请重新尝试。', 'error');
+                return;
+            }
+            if (job.status === 'success' || data.story) {
+                clearPendingStoryJob();
+            }
+        })
+        .catch(function(err) {
+            console.error('初始化故事状态失败:', err);
+        });
+});
+
+function copyStoryLink() {
+    if (!navigator.clipboard) {
+        alert('当前浏览器不支持复制链接');
+        return;
+    }
+    navigator.clipboard.writeText(window.location.href)
+        .then(() => alert('故事链接已复制'))
+        .catch(err => alert('复制失败: ' + err.message));
+}
+
+function loadPosterImage(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = src;
+    });
+}
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    const chars = Array.from(String(text || ''));
+    let line = '';
+    let lines = 0;
+    for (let i = 0; i < chars.length; i++) {
+        const testLine = line + chars[i];
+        if (ctx.measureText(testLine).width > maxWidth && line) {
+            ctx.fillText(line, x, y + lines * lineHeight);
+            lines += 1;
+            line = chars[i];
+            if (lines >= maxLines) {
+                return y + lines * lineHeight;
+            }
+        } else {
+            line = testLine;
+        }
+    }
+    if (line && lines < maxLines) {
+        ctx.fillText(line, x, y + lines * lineHeight);
+        lines += 1;
+    }
+    return y + lines * lineHeight;
+}
+
+async function downloadStoryPoster() {
+    if (!storyPayload || !storyPayload.panels || !storyPayload.panels.length) {
+        alert('这一天还没有故事可导出');
+        return;
+    }
+
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1400;
+        canvas.height = 1880;
+        const ctx = canvas.getContext('2d');
+
+        const bg = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        bg.addColorStop(0, '#fff7eb');
+        bg.addColorStop(1, '#fffdf8');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#2f3142';
+        ctx.font = 'bold 68px sans-serif';
+        ctx.fillText(storyPayload.title || '今日故事', 90, 110);
+
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '28px sans-serif';
+        ctx.fillText('{{ target_date }} · {{ baby_name }}的四格连载', 90, 158);
+
+        ctx.fillStyle = '#f2eadf';
+        ctx.fillRect(82, 200, 1236, 120);
+        ctx.fillStyle = '#4b5563';
+        ctx.font = '32px sans-serif';
+        wrapCanvasText(ctx, storyPayload.summary || '', 110, 246, 1180, 40, 2);
+
+        if (storyPayload.hero_archetype || storyPayload.signature) {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#eadbc7';
+            ctx.lineWidth = 2;
+            const roleText = [storyPayload.hero_archetype, storyPayload.signature].filter(Boolean).join(' · ');
+            const pillWidth = Math.min(980, Math.max(220, ctx.measureText(roleText).width + 48));
+            ctx.beginPath();
+            ctx.roundRect(90, 340, pillWidth, 56, 28);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#6b5b4d';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillText(roleText, 114, 377);
+        }
+
+        const panelImages = await Promise.all(
+            storyPayload.panels.slice(0, 4).map(panel => loadPosterImage(panel.image_url))
+        );
+
+        const cardWidth = 560;
+        const cardHeight = 560;
+        const imageSize = 470;
+        const startX = 90;
+        const startY = 430;
+        const gap = 60;
+
+        storyPayload.panels.slice(0, 4).forEach((panel, index) => {
+            const row = Math.floor(index / 2);
+            const col = index % 2;
+            const x = startX + col * (cardWidth + gap);
+            const y = startY + row * (cardHeight + gap);
+            const img = panelImages[index];
+
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = 'rgba(44, 42, 67, 0.12)';
+            ctx.shadowBlur = 24;
+            ctx.shadowOffsetY = 8;
+            ctx.beginPath();
+            ctx.roundRect(x, y, cardWidth, cardHeight, 28);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(x + 24, y + 24, imageSize, imageSize, 20);
+            ctx.clip();
+            ctx.drawImage(img, x + 24, y + 24, imageSize, imageSize);
+            ctx.restore();
+
+            ctx.fillStyle = '#ffb36f';
+            ctx.beginPath();
+            ctx.arc(x + 52, y + 496, 24, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.fillText(String(panel.index || index + 1), x + 45, y + 504);
+
+            ctx.fillStyle = '#2f3142';
+            ctx.font = 'bold 30px sans-serif';
+            ctx.fillText(panel.title || ('第' + (index + 1) + '格'), x + 92, y + 506);
+
+            ctx.fillStyle = '#4b5563';
+            ctx.font = '24px sans-serif';
+            wrapCanvasText(ctx, panel.caption || '', x + 28, y + 540, cardWidth - 56, 32, 2);
+        });
+
+        ctx.fillStyle = '#8b7c6a';
+        ctx.font = '28px sans-serif';
+        wrapCanvasText(ctx, storyPayload.hook || '', 90, 1770, 1220, 34, 2);
+
+        const link = document.createElement('a');
+        link.download = '{{ target_date }}-story.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    } catch (err) {
+        alert('导出失败: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

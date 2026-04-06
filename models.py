@@ -12,6 +12,17 @@ from enum import Enum
 from sqlmodel import SQLModel, Field, Column, JSON
 from sqlalchemy import UniqueConstraint
 
+LOG_SOURCE_UNKNOWN = "unknown"
+LOG_SOURCE_MANUAL = "manual"
+LOG_SOURCE_MANUAL_LEGACY = "manual_legacy"
+LOG_SOURCE_AUTO = "auto"
+LOG_SOURCE_AUTO_LEGACY = "auto_legacy"
+
+
+def is_manual_log_source(source_kind: Optional[str]) -> bool:
+    source = str(source_kind or "").strip().lower()
+    return source in {LOG_SOURCE_MANUAL, LOG_SOURCE_MANUAL_LEGACY}
+
 
 # ==================== 全局索引数据库表 ====================
 
@@ -57,9 +68,6 @@ class Client(SQLModel, table=True):
 
     # 自定义 Token 限额（None 表示使用默认配额）
     custom_token_limit: Optional[int] = Field(default=None)
-
-    # AI 服务关联
-    ai_child_id: Optional[str] = Field(default=None, max_length=64)
 
     # 时间戳
     registered_at: datetime = Field(default_factory=datetime.now)
@@ -152,6 +160,7 @@ class Log(SQLModel, table=True):
 
     # 元数据
     is_ai_generated: bool = Field(default=False)
+    source_kind: str = Field(default=LOG_SOURCE_UNKNOWN, max_length=32)
     generated_at: Optional[datetime] = Field(default=None)
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -184,7 +193,7 @@ class AISession(SQLModel, table=True):
     session_id: str = Field(max_length=50, index=True)
     operation: str = Field(
         max_length=50
-    )  # generate_log, generate_theme, select_photo, etc.
+    )  # generate_log, select_photo, describe_photos, profile, etc.
 
     # 输入输出
     prompt: Optional[str] = Field(default=None)
@@ -208,22 +217,6 @@ class AISession(SQLModel, table=True):
     context: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
     created_at: datetime = Field(default_factory=datetime.now, index=True)
-
-
-class TokenUsage(SQLModel, table=True):
-    """Token 使用记录"""
-
-    __tablename__ = "token_usage"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    date: str = Field(max_length=20, index=True)
-    operation: str = Field(max_length=50)
-
-    prompt_tokens: int = Field(default=0)
-    completion_tokens: int = Field(default=0)
-    total_tokens: int = Field(default=0)
-
-    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class FeaturedPhoto(SQLModel, table=True):
@@ -253,6 +246,9 @@ class PhotoDescription(SQLModel, table=True):
     has_baby: bool = Field(default=True)
     scene: Optional[str] = Field(default=None, max_length=100)
     activity: Optional[str] = Field(default=None, max_length=100)
+    processed_status: str = Field(default="ok", max_length=32, index=True)
+    processed_error_code: Optional[str] = Field(default=None, max_length=64)
+    processed_error_detail: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.now)
 
@@ -294,34 +290,6 @@ class PhotoTag(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-
-
-class Badge(SQLModel, table=True):
-    """勋章系统"""
-
-    __tablename__ = "badges"
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    client_id: str = Field(max_length=100, index=True)
-    badge_type: str = Field(
-        max_length=50
-    )  # bronze_care, silver_care, gold_care, diamond_care, dog_lover, etc.
-    badge_name: str = Field(max_length=100)  # 青铜关爱奖, 摸狗狗成就, 等
-    badge_icon: str = Field(max_length=100)  # emoji 或图标名称
-    description: str = Field(max_length=200)  # 勋章描述
-
-    # 获得信息
-    earned_date: str = Field(max_length=20)  # 获得日期 YYYY-MM-DD
-    trigger_date: str = Field(max_length=20)  # 触发日期（可能与获得日期不同）
-    trigger_photo: Optional[str] = Field(
-        default=None, max_length=500
-    )  # 触发的照片文件名
-
-    # 元数据
-    level: int = Field(default=1)  # 勋章等级（用于连续上传勋章）
-    count: int = Field(default=1)  # 累计次数（用于数量类勋章）
-
-    created_at: datetime = Field(default_factory=datetime.now)
 
 
 class ProfileFeedback(SQLModel, table=True):

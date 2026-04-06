@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>客户端数据 - 管理后台</title>
+    <title>客户端日志数据 - 管理后台</title>
     <link rel="stylesheet" href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css">
     <link rel="stylesheet" href="/static/vendor/fontawesome/fontawesome-6.4.0.all.min.css">
 </head>
@@ -41,7 +41,7 @@
                         <i class="fas fa-newspaper me-2"></i>新闻池
                     </a>
                     <a href="/admin/client-data" class="list-group-item list-group-item-action active">
-                        <i class="fas fa-baby me-2"></i>客户端数据
+                        <i class="fas fa-baby me-2"></i>客户端日志
                     </a>
                     <a href="/admin/settings" class="list-group-item list-group-item-action">
                         <i class="fas fa-cog me-2"></i>系统设置
@@ -52,7 +52,12 @@
             <!-- 主内容区 -->
             <div class="col-md-10">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <h2><i class="fas fa-baby me-2"></i>客户端数据</h2>
+                    <div>
+                        <h2 class="mb-1"><i class="fas fa-baby me-2"></i>客户端日志数据</h2>
+                        <div class="text-muted small">
+                            这里只展示服务端已同步的日志数据；照片继续保留在客户端本地，不在后台托管。
+                        </div>
+                    </div>
                     <div class="text-muted">
                         共 <span id="totalClients">0</span> 个客户端
                     </div>
@@ -78,10 +83,10 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between">
                                     <div>
-                                        <h4 id="totalPhotos">0</h4>
-                                        <div>总照片数</div>
+                                        <h4 id="clientsWithLogs">0</h4>
+                                        <div>有日志客户端</div>
                                     </div>
-                                    <i class="fas fa-images fa-2x opacity-50"></i>
+                                    <i class="fas fa-user-check fa-2x opacity-50"></i>
                                 </div>
                             </div>
                         </div>
@@ -91,10 +96,10 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between">
                                     <div>
-                                        <h4 id="totalTags">0</h4>
-                                        <div>标签照片</div>
+                                        <h4 id="todayClients">0</h4>
+                                        <div>今日日志客户端</div>
                                     </div>
-                                    <i class="fas fa-tags fa-2x opacity-50"></i>
+                                    <i class="fas fa-calendar-day fa-2x opacity-50"></i>
                                 </div>
                             </div>
                         </div>
@@ -104,10 +109,10 @@
                             <div class="card-body">
                                 <div class="d-flex justify-content-between">
                                     <div>
-                                        <h4 id="todayLogs">0</h4>
-                                        <div>今日日志</div>
+                                        <h4 id="clientsWithoutLogs">0</h4>
+                                        <div>无日志客户端</div>
                                     </div>
-                                    <i class="fas fa-calendar-day fa-2x opacity-50"></i>
+                                    <i class="fas fa-user-slash fa-2x opacity-50"></i>
                                 </div>
                             </div>
                         </div>
@@ -127,7 +132,6 @@
                                         <th>客户端ID</th>
                                         <th>宝宝名字</th>
                                         <th>日志数</th>
-                                        <th>照片数</th>
                                         <th>最新日志</th>
                                         <th>操作</th>
                                     </tr>
@@ -160,12 +164,6 @@
                     <div id="clientLogsList" class="mb-4">
                         <!-- 动态加载 -->
                     </div>
-                    
-                    <!-- 照片列表 -->
-                    <h6 class="mb-3"><i class="fas fa-images me-2"></i>照片</h6>
-                    <div id="clientPhotosGrid" class="row g-2">
-                        <!-- 动态加载 -->
-                    </div>
                 </div>
             </div>
         </div>
@@ -180,11 +178,11 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    document.getElementById('totalClients').textContent = data.summary.length;
+                    document.getElementById('totalClients').textContent = data.total_clients;
                     document.getElementById('totalLogs').textContent = data.total_logs;
-                    document.getElementById('totalPhotos').textContent = data.total_photos;
-                    document.getElementById('totalTags').textContent = data.total_tags;
-                    document.getElementById('todayLogs').textContent = data.today_logs;
+                    document.getElementById('clientsWithLogs').textContent = data.clients_with_logs;
+                    document.getElementById('todayClients').textContent = data.today_clients;
+                    document.getElementById('clientsWithoutLogs').textContent = data.clients_without_logs;
                     
                     renderClientsTable(data.summary);
                 }
@@ -198,7 +196,7 @@
             const tbody = document.getElementById('clientsTableBody');
             
             if (clients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">暂无数据</td></tr>';
                 return;
             }
             
@@ -207,7 +205,6 @@
                     <td><code>${client.client_id}</code></td>
                     <td>${client.baby_name || '未知'}</td>
                     <td><span class="badge bg-primary">${client.log_count}</span></td>
-                    <td><span class="badge bg-success">${client.photo_count}</span></td>
                     <td>${client.latest_log || '-'}</td>
                     <td>
                         <button class="btn btn-sm btn-outline-primary" onclick="viewClientDetail('${client.client_id}')">
@@ -244,22 +241,6 @@
                         `).join('');
                     } else {
                         logsContainer.innerHTML = '<p class="text-muted">暂无日志</p>';
-                    }
-                    
-                    // 渲染照片
-                    const photosContainer = document.getElementById('clientPhotosGrid');
-                    if (data.photos && data.photos.length > 0) {
-                        photosContainer.innerHTML = data.photos.map(photo => `
-                            <div class="col-3">
-                                <div class="card">
-                                    <img src="/admin/api/client-data/photo/${clientId}/${photo.filename}" 
-                                         class="card-img-top" style="height: 100px; object-fit: cover;">
-                                    ${photo.tag ? `<div class="card-body py-1"><small class="text-muted">${photo.tag}</small></div>` : ''}
-                                </div>
-                            </div>
-                        `).join('');
-                    } else {
-                        photosContainer.innerHTML = '<p class="text-muted">暂无照片</p>';
                     }
                     
                     const modal = new bootstrap.Modal(document.getElementById('clientDetailModal'));

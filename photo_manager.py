@@ -3,16 +3,9 @@
 本地照片管理模块 - 索引机制版本
 - 使用索引管理照片，不重复存储文件
 - 支持多文件夹扫描
-- 兼容旧接口
 """
 
-import os
-import re
 from pathlib import Path
-from datetime import datetime
-from PIL import Image
-from PIL.ExifTags import TAGS
-import shutil
 
 
 class PhotoManager:
@@ -48,59 +41,6 @@ class PhotoManager:
         # 保存媒体文件夹列表
         self.media_folders = [Path(f) for f in media_folders if Path(f).exists()]
 
-    def extract_date_from_filename(self, filename: str) -> str:
-        """
-        从文件名中提取日期（兼容旧接口）
-
-        Returns:
-            日期字符串 YYYY-MM-DD，如果无法解析返回 None
-        """
-        return self.index_manager._extract_date_from_filename(filename)
-
-    def extract_date_from_exif(self, image_path: Path) -> str:
-        """
-        从图片EXIF信息中提取拍摄日期（兼容旧接口）
-
-        Returns:
-            日期字符串 YYYY-MM-DD，如果无法解析返回 None
-        """
-        return self.index_manager._extract_date_from_exif(image_path)
-
-    def get_photo_date(self, file_path: Path) -> str:
-        """
-        获取照片日期（兼容旧接口）
-
-        Returns:
-            日期字符串 YYYY-MM-DD
-        """
-        return self.index_manager._get_file_date(file_path)
-
-    def save_uploaded_photo(self, file_path: Path, filename: str = None) -> dict:
-        """
-        保存上传的照片到本地文件夹（兼容旧接口）
-
-        Args:
-            file_path: 上传的临时文件路径
-            filename: 原始文件名
-
-        Returns:
-            包含照片信息的字典
-        """
-        if filename is None:
-            filename = file_path.name
-
-        # 使用索引管理器添加文件
-        entry = self.index_manager.add_uploaded_file(file_path, filename)
-
-        return {
-            "filename": entry["filename"],
-            "original_name": entry.get("original_name", filename),
-            "date": entry["date"],
-            "path": entry["path"],
-            "hash": entry["hash"],
-            "is_video": entry.get("is_video", False),
-        }
-
     def save_uploaded_photo_with_date(
         self, file_path: Path, filename: str = None, date: str = None
     ) -> dict:
@@ -121,6 +61,34 @@ class PhotoManager:
         # 使用索引管理器添加文件，传入指定日期
         entry = self.index_manager.add_uploaded_file_with_date(
             file_path, filename, date
+        )
+
+        return {
+            "filename": entry["filename"],
+            "original_name": entry.get("original_name", filename),
+            "date": entry["date"],
+            "path": entry["path"],
+            "hash": entry["hash"],
+            "is_video": entry.get("is_video", False),
+        }
+
+    def get_upload_target_path(self, filename: str) -> Path:
+        """获取上传文件最终落盘路径"""
+        return self.index_manager.get_upload_target_path(filename)
+
+    def register_saved_upload_with_date(
+        self,
+        file_path: Path,
+        filename: str = None,
+        date: str = None,
+        fast_hash: bool = False,
+    ) -> dict:
+        """为已直接保存的上传文件建立索引，避免再次复制文件"""
+        if filename is None:
+            filename = file_path.name
+
+        entry = self.index_manager.register_saved_upload_with_date(
+            file_path, filename, date, fast_hash=fast_hash
         )
 
         return {
@@ -268,42 +236,3 @@ class PhotoManager:
             是否成功移除
         """
         return self.index_manager.remove_from_index(filename)
-
-    def get_stats(self) -> dict:
-        """获取统计信息"""
-        return self.index_manager.get_stats()
-
-
-# 向后兼容：保持旧的导入方式
-PhotoIndexManager = None  # 将在下面导入
-
-if __name__ == "__main__":
-    # 测试
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # 创建测试文件夹结构
-        test_dir = Path(tmpdir) / "photos"
-        test_dir.mkdir()
-
-        pm = PhotoManager([str(test_dir)], Path(tmpdir))
-
-        # 测试文件名日期解析
-        test_cases = [
-            "IMG_20240307_123456.jpg",
-            "2024-03-07_birthday.png",
-            "VID_20240307_123456.mp4",
-            "random_name.jpg",
-        ]
-
-        for name in test_cases:
-            date = pm.extract_date_from_filename(name)
-            print(f"{name} -> {date or '使用文件时间'}")
-
-        # 扫描
-        result = pm.scan_existing_photos()
-        print(f"\n扫描结果: {result}")
-
-        # 统计
-        stats = pm.get_stats()
-        print(f"\n统计: {stats}")
