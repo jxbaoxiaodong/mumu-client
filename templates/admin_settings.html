@@ -188,7 +188,7 @@
         <!-- API 配额设置卡片 -->
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-graph-up"></i> Token 配额设置</h5>
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> AI 共享额度设置</h5>
             </div>
             <div class="card-body">
                 <form id="quotaSettingsForm" onsubmit="saveQuotaSettings(event)">
@@ -196,35 +196,35 @@
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label class="form-label">
-                                    <span class="quota-badge quota-free">免费用户</span> Token 额度
+                                    <span class="quota-badge quota-free">默认档</span> Token 额度
                                 </label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="free_token_quota" 
                                            value="{{ admin_config.quota_settings.free_token_quota|default(50000) }}" min="1000" required>
                                     <span class="input-group-text">tokens</span>
                                 </div>
-                                <small class="text-muted">免费用户的总 Token 额度（约可生成 50 篇日志）</small>
+                                <small class="text-muted">默认共享额度（约可支持 50 次左右日志生成）</small>
                             </div>
                         </div>
                         
                         <div class="col-md-6">
                             <div class="form-group">
                                 <label class="form-label">
-                                    <span class="quota-badge quota-paid">付费用户</span> Token 额度
+                                    <span class="quota-badge quota-paid">扩展档</span> Token 额度
                                 </label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="paid_token_quota" 
                                            value="{{ admin_config.quota_settings.paid_token_quota|default(500000) }}" min="1000" required>
                                     <span class="input-group-text">tokens</span>
                                 </div>
-                                <small class="text-muted">付费用户的总 Token 额度（约可生成 500 篇日志）</small>
+                                <small class="text-muted">扩展共享额度（约可支持 500 次左右日志生成）</small>
                             </div>
                         </div>
                     </div>
                     
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle"></i> 
-                        <strong>说明：</strong>Token 额度是累计的，不会每日重置。用户可在设备管理中清空已用 Token。
+                        <strong>说明：</strong>这里控制的是共享 AI 服务的累计额度。技术字段仍沿用旧命名，但前台统一按“默认档 / 扩展档”来表达。
                     </div>
                     
                     <button type="submit" class="btn btn-save">

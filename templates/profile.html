@@ -448,6 +448,7 @@
                     <button id="aiReviewBtn" class="btn btn-sm btn-outline-secondary ms-2" onclick="startAIReview()" title="让AI重新认识宝宝">
                         <i class="fas fa-sync-alt me-1"></i>刷新
                     </button>
+                    <a href="/help?topic=profile#page-profile" class="btn btn-sm btn-link text-decoration-none">帮助</a>
                 </p>
             </div>
         </div>
@@ -1032,7 +1033,12 @@ function checkAIReviewProgress(taskId) {
                 if (status.message === '完全无变化') {
                     showNotification('完全无变化，无需更新', 'info');
                 } else {
-                    if (status.portrait_refresh === 'failed' || status.portrait_llm_valid === false) {
+                    if (status.quota_exceeded || isQuotaBoundaryMessage(status.message) || isQuotaBoundaryMessage(status.portrait_message)) {
+                        showNotification(
+                            status.portrait_message || status.message || '当前共享 AI 额度不足，这次画像刷新已暂停。照片浏览、上传、分享和留言不受影响。',
+                            'warning'
+                        );
+                    } else if (status.portrait_refresh === 'failed' || status.portrait_llm_valid === false) {
                         showNotification(status.portrait_message || status.message || '素材刷新完成，但画像生成失败，当前仅展示已积累标签。', 'error');
                     } else if (status.portrait_refresh === 'completed' && status.portrait_llm_valid === true) {
                         showNotification('AI重新认识完成，画像已刷新。', 'success');
@@ -1056,6 +1062,13 @@ function checkAIReviewProgress(taskId) {
 // 隐藏进度条
 function hideProgressFooter() {
     document.getElementById('aiProgressFooter').style.display = 'none';
+}
+
+function isQuotaBoundaryMessage(message) {
+    var text = String(message || '').toLowerCase();
+    return text.indexOf('共享 ai 额度') !== -1
+        || text.indexOf('共享ai额度') !== -1
+        || text.indexOf('quota_exceeded') !== -1;
 }
 
 // 提交反馈
@@ -1103,6 +1116,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-light border small text-muted">
+                    这是重度 AI 操作：会依次调用图片理解、语音识别、文本/画像模型。<br>
+                    如果当前共享 AI 额度暂停，这一步会先停下来；照片浏览、上传、分享、留言和手动整理内容不受影响。
+                </div>
                 <p class="text-muted mb-3">将对所有索引中有日期的项进行全量处理：</p>
                 <ul class="mb-4">
                     <li>检查照片、视频、语音、标签等所有数据</li>

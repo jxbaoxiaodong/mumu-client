@@ -89,15 +89,52 @@ function showNotification(message, type = 'info') {
     }, 5000);
 }
 
+function fallbackCopyText(text, successMessage) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.setAttribute('readonly', 'readonly');
+    textArea.style.position = 'fixed';
+    textArea.style.top = '-9999px';
+    textArea.style.left = '-9999px';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch (err) {
+        copied = false;
+    }
+
+    document.body.removeChild(textArea);
+
+    if (copied) {
+        showNotification(successMessage || '已复制到剪贴板', 'success');
+        return Promise.resolve(true);
+    }
+
+    showNotification('复制失败，请长按或手动复制', 'error');
+    return Promise.resolve(false);
+}
+
 // 复制到剪贴板
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text)
+function copyToClipboard(text, successMessage) {
+    if (!text) {
+        showNotification('无内容可复制', 'error');
+        return Promise.resolve(false);
+    }
+
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        return fallbackCopyText(text, successMessage);
+    }
+
+    return navigator.clipboard.writeText(text)
         .then(() => {
-            showNotification('已复制到剪贴板', 'success');
+            showNotification(successMessage || '已复制到剪贴板', 'success');
+            return true;
         })
-        .catch(err => {
-            showNotification('复制失败: ' + err, 'error');
-        });
+        .catch(() => fallbackCopyText(text, successMessage));
 }
 
 // 分享功能

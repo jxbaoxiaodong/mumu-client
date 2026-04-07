@@ -66,6 +66,7 @@
             height: 48px;
         }
     }
+
     </style>
     
     <!-- 日历 CSS (本地) -->
@@ -139,8 +140,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#contactModal">
-                            <span class="me-2">📜</span>说明
+                        <a class="nav-link" href="{{ url_for('help_page') }}">
+                            <span class="me-2">📘</span>帮助
                         </a>
                     </li>
                 </ul>
@@ -182,99 +183,37 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title" id="contactModalLabel">
-                        <i class="fas fa-book me-2" style="color: var(--peach);"></i>使用说明
+                        <i class="fas fa-life-ring me-2" style="color: var(--peach);"></i>反馈与联系
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <!-- 核心价值 -->
                     <div class="mb-4">
-                        <h6 class="fw-bold mb-3">💕 留下宝贝的美好回忆</h6>
-                        <p class="text-muted">
-                            这是一个宝爸给自己女儿做的系统。初衷很简单——照片分散在各人手机、电脑、平板里，不易管理，也不好按日期回看，想让远方的爷爷奶奶也能随时看到宝宝的成长。作为父母，帮孩子留下这世界更多的回忆，是最重要的事之一。
+                        <h6 class="fw-bold mb-3">先看帮助中心</h6>
+                        <p class="text-muted mb-3">
+                            站内说明已经从旧弹窗改成帮助中心。那里会按真实功能边界写清楚：哪些操作不走 AI、哪些操作会调用模型、额度不足时还能继续做什么。
                         </p>
-                        <p class="text-muted">
-                            现在是AI时代了，系统里的照片和日志都格式化存储，相当于在AI的世界里留下了宝贝的足迹。未来随时可以调用这些数据，训练一个专属的AI助手，陪伴孩子成长。特征画像、分享卡片这些功能，也是为了发现宝宝更多可爱之处，把美好瞬间分享给家人朋友。
-                        </p>
-                    </div>
-                    
-                    <!-- AI 核心功能 -->
-                    <div class="mb-4">
-                        <h6 class="fw-bold mb-3">🤖 AI 功能（可选）</h6>
-                        <p class="text-muted small mb-2">基于大模型分析，消耗 Token：</p>
-                        <ul class="text-muted small">
-                            <li><strong>特质画像</strong>：从日常照片中发现宝宝的性格特点和可爱之处</li>
-                            <li><strong>成长记录</strong>：自动整理照片生成成长日记</li>
-                            <li><strong>分享卡片</strong>：同场景成长对比、时光拼图，记录宝宝的变化</li>
-                        </ul>
-                        <div class="alert alert-light border mt-3 mb-0">
-                            <p class="small mb-2"><strong>关于AI调用的token额度：</strong></p>
-                            <p class="small text-muted mb-0">
-                                作者提供一定免费额度，日常生成日志基本够用。<br>
-                                如需画像生成需批量处理大量照片，额度可能不足，可联系作者补充。<br>
-                                有技术基础的用户可从Github下载源码自行配置AI接口，不受额度限制。
-                            </p>
-                        </div>
-                    </div>
-                    
-                    <!-- 基础功能 -->
-                    <div class="mb-4">
-                        <h6 class="fw-bold mb-3">📷 照片管理（基础功能）</h6>
-                        <p class="text-muted small mb-2">照片统一管理，无需 AI 接口，永久免费：</p>
-                        <ul class="text-muted small">
-                            <li>汇集多设备照片视频，本地集中存储</li>
-                            <li>按日期自动归类，快速回溯任意时光</li>
-                            <li>远程分享给家人，省去微信传图麻烦</li>
-                            <li>数据完全本地托管，隐私自主可控</li>
-                        </ul>
-                        
-                        <!-- 索引说明 -->
-                        <div class="alert alert-light border mt-3">
-                            <h6 class="fw-bold mb-2">📋 关于照片索引</h6>
-                            <p class="small text-muted mb-2">系统通过<strong>索引</strong>来管理您的照片，了解索引机制有助于更好地使用本系统：</p>
-                            <ul class="small text-muted mb-0">
-                                <li><strong>什么是索引：</strong>索引是照片的"目录"，记录照片的位置、日期等信息，用于快速检索和展示</li>
-                                <li><strong>索引与原照片：</strong>网页上删除照片只是删除索引记录，不会删除原照片文件，您随时可以重新扫描恢复</li>
-                                <li><strong>何时重建索引：</strong>如果您在媒体文件夹中进行了大量增删改操作（如批量删除、移动、重命名照片），建议在设置页面重建索引</li>
-                                <li><strong>日期范围重建：</strong>如需只重建某段时间的索引，可在设置页面选择起始和结束日期</li>
-                            </ul>
-                        </div>
-
-                        <!-- 远程访问说明 -->
-                        <div class="alert alert-light border mt-3">
-                            <h6 class="fw-bold mb-2">🌐 让亲朋远程访问</h6>
-                            <p class="small text-muted mb-2">在<strong>设置页面</strong>可以看到两个访问地址：</p>
-                            <ul class="small text-muted mb-2">
-                                <li><strong>局域网地址</strong>：如 <code>http://192.168.1.100:3000</code>，同一WiFi下访问更快</li>
-                                <li><strong>公网地址</strong>：如 <code>https://xxx.ftir.fun</code>，不在同一WiFi时使用</li>
-                            </ul>
-                            <p class="small text-muted mb-0">
-                                <strong>分享方法：</strong>复制对应地址发送给亲朋即可。他们在浏览器中打开就能看到宝宝的成长记录，还能留言互动。
-                            </p>
-                        </div>
-                    </div>
-                    
-                    <!-- 自行部署 -->
-                    <div class="mb-4">
-                        <h6 class="fw-bold mb-3">🔧 Github地址</h6>
-                        <p class="text-muted small">
-                            客户端采用Python编写，可从GitHub 获取源码自行部署，或进行代码审查。
-                        </p>
-                        <div class="d-flex gap-2 mt-2">
-                            <a href="https://github.com/jxbaoxiaodong/mumu-client" target="_blank" class="btn btn-sm btn-outline-dark">
-                                <i class="fab fa-github me-1"></i>GitHub 仓库
+                        <div class="d-grid gap-2 d-md-flex">
+                            <a href="/help" class="btn btn-dark">
+                                <i class="fas fa-book-open me-1"></i>打开帮助中心
+                            </a>
+                            <a href="/usage" class="btn btn-outline-secondary">
+                                <i class="fas fa-clock-rotate-left me-1"></i>查看 AI 调用记录
                             </a>
                         </div>
                     </div>
-                    
-                    <!-- 联系方式 -->
-                    <div class="alert alert-info mb-4">
-                        <h6 class="fw-bold mb-2">💬 需要帮助？</h6>
-                        <p class="small mb-1">遇到问题、想要补充额度，或者有任何建议：</p>
-                        <p class="small mb-0"><strong>微信：</strong>linhb112233</p>
+
+                    <div class="alert alert-light border mb-4">
+                        <h6 class="fw-bold mb-2">边界速记</h6>
+                        <p class="small text-muted mb-2">
+                            不调用 AI：浏览、上传、家庭码访问、分享、留言、手动整理、时光相册浏览与导出。<br>
+                            会调用 AI：AI 日记、AI 问答、成长画像刷新、图片理解、视频转写、漫画卡和虚拟角色图生成。
+                        </p>
+                        <p class="small mb-0">
+                            当前如果共享 AI 额度暂停，基础功能仍可继续使用；暂停的是新的 AI 调用，不是整个网站。
+                        </p>
                     </div>
-                    
-                    <!-- 问题反馈 -->
+
                     <div>
                         <h6 class="fw-bold mb-3">📝 意见反馈</h6>
                         <form id="feedbackForm" onsubmit="submitFeedback(event)">
@@ -290,6 +229,11 @@
                                 </button>
                             </div>
                         </form>
+                    </div>
+
+                    <div class="alert alert-info mt-4 mb-0">
+                        <h6 class="fw-bold mb-2">💬 联系方式</h6>
+                        <p class="small mb-0"><strong>微信：</strong>linhb112233</p>
                     </div>
                 </div>
                 <div class="modal-footer">

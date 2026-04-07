@@ -416,6 +416,8 @@
     .shared-frame.frame-circle img { aspect-ratio: 1 / 1; }
     .shared-frame.frame-arch { border-radius: 180px 180px 24px 24px; }
     .shared-frame.frame-square { border-radius: 24px; }
+    .shared-frame.frame-landscape { border-radius: 24px; }
+    .shared-frame.frame-landscape img { aspect-ratio: 4 / 3; }
     .shared-frame.frame-ticket { border-radius: 24px; clip-path: polygon(0 0, 90% 0, 100% 10%, 100% 100%, 10% 100%, 0 90%); }
     .shared-frame.frame-oval { border-radius: 48% 48% 44% 44% / 56% 56% 40% 40%; }
     .album-preview-card {
@@ -854,7 +856,7 @@
     <div class="cards-header">
         <h1>✨ 成长卡片</h1>
         <div class="cards-subtitle">{{ baby_name }}的精彩瞬间</div>
-        <div class="cards-count"><span id="cardCount">0</span> 张卡片</div>
+        <div class="cards-count"><span id="cardCount">0</span> 张卡片 · <a href="/help?topic=cards#page-cards" class="text-decoration-none">查看帮助</a></div>
     </div>
 
     <div class="cards-filter-shell">
@@ -1403,13 +1405,13 @@ function renderVirtualRoleCard(card) {
     var assets = card.assets || {};
     var generatedImage = assets.generated_image || card.generated_image || card.generated_image_url || '';
     var coverPhoto = generatedImage || assets.cover_photo || (card.photo_paths && card.photo_paths[0]) || '';
-    var roleName = assets.role_name || card.role_name || card.subtitle || '虚拟角色';
+    var roleName = assets.role_display_name || card.role_display_name || assets.role_name || card.role_name || card.subtitle || '虚拟角色';
+    var roleTraits = assets.role_traits || card.role_traits || [];
     var roleSubtitle = assets.role_subtitle || card.role_subtitle || card.content || '';
-    var roleStoryline = assets.role_storyline || card.role_storyline || '';
-    var roleSignature = assets.role_signature || card.role_signature || '';
-    var palette = assets.role_palette || card.role_palette || [];
-    var shape = assets.frame_shape || card.frame_shape || 'arch';
-    var kicker = generatedImage ? 'AI角色形象' : '虚拟角色映射';
+    var shape = generatedImage
+        ? (assets.frame_shape || card.frame_shape || 'arch')
+        : (assets.cover_frame_shape || card.cover_frame_shape || assets.frame_shape || card.frame_shape || 'arch');
+    var kicker = card.title || '成长角色卡';
     var html = '<div class="growth-card virtual-role-card"><div class="card-content">';
     html += '<div class="virtual-role-shell">';
     html += '<div class="virtual-role-hero">';
@@ -1419,22 +1421,16 @@ function renderVirtualRoleCard(card) {
     html += '<div class="virtual-role-overlay">';
     html += '<div class="virtual-role-kicker"><i class="fas fa-user-astronaut"></i> ' + escapeHtml(kicker) + '</div>';
     html += '<div class="virtual-role-name">' + escapeHtml(roleName) + '</div>';
-    html += '<div class="virtual-role-subtitle">' + escapeHtml(roleSubtitle) + '</div>';
-    if (palette.length) {
-        html += '<div class="generated-comic-palette" style="margin-top:12px;">' + palette.map(function(color) {
-            return '<span class="generated-comic-palette-chip" style="background:' + escapeHtml(color) + ';"></span>';
-        }).join('') + '</div>';
+    if (roleSubtitle) {
+        html += '<div class="virtual-role-subtitle">' + escapeHtml(roleSubtitle) + '</div>';
     }
     html += '</div></div>';
-    html += '<div class="virtual-role-copy">';
-    html += '<div class="card-title">' + escapeHtml(card.title || '虚拟角色卡') + '</div>';
-    if (roleStoryline) {
-        html += '<div class="card-text">' + escapeHtml(roleStoryline) + '</div>';
-    } else if (card.content) {
-        html += '<div class="card-text">' + escapeHtml(card.content) + '</div>';
-    }
-    if (roleSignature) {
-        html += '<div class="virtual-role-signature">角色识别句：' + escapeHtml(roleSignature) + '</div>';
+    if (roleTraits.length) {
+        html += '<div class="virtual-role-copy">';
+        html += '<div class="virtual-role-alt">' + roleTraits.slice(0, 4).map(function(item) {
+            return '<span class="virtual-role-alt-pill">' + escapeHtml(item) + '</span>';
+        }).join('') + '</div>';
+        html += '</div>';
     }
     html += '</div></div></div>' + buildCardFooter() + '</div>';
     return html;

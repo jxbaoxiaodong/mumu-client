@@ -1,175 +1,153 @@
 # Mumu 成长记录系统
 
-Mumu 由三个进程组成：
+Mumu 是一个给父母自用、给家人分享的宝宝成长记录系统。  
+它的主轴是「家庭相册 + 成长整理 + 轻量 AI 辅助」，不是把所有体验都做成 AI 门槛。
 
-| 服务 | 入口文件 | 端口 | 说明 |
-|------|----------|------|------|
-| 客户端 | `client_public_final.py` | 3000 | 本地网页、照片索引、本地缓存 |
-| 服务端 | `server_public.py` | 8000 | 业务 API、鉴权、配额、数据聚合 |
-| 健康 AI | `baby_health_ai/app/main.py` | 8080 | 事件解析、成长画像、问答、画像历史 |
+这份 README 只写当前真实实现，不保留已经收掉的旧链路。
 
-## 当前身份模型
+## 产品原则
 
-系统已经收口为单一身份模型：
+- 先让家里人稳定地看、存、翻、分享宝宝的成长。
+- AI 只在需要理解、总结、问答、生成时介入。
+- 共享 AI 额度不足时，暂停的是新的 AI 操作，不是整站可用性。
+- 一个 `client_id` 对应一个宝宝，`client_id` 是唯一身份源。
 
-- 一个 `client_id` 对应一个宝宝
-- `client_id` 是唯一身份源
-- `health_ai` 内部接口仍然使用 `child_id` 这个字段名，但它表达的就是 `client_id`
-- `ai_child_id` 已经从运行时代码移除，不再参与业务判断
+## 当前页面与真实边界
 
-## 三个存储边界
+| 页面 | 路由 | 当前作用 | 是否默认调用 AI |
+| --- | --- | --- | --- |
+| 首页 | `/` | 按日期浏览照片、视频、日志、留言、上传入口 | 否 |
+| 成长卡片 | `/cards` | 浏览已有卡片、漫画卡、虚拟角色卡、对比卡等 | 否 |
+| 成长画像 | `/profile` | 查看已有画像、标签、雷达图、时间线 | 否 |
+| 时光相册 | `/storybook` | 实时整理已有素材，导出长图和长卷 | 否 |
+| AI 调用记录 | `/usage` | 查看已经发生过的 AI 调用 | 否 |
+| 家庭码验证 | `/family-access` | 公网首次访问验证家庭码 | 否 |
+| 帮助中心 | `/help` | 解释边界、FAQ、分页面帮助 | 否 |
 
-### 1. 客户端缓存
+### 不调用 AI / 不消耗共享 AI 额度
+
+- 浏览首页、卡片、已有成长画像、时光相册、精选照片和历史素材
+- 浏览照片视频、切换日期、打开纯净长卷、下载长图
+- 上传素材、创建或重建索引、本地文件管理
+- 家庭码访问、复制分享链接、留言互动
+- 手动写日志、手动改日志、保存日志（`/api/log/save`）
+- 查看已经生成好的卡片、画像、相册和调用记录
+
+### 会调用 AI / 会消耗共享 AI 额度
+
+- AI 日记生成、润色、改写
+- AI 问答（`/api/ai/ask`）
+- 成长画像完整刷新 / AI 复盘
+- 图片理解、视频语音识别、事件解读
+- AI 自动精选照片
+- 漫画卡片生成
+- 虚拟角色图生成
+
+### 额度不足时，当前真实体验
+
+- 基础相册、浏览、上传、分享、家庭码访问、留言、手动整理仍可继续使用
+- 已经生成好的卡片、画像、时光相册仍可继续查看和分享
+- 新的 AI 问答、AI 出图、画像刷新、AI 日记等会暂停
+- `/usage` 只记录进入模型链路的动作，不代表整站都在计费
+
+## 当前服务结构
+
+Mumu 当前由三个进程协作：
+
+| 服务 | 入口文件 | 端口 | 作用 |
+| --- | --- | --- | --- |
+| 客户端 | `client_public_final.py` | `3000` | 网页前台、本地索引、本地缓存、素材浏览 |
+| 服务端 | `server_public.py` | `8000` | 业务 API、鉴权、配额、聚合、命令下发 |
+| 健康 AI | `../baby_health_ai/app/main.py` | `8080` | 事件解析、成长画像、画像历史、健康问答 |
+
+说明：
+
+- 当前仓库只包含 Mumu 客户端和服务端代码
+- 健康 AI 服务位于同级项目 `../baby_health_ai`
+- 前台“帮助中心”已经内建到客户端路由 `/help`
+
+## 关键目录边界
+
+### 1. 客户端本地目录
 
 路径：`~/Documents/CZRZ/`
 
 用途：
 
 - 客户端配置
-- 客户端照片索引
-- 客户端日志、缩略图、故事缓存
-- 客户端 tunnel 配置
+- 本地照片索引
+- 缩略图、缓存、生成资源
+- 运行时同步出来的 `runtime_web`
 
 约束：
 
-- 只允许客户端自己读写
-- 服务端和 `health_ai` 不应把这里当真相源
+- 只属于客户端
+- 不能把这里当成服务端或健康 AI 的真相源
 
-### 2. 服务端数据
+### 2. 服务端数据目录
 
-路径：`mumu/data/`
-
-核心内容：
-
-- `index.db`：全局索引数据库
-- `users/{client_id}.db`：每个客户端自己的业务库
-- `model_config.json`：文本/视觉/语音/画像模型配置
-- `api_config.json`：Cloudflare 与图片模型相关兼容配置
-- `server_config.json`：服务端配置与内部 token
-
-### 3. 健康 AI 数据
-
-路径：`baby_health_ai/data/`
+路径：`data/`
 
 核心内容：
 
-- `index.db`：宝宝索引
-- `children/{client_id}.db`：单宝宝画像与事件数据库
+- `data/index.db`
+- `data/users/{client_id}.db`
+- `data/model_config.json`
+- `data/api_config.json`
+- `data/server_config.json`
 
-## 当前真实数据流
+### 3. 健康 AI 数据目录
 
-```text
-客户端(3000)
-  -> 服务端(8000)
-  -> 健康AI(8080)
+路径：`../baby_health_ai/data/`
 
-客户端本地缓存
-  仅客户端使用
+核心内容：
 
-服务端数据库
-  作为业务真相源
+- `index.db`
+- `children/{client_id}.db`
 
-健康AI数据库
-  作为画像与事件真相源
-```
+## 当前真实数据模型
 
-补充：
+- `client_id` 是唯一身份 ID
+- 历史上的第二套宝宝 ID 已经不应再参与新逻辑
+- 健康 AI 内部仍可能沿用 `child_id` 这个字段名，但表达的仍然是 `client_id`
 
-- 客户端不直接管理模型密钥
-- `health_ai` 会从 `mumu/data/model_config.json` 读取模型配置
-- 服务间 token 记账通过内部 `X-Internal-Token` 上报到服务端
+## 当前核心链路
 
-## 当前画像刷新链路
+### 1. 日常浏览链路
 
-现在有两条不同的画像刷新路径，语义不要混淆：
+1. 客户端读取本地索引和缓存，快速返回页面。
+2. 用户在首页、卡片、画像、时光相册中浏览已有内容。
+3. 这条链路默认不调用 AI。
 
-### 1. `health_ai` 本地画像刷新
+### 2. 素材上传与整理链路
 
-接口：
+1. 用户上传照片或视频。
+2. 客户端维护本地索引、缩略图、缓存。
+3. 用户可手动整理日志或重建索引。
+4. 这条链路默认不调用 AI。
 
-- `POST /api/children/{child_id}/profile/refresh`
+### 3. 成长画像完整刷新链路
 
-行为：
+1. 健康 AI 请求服务端触发完整刷新。
+2. 服务端把 `auto_review` 命令写入客户端命令队列。
+3. 客户端通过心跳主动拉取命令，不再依赖服务端直接反向访问客户端公网地址。
+4. 客户端本地执行图片理解、视频语音识别、素材补读、结果上传。
+5. 服务端同步到健康 AI。
+6. 健康 AI 基于已同步事件生成最新画像。
 
-- 只处理已经在 `health_ai` 数据库里的未解析事件
-- 然后直接生成画像
-- 不会回头找客户端原始素材
+这条链路会消耗共享 AI 额度。
 
-用途：
+### 4. 时光相册链路
 
-- 供服务端 `/czrz/profile/generate-trigger` 在“素材已同步完成”后调用
+当前实现：
 
-### 2. `health_ai` 全链路刷新画像
+- `/storybook` 使用已有素材实时整理
+- `generate_missing=False`
+- 浏览在线页、打开纯净长卷、下载长图都不触发新的 AI 生成
 
-接口：
+## 当前数据库重点
 
-- `POST /api/children/{child_id}/profile/full-refresh`
-
-行为：
-
-1. `health_ai` 请求服务端 `/czrz/client/auto-review-trigger`
-2. 服务端把 `auto_review` 命令写入客户端命令队列，不再反向访问客户端公网域名或私网 IP
-3. 客户端通过 `/czrz/client/heartbeat` 主动拉取待执行命令
-4. 客户端本地启动 `/api/ai/auto-review`
-5. 客户端补读未读取图片
-6. 客户端补读未读取视频，并执行“提取语音 -> 转文字”
-7. 客户端把照片描述、视频转写、日志、精选照片等结果上传到服务端
-8. 客户端通过 `/czrz/client/command-status` 主动回报进度与最终结果
-9. 客户端触发服务端同步到 `health_ai`
-10. 客户端再触发服务端 `/czrz/profile/generate-trigger`
-11. 服务端调用 `health_ai /profile/refresh` 完成最终画像生成
-
-用途：
-
-- 供 `health_ai` 页面“刷新画像”按钮使用
-- 目标是与客户端手动刷新尽量保持一致
-
-补充：
-
-- 当前画像模型由 `health_ai` 从 `mumu/data/model_config.json` 读取
-- 当前运行中的画像模型配置为 `qwen3-max`
-- 不能把 `/profile/refresh` 直接改成远程触发客户端，否则会和服务端 `/czrz/profile/generate-trigger` 形成递归
-- `server -> client` 的反向调用已不再作为完整刷新链路依赖项
-- 客户端心跳当前为 `30` 秒一轮，用于拉取服务端命令；服务端不应再回退到客户端私网地址
-
-### 相关鉴权
-
-- 客户端完整刷新链路改为客户端主动拉取命令，服务端不再依赖：
-  - `POST /api/ai/auto-review`
-  - `GET /api/ai/auto-review/status/{task_id}`
-- 新增客户端主动回报接口：
-  - `POST /czrz/client/command-status`
-- `health_ai` 调服务端全链路刷新时：
-  - 默认可走 `127.0.0.1` 本机免签
-  - 也支持额外配置环境变量 `MUMU_INTERNAL_TOKEN`
-
-## 当前签名处置方式
-
-服务端当前没有彻底关闭验签，而是采用“可用优先、逐步收紧”的过渡策略。
-
-- 正常优先路径仍然是：
-  - HMAC 请求头：`X-Client-ID`、`X-Timestamp`、`X-Signature`
-  - 本机服务间调用：`X-Internal-Token`
-- 当前合法调用端统一带固定 `User-Agent`：
-  - 客户端：`CZRZ-Client/2.0`
-  - 健康 AI 后端：`Mumu-Health-AI/1.0`
-  - 服务端配置里仍兼容旧前缀：`Baby-Health-AI`
-- 如果请求来自上述已知调用端，且服务端能从 path/query/body 中唯一解析出有效 `client_id`，那么即使验签失败，也会：
-  - 记录 `signature_soft_bypass`
-  - 临时放行，不直接返回 `401`
-- 仍会继续拦截：
-  - 未带受信 `User-Agent` 的请求
-  - 无法解析出唯一 `client_id` 的请求
-  - `client_id` 对应客户端不存在的请求
-- `health_ai` 页面上的关键同步/刷新动作不再由浏览器直接请求服务端，而是先走 `health_ai` 本地后端代理，再由后端统一补：
-  - `User-Agent: Mumu-Health-AI/1.0`
-  - 可选 `X-Internal-Token`
-
-这只是当前线上保可用方案。后续应基于日志中的 `signature_soft_bypass` 记录，逐条修复真实签名失配原因，再逐步收紧放行范围。
-
-## 主要数据库
-
-### `mumu/data/index.db`
+### `data/index.db`
 
 重要表：
 
@@ -181,9 +159,8 @@ Mumu 由三个进程组成：
 说明：
 
 - `clients.token_total / token_prompt / token_completion` 是配额聚合字段
-- 历史遗留 `clients.ai_child_id` 列已不再参与业务逻辑
 
-### `mumu/data/users/{client_id}.db`
+### `data/users/{client_id}.db`
 
 当前主要表：
 
@@ -199,10 +176,10 @@ Mumu 由三个进程组成：
 
 说明：
 
-- Token 调用明细现在统一记在 `ai_sessions`
-- 历史 `token_usage` 表已删除
+- AI 调用明细当前统一写入 `ai_sessions`
+- 旧的 `token_usage` 表不再使用
 
-### `baby_health_ai/data/children/{client_id}.db`
+### `../baby_health_ai/data/children/{client_id}.db`
 
 当前主要表：
 
@@ -214,108 +191,87 @@ Mumu 由三个进程组成：
 - `feedback`
 - `health_metrics`
 
-## Token 记账
+## 当前与 AI 相关的真实说明
 
-当前实现：
+### AI 用量如何记账
 
 - 写入明细：`ai_sessions`
 - 配额判断：`clients.token_total`
-- 前端展示：服务端从 `ai_sessions` 聚合返回
+- 前台展示：服务端聚合后返回给客户端
 
-不再使用：
+### 为什么有些页面打开了但不消耗额度
 
-- `token_usage` 表
+因为这些页面只是读取已经生成好的结果。  
+查看结果不等于再次调用模型。
 
-## 关键约束
+### 为什么画像页能看，但刷新会失败
 
-### 身份约束
+查看画像只是读现有数据；刷新画像会重新触发图片理解、视频转写、事件解析和画像生成，所以属于 AI 链路。
 
-- 一切以 `client_id` 为准
-- 新代码不允许重新引入第二套宝宝 ID 体系
+## 当前已下线或已改变的行为
 
-### 路径约束
+- 旧的“每日故事 / 四格故事补齐”链路已停用
+  - `/api/story/generate` 返回 `410`
+  - `/api/story/status/<date>` 会提示该能力已下线
+- 时光相册已经改成实时整理，不再依赖旧故事补齐缓存
+- `storybook/pdf` 已下线，当前返回 `410`
+  - 统一改为“下载长图”或打开 `/storybook/print`
 
-- `~/Documents/CZRZ` 只属于客户端
-- 服务端真相源在 `mumu/data`
-- `health_ai` 真相源在 `baby_health_ai/data`
+## 本地运行
 
-### AI 约束
-
-- 模型密钥不下发给客户端
-- 客户端所有 AI 请求都应经服务端
-- `health_ai` 的 LLM 使用量必须回传服务端
-
-## 启动方式
-
-推荐：
+### 初始化虚拟环境
 
 ```bash
-cd /home/bob/projects/mumu
-./restart_all.sh
+./setup_venv.sh
 ```
 
-如果在系统服务里运行：
+### 单独启动
 
 ```bash
-systemctl restart mumu-all.service
-systemctl status mumu-all.service
+source venv/bin/activate
+python server_public.py
+python client_public_final.py
 ```
 
-## 常用排查
-
-### 查看服务状态
+健康 AI 需要在同级项目中单独启动：
 
 ```bash
-systemctl status mumu-all.service --no-pager
+cd ../baby_health_ai
+source .venv/bin/activate
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-### 查看健康 AI 配置是否已从 `model_config.json` 生效
+### 一键重启三个进程
 
 ```bash
-curl http://127.0.0.1:8080/api/config/ai
+./restart_all.sh restart
 ```
 
-### 查看服务端 token 记账明细
+## 现有 systemd 文件
 
-```bash
-sqlite3 /home/bob/projects/mumu/data/users/<client_id>.db \
-  "select id,operation,total_tokens,created_at from ai_sessions order by id desc limit 20;"
-```
+仓库内已经提供拆分后的服务文件示例：
 
-### 查看客户端聚合配额
+- `mumu-health-ai.service`
+- `mumu-server.service`
+- `mumu-client.service`
 
-```bash
-sqlite3 /home/bob/projects/mumu/data/index.db \
-  "select client_id,token_total,token_prompt,token_completion from clients;"
-```
+## 常见日志文件
 
-## 发布与备份
+- `client_service.log`
+- `server_service.log`
+- `../baby_health_ai/health_service.log`
+- `~/Documents/CZRZ/logs/client.log`
 
-发布客户端：
+## 相关入口文件
 
-```bash
-./release.sh vXX "feat: message"
-```
+- 客户端前台：`client_public_final.py`
+- 服务端：`server_public.py`
+- 帮助内容源：`help_content.py`
+- 前台模板：`templates/`
+- 本地静态资源：`static/`
 
-执行项目备份：
+## 文档维护约束
 
-```bash
-./backup.sh
-```
-
-## 相关文件
-
-- `client_public_final.py`
-- `server_public.py`
-- `server_card_generator.py`
-- `database.py`
-- `models.py`
-- `select_best_photo.py`
-- `baby_health_ai/app/main.py`
-- `baby_health_ai/app/config.py`
-- `AGENT.md`
-
-## 当前文档目标
-
-这份 README 只描述当前真实实现，不保留已经废弃的旧链路说明。  
-如果代码继续收口，优先更新这份文档，而不是追加“兼容旧逻辑”的说明。
+- 这份 README 只描述当前真实实现
+- 如果功能已经下线，就直接从 README 去掉，不保留“兼容旧逻辑”的叙述
+- 如果 AI 边界有变化，优先更新 `/help` 与这份 README，确保前台说明和代码行为一致

@@ -32,15 +32,15 @@
                                 </div>
                             </div>
                             
-                            <!-- Token配额 -->
+                            <!-- AI共享额度 -->
                             <div class="d-flex align-items-center mb-3">
                                 <div class="me-3">
                                     <i class="fas fa-robot fa-2x text-success"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    <h6 class="mb-1 text-muted small">AI 配额</h6>
+                                    <h6 class="mb-1 text-muted small">AI 共享额度</h6>
                                     <div class="d-flex align-items-center">
-                                        <span class="me-2" style="font-size: 0.95rem;">{{ "{:,}".format(quota_used or 0) }}/{{ "{:,}".format(quota_total or 50000) }}</span>
+                                        <span class="me-2" style="font-size: 0.95rem;">剩余 {{ "{:,}".format(quota_remaining) }} / {{ "{:,}".format(quota_total or 50000) }}</span>
                                         <div class="flex-grow-1" style="max-width: 120px;">
                                             <div class="progress" style="height: 6px;">
                                                 {% set quota_pct = quota_percent or 0 %}
@@ -54,6 +54,13 @@
                                             <i class="fas fa-list"></i>
                                         </a>
                                     </div>
+                                    <small class="text-muted d-block mt-1" style="font-size: 0.7rem;">
+                                        {% if quota_remaining <= 0 %}
+                                        当前共享 AI 额度已暂停；照片浏览、上传、分享、留言和手动整理内容不受影响。
+                                        {% else %}
+                                        这里只统计会用到 AI 的操作；看照片和分享给家人不算在内。
+                                        {% endif %}
+                                    </small>
                                 </div>
                             </div>
                             
@@ -63,7 +70,7 @@
                                     <i class="fas fa-chart-line fa-2x text-info"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    <h6 class="mb-1 text-muted small">AI 总消耗</h6>
+                                    <h6 class="mb-1 text-muted small">AI 调用技术明细</h6>
                                     <div class="d-flex align-items-center">
                                         <span class="me-2" style="font-size: 0.95rem;">
                                             <span class="text-primary">{{ "{:,}".format(token_usage.total_tokens if token_usage else 0) }}</span>
@@ -81,13 +88,25 @@
                                     <i class="fas fa-images fa-2x text-warning"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    <h6 class="mb-1 text-muted small">图片生成使用量</h6>
+                                    <h6 class="mb-1 text-muted small">图片生成次数</h6>
                                     <div class="d-flex align-items-center">
                                         <span class="me-2" style="font-size: 0.95rem;">
                                             <span class="text-primary">{{ "{:,}".format(image_usage.image_count if image_usage else 0) }}</span> 张
                                         </span>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="mb-3 p-2 bg-light rounded" style="font-size: 0.72rem; line-height: 1.6;">
+                                <strong>边界说明：</strong><br>
+                                不用 AI：照片浏览、上传、远程分享、家庭码访问、留言、手动写日记、索引管理。<br>
+                                会用到 AI：AI 日记润色、成长画像刷新、AI 问答、图片解读、视频语音识别、漫画或角色图生成。<br>
+                                上面的 AI 功能会占用共享 AI 额度；如果当前额度暂停，基础功能仍然可以照常使用。
+                            </div>
+                            <div class="mb-3">
+                                <a href="/help" class="btn btn-sm btn-outline-dark">
+                                    <i class="fas fa-book-open me-1"></i>查看帮助中心
+                                </a>
                             </div>
                             
                             <!-- 网络访问 -->
@@ -423,6 +442,31 @@
     </div>
 </div>
 
+<div class="modal fade" id="familySharePreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-share-alt me-2"></i>分享文案
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small mb-2" id="familySharePreviewHint">
+                    会先尝试自动复制；如果没成功，也可以长按下面内容手动复制。
+                </p>
+                <textarea class="form-control" id="familySharePreviewText" rows="7" readonly style="font-size: 0.92rem; line-height: 1.7;"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" onclick="copyFamilyShareTextFromPreview()">
+                    <i class="fas fa-copy me-1"></i>再复制一次
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 /* 设置模态框头像样式 */
 .avatar-upload-settings {
@@ -522,15 +566,13 @@ function copyModalClientId() {
 }
 
 // 复制到剪贴板
-function copyToClipboard(text) {
+function copyToClipboard(text, successMessage) {
     if (!text) {
         showNotification('无内容可复制', 'error');
-        return;
+        return Promise.resolve(false);
     }
-    navigator.clipboard.writeText(text).then(function() {
-        showNotification('已复制到剪贴板', 'success');
-    }).catch(function(err) {
-        // 降级方案
+
+    function fallbackCopy() {
         var textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
@@ -539,16 +581,91 @@ function copyToClipboard(text) {
         textArea.select();
         try {
             document.execCommand('copy');
-            showNotification('已复制到剪贴板', 'success');
+            showNotification(successMessage || '已复制到剪贴板', 'success');
+            document.body.removeChild(textArea);
+            return Promise.resolve(true);
         } catch (err) {
-            showNotification('复制失败', 'error');
+            document.body.removeChild(textArea);
+            showNotification('复制失败，请长按或手动复制', 'error');
+            return Promise.resolve(false);
         }
-        document.body.removeChild(textArea);
+    }
+
+    if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        return fallbackCopy();
+    }
+
+    return navigator.clipboard.writeText(text).then(function() {
+        showNotification(successMessage || '已复制到剪贴板', 'success');
+        return true;
+    }).catch(function() {
+        return fallbackCopy();
+    });
+}
+
+function buildFamilyShareFallbackText(url, familyCode) {
+    var babyName = {{ (baby_name or '宝宝')|tojson }};
+    var lines = [
+        '👶 ' + babyName + '的成长记录',
+        '访问链接：' + (url || window.location.origin)
+    ];
+    if (familyCode) {
+        lines.push('家庭码：' + familyCode);
+        lines.push('说明：首次打开输入家庭码，之后会自动记住。');
+    } else {
+        lines.push('家庭码：请向我确认');
+    }
+    return lines.join('\n');
+}
+
+function setFamilySharePreview(text, hint) {
+    var textArea = document.getElementById('familySharePreviewText');
+    var hintEl = document.getElementById('familySharePreviewHint');
+    if (textArea) {
+        textArea.value = text || '';
+    }
+    if (hintEl) {
+        hintEl.textContent = hint || '会先尝试自动复制；如果没成功，也可以长按下面内容手动复制。';
+    }
+}
+
+function openFamilySharePreview(text, hint) {
+    setFamilySharePreview(text, hint);
+    var modalEl = document.getElementById('familySharePreviewModal');
+    if (!modalEl) {
+        return;
+    }
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+    setTimeout(function() {
+        var textArea = document.getElementById('familySharePreviewText');
+        if (textArea) {
+            textArea.focus();
+            textArea.select();
+        }
+    }, 120);
+}
+
+function copyFamilyShareTextFromPreview() {
+    var textArea = document.getElementById('familySharePreviewText');
+    var text = textArea ? textArea.value : '';
+    return copyToClipboard(text, '分享文案已复制（含家庭码）').then(function(copied) {
+        setFamilySharePreview(
+            text,
+            copied
+                ? '分享文案已复制。你也可以直接长按上面的内容再复制一次。'
+                : '自动复制没成功，可以直接长按上面的内容手动复制。'
+        );
+        return copied;
     });
 }
 
 // 复制分享文案（含家庭码）
 function copyFamilyShareText() {
+    var publicUrlInput = document.getElementById('publicUrlInput');
+    var localUrlInput = document.getElementById('localUrlInput');
+    var fallbackUrl = (publicUrlInput && publicUrlInput.value) || (localUrlInput && localUrlInput.value) || window.location.origin;
+
     fetch('/api/share/family-text')
     .then(function(response) { return response.json(); })
     .then(function(data) {
@@ -557,15 +674,32 @@ function copyFamilyShareText() {
             window.location.href = data.redirect_url || '/family-access?next=' + nextUrl;
             return;
         }
-        if (data && data.success && data.text) {
-            copyToClipboard(data.text);
-        } else {
-            showNotification('生成分享文案失败', 'error');
+        if (data && data.success) {
+            var shareText = data.text || buildFamilyShareFallbackText(data.url || fallbackUrl, data.family_code || '');
+            openFamilySharePreview(shareText);
+            return copyToClipboard(shareText, '分享文案已复制（含家庭码）').then(function(copied) {
+                setFamilySharePreview(
+                    shareText,
+                    copied
+                        ? '分享文案已自动复制。也可以直接长按下面的内容手动复制。'
+                        : '自动复制没成功，可以直接长按下面的内容手动复制。'
+                );
+            });
         }
+        throw new Error((data && data.message) || '分享文案获取失败');
     })
     .catch(function(error) {
         console.error('Error:', error);
-        showNotification('生成分享文案失败', 'error');
+        var fallbackText = buildFamilyShareFallbackText(fallbackUrl, '');
+        openFamilySharePreview(fallbackText, '已生成备用分享文案。自动复制会再试一次，如果没成功可以直接长按手动复制。');
+        copyToClipboard(fallbackText, '已复制访问文案，家庭码请手动补充').then(function(copied) {
+            setFamilySharePreview(
+                fallbackText,
+                copied
+                    ? '已复制备用分享文案。家庭码如果没有带上，请手动补充后再发给家人。'
+                    : '自动复制没成功，可以直接长按下面内容手动复制；家庭码请手动补充。'
+            );
+        });
     });
 }
 

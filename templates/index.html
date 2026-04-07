@@ -4819,6 +4819,12 @@ function hideMiniCard() {
     transform: scale(1);
 }
 
+body.modal-open .mini-growth-card {
+    opacity: 0 !important;
+    transform: scale(0.92) !important;
+    pointer-events: none;
+}
+
 .mini-growth-card:active {
     transform: scale(0.95);
 }

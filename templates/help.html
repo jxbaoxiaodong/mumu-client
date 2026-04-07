@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+
+{% block title %}帮助中心 - {{ baby_name }}的成长记录{% endblock %}
+
+{% block extra_css %}
+<style>
+.help-page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 6px 0 40px;
+}
+.help-hero {
+    padding: 24px 20px;
+    border-radius: 26px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 214, 170, 0.7), transparent 34%),
+        linear-gradient(135deg, #fff9f1 0%, #fff4ea 55%, #f7fbff 100%);
+    box-shadow: 0 18px 44px rgba(78, 63, 49, 0.08);
+}
+.help-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.86);
+    color: #8b5d2a;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+.help-title {
+    margin: 14px 0 10px;
+    color: #2f2925;
+    font-size: clamp(1.7rem, 4vw, 2.35rem);
+    line-height: 1.18;
+    font-weight: 800;
+}
+.help-summary {
+    margin: 0;
+    color: #655d57;
+    line-height: 1.8;
+    font-size: 0.98rem;
+}
+.help-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 16px;
+}
+.help-nav-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.88);
+    color: #574d44;
+    text-decoration: none;
+    font-weight: 700;
+}
+.help-section {
+    margin-top: 18px;
+}
+.help-card {
+    padding: 20px;
+    border-radius: 22px;
+    background: #fff;
+    box-shadow: 0 16px 38px rgba(78, 63, 49, 0.07);
+}
+.help-card h2,
+.help-card h3 {
+    margin: 0 0 10px;
+    color: #302925;
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+.help-card p {
+    margin: 0;
+    color: #6a6057;
+    line-height: 1.8;
+}
+.help-stack {
+    display: grid;
+    gap: 12px;
+}
+.help-mini-card {
+    padding: 16px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #fff8ef 0%, #fff 100%);
+    border: 1px solid rgba(233, 219, 203, 0.8);
+}
+.help-mini-card h3 {
+    margin: 0 0 8px;
+    font-size: 0.98rem;
+}
+.help-columns {
+    display: grid;
+    gap: 12px;
+}
+.help-list-card {
+    padding: 18px;
+    border-radius: 20px;
+    background: #fff;
+    border: 1px solid rgba(235, 228, 219, 0.9);
+}
+.help-list-card h3 {
+    margin: 0 0 10px;
+    color: #302925;
+    font-size: 0.98rem;
+    font-weight: 800;
+}
+.help-list-card ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #655c54;
+    line-height: 1.8;
+}
+.help-note {
+    padding: 18px;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #fff4e6 0%, #fffdfa 100%);
+    border: 1px solid rgba(233, 213, 187, 0.85);
+}
+.help-note h3 {
+    margin: 0 0 10px;
+    color: #8a5a27;
+    font-size: 0.98rem;
+    font-weight: 800;
+}
+.help-note ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #685d54;
+    line-height: 1.8;
+}
+.help-page-links {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+.help-page-link {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: #fff;
+    color: #5c5148;
+    text-decoration: none;
+    font-weight: 700;
+    border: 1px solid rgba(224, 214, 203, 0.9);
+}
+.help-page-link.is-active {
+    background: linear-gradient(135deg, #ffe2bb 0%, #ffdce1 100%);
+    color: #4c372d;
+    border-color: transparent;
+}
+.help-accordion .accordion-item {
+    border: none;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(78, 63, 49, 0.06);
+}
+.help-accordion .accordion-button {
+    font-weight: 800;
+    color: #2f2925;
+    padding: 16px 18px;
+    background: #fff;
+    box-shadow: none;
+}
+.help-accordion .accordion-button:not(.collapsed) {
+    color: #2f2925;
+    background: linear-gradient(135deg, #fff8ef 0%, #fff 100%);
+}
+.help-accordion .accordion-body {
+    padding: 0 18px 18px;
+    background: #fff;
+}
+.help-page-summary {
+    color: #6a6057;
+    line-height: 1.8;
+    margin-bottom: 12px;
+}
+.help-page-note {
+    margin-bottom: 12px;
+    color: #8a5a27;
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+.help-page-block {
+    padding: 14px;
+    border-radius: 16px;
+    background: #faf8f5;
+    margin-top: 10px;
+}
+.help-page-block h4 {
+    margin: 0 0 8px;
+    color: #39312b;
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+.help-page-block ul {
+    margin: 0;
+    padding-left: 18px;
+    color: #665d55;
+    line-height: 1.75;
+}
+.help-faq-item + .help-faq-item {
+    margin-top: 12px;
+}
+.help-feedback-grid {
+    display: grid;
+    gap: 14px;
+}
+.help-feedback-copy {
+    color: #6a6057;
+    line-height: 1.8;
+}
+.help-contact-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.92);
+    color: #5b5148;
+    font-weight: 700;
+}
+.help-feedback-form .form-label {
+    color: #5e554d;
+    font-weight: 700;
+    font-size: 0.92rem;
+}
+.help-feedback-form .form-control {
+    border-radius: 14px;
+    border-color: rgba(213, 199, 185, 0.9);
+    padding: 11px 13px;
+}
+@media (min-width: 768px) {
+    .help-columns {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+@media (max-width: 640px) {
+    .help-page {
+        padding-bottom: 28px;
+    }
+    .help-nav {
+        grid-template-columns: 1fr;
+    }
+    .help-hero,
+    .help-card {
+        padding: 18px;
+        border-radius: 20px;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+{% set selected_topic = help_topics[current_help_topic] %}
+<div class="help-page">
+    <section class="help-hero">
+        <div class="help-kicker">
+            <i class="fas fa-book-open"></i>
+            <span>使用说明</span>
+        </div>
+        <h1 class="help-title">{{ selected_topic.title }}</h1>
+        <p class="help-summary">{{ selected_topic.summary }}</p>
+        <div class="help-nav">
+            <a class="help-nav-link" href="#basics"><i class="fas fa-house"></i>先看这个</a>
+            <a class="help-nav-link" href="#pages"><i class="fas fa-mobile-screen"></i>各页面怎么用</a>
+            <a class="help-nav-link" href="#faq"><i class="fas fa-circle-question"></i>常见问题</a>
+            <a class="help-nav-link" href="#feedback"><i class="fas fa-comment-dots"></i>意见反馈</a>
+        </div>
+    </section>
+
+    <section class="help-section" id="basics">
+        <div class="help-card">
+            <h2>先这样理解就行</h2>
+            <div class="help-stack">
+                {% for item in help_boundary_guide %}
+                <div class="help-mini-card">
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.body }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section class="help-section" id="pages">
+        <div class="help-card">
+            <h2>各页面怎么用</h2>
+            <div class="help-page-links">
+                {% for item in help_page_topics %}
+                <a class="help-page-link {% if current_help_topic == item.key %}is-active{% endif %}" href="#page-{{ item.key }}">
+                    {{ item.nav_label }}
+                </a>
+                {% endfor %}
+            </div>
+
+            <div class="accordion help-accordion mt-3" id="helpPagesAccordion">
+                {% for item in help_page_topics %}
+                {% set is_open = current_help_topic == item.key or (current_help_topic == 'overview' and loop.first) %}
+                <div class="accordion-item mb-3" id="page-{{ item.key }}">
+                    <h3 class="accordion-header" id="heading-{{ item.key }}">
+                        <button class="accordion-button {% if not is_open %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ item.key }}" aria-expanded="{% if is_open %}true{% else %}false{% endif %}" aria-controls="collapse-{{ item.key }}">
+                            {{ item.nav_label }}
+                        </button>
+                    </h3>
+                    <div id="collapse-{{ item.key }}" class="accordion-collapse collapse {% if is_open %}show{% endif %}" aria-labelledby="heading-{{ item.key }}" data-bs-parent="#helpPagesAccordion">
+                        <div class="accordion-body">
+                            <div class="help-page-summary">{{ item.summary }}</div>
+                            <div class="help-page-block">
+                                <h4>这页主要干什么</h4>
+                                <ul>
+                                    {% for point in item.main_uses %}
+                                    <li>{{ point }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <div class="help-page-block">
+                                <h4>怎么用会更顺</h4>
+                                <ul>
+                                    {% for point in item.how_to_use %}
+                                    <li>{{ point }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            <div class="help-page-block">
+                                <h4>小提示</h4>
+                                <ul>
+                                    <li>{{ item.tip }}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section class="help-section" id="faq">
+        <div class="help-card">
+            <h2>常见问题</h2>
+            {% for item in help_faq %}
+            <div class="help-faq-item">
+                <h3>{{ item.question }}</h3>
+                <p>{{ item.answer }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="help-section" id="feedback">
+        <div class="help-card">
+            <h2>意见反馈</h2>
+            <div class="help-feedback-grid">
+                <div class="help-feedback-copy">
+                    如果你觉得哪一页看不懂、哪一个提示不舒服、哪一个入口该前一点或后一点，可以直接在这里告诉我。
+                    <div class="help-contact-line">
+                        <i class="fab fa-weixin"></i>
+                        <span>作者微信：lhb112233</span>
+                    </div>
+                </div>
+                <form class="help-feedback-form" id="helpFeedbackForm" onsubmit="submitHelpFeedback(event)">
+                    <div class="mb-3">
+                        <label class="form-label" for="helpFeedbackName">怎么称呼</label>
+                        <input type="text" class="form-control" id="helpFeedbackName" placeholder="选填">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="helpFeedbackContent">反馈内容</label>
+                        <textarea class="form-control" id="helpFeedbackContent" rows="4" placeholder="直接写你的感觉就行" required></textarea>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-dark">提交反馈</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function submitHelpFeedback(event) {
+    event.preventDefault();
+    var name = document.getElementById('helpFeedbackName').value || '匿名用户';
+    var content = document.getElementById('helpFeedbackContent').value;
+
+    fetch('/api/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: name, content: content})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            if (typeof showNotification === 'function') {
+                showNotification('感谢反馈，已收到', 'success');
+            }
+            document.getElementById('helpFeedbackForm').reset();
+        } else if (typeof showNotification === 'function') {
+            showNotification('提交失败: ' + data.message, 'error');
+        }
+    })
+    .catch(function() {
+        if (typeof showNotification === 'function') {
+            showNotification('提交失败，请稍后重试', 'error');
+        }
+    });
+}
+</script>
+{% endblock %}

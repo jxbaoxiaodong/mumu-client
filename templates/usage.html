@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>使用明细 - 成长记录</title>
+    <title>AI 调用记录 - 成长记录</title>
     <link href="/static/vendor/bootstrap/bootstrap-5.3.0.min.css" rel="stylesheet">
     <link href="/static/vendor/fontawesome/fontawesome-6.4.0.all.min.css" rel="stylesheet">
     <style>
@@ -113,6 +113,15 @@
             margin-bottom: 20px;
             opacity: 0.5;
         }
+        @media (max-width: 640px) {
+            .container {
+                padding: 16px;
+            }
+            .back-btn {
+                top: 12px;
+                left: 12px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -122,33 +131,43 @@
 
     <div class="container py-5">
         <div class="text-center mb-4">
-            <h2><i class="fas fa-history me-2 text-primary"></i>使用明细</h2>
-            <p class="text-muted">查看 AI 功能使用记录</p>
+            <h2><i class="fas fa-history me-2 text-primary"></i>AI 调用记录</h2>
+            <p class="text-muted">这里只展示真正用到 AI 的操作</p>
+        </div>
+
+        <div class="text-center small text-muted mb-3">
+            <a href="/help#boundary" class="text-decoration-none">查看功能说明</a>
+        </div>
+
+        <div class="alert alert-light border small text-muted mb-4">
+            会记录在这里的操作：AI 日记润色、成长画像刷新、图片解读、视频语音识别、漫画/角色图生成等。<br>
+            不会记录在这里的操作：照片浏览、上传、远程分享、家庭码访问、留言、手动写日记、索引管理。<br>
+            不管底层具体用了哪种 AI，这里都会统一记在这页。
         </div>
 
         <!-- 统计卡片 -->
         <div class="row mb-4 g-3">
             <div class="col-6 col-md-3">
                 <div class="card summary-card">
-                    <div class="summary-label">今日 Token</div>
+                    <div class="summary-label">今日模型调用量</div>
                     <div class="summary-value text-primary mb-0" id="todayTokens">0</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="card summary-card">
-                    <div class="summary-label">累计 Token</div>
+                    <div class="summary-label">累计模型调用量</div>
                     <div class="summary-value text-success mb-0" id="totalTokens">0</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="card summary-card">
-                    <div class="summary-label">今日图片</div>
+                    <div class="summary-label">今日生成图片</div>
                     <div class="summary-value text-warning mb-0"><span id="todayImages">0</span><small class="ms-1">张</small></div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
                 <div class="card summary-card">
-                    <div class="summary-label">累计图片</div>
+                    <div class="summary-label">累计生成图片</div>
                     <div class="summary-value text-danger mb-0"><span id="totalImages">0</span><small class="ms-1">张</small></div>
                 </div>
             </div>

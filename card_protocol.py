@@ -219,11 +219,17 @@ def normalize_card(card: Dict) -> Dict:
         assets["source_photo"] = normalized.get("source_photo") or ""
         assets["generation_mode"] = normalized.get("generation_mode") or ""
         assets["role_name"] = normalized.get("role_name") or ""
+        assets["role_display_name"] = normalized.get("role_display_name") or ""
+        assets["role_archetype"] = normalized.get("role_archetype") or ""
         assets["role_subtitle"] = normalized.get("role_subtitle") or ""
-        assets["role_storyline"] = normalized.get("role_storyline") or ""
-        assets["role_signature"] = normalized.get("role_signature") or ""
+        assets["role_traits"] = normalized.get("role_traits") or []
+        assets["role_modifiers"] = normalized.get("role_modifiers") or []
         assets["role_palette"] = normalized.get("role_palette") or []
+        assets["scene_label"] = normalized.get("scene_label") or ""
+        assets["activity_label"] = normalized.get("activity_label") or ""
+        assets["emotion_label"] = normalized.get("emotion_label") or ""
         assets["frame_shape"] = normalized.get("frame_shape") or "arch"
+        assets["cover_frame_shape"] = normalized.get("cover_frame_shape") or ""
         assets["match_score"] = normalized.get("match_score")
 
     elif card_type == "story_character_card":

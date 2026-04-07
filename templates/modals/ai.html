@@ -12,6 +12,10 @@
                 <!-- 步骤1：生成选项 -->
                 <div id="step1Options" class="generation-options mb-4">
                     <h6><i class="fas fa-sliders-h me-2"></i>重新生成日志</h6>
+                    <div class="alert alert-light border py-2 small text-muted mt-3">
+                        这一步会用到 AI，并结合当天照片内容来润色日志。<br>
+                        如果你现在不想用 AI，也可以直接手动写日记；照片浏览、上传、分享和留言不受影响。
+                    </div>
                     
                     <!-- 日期显示（只读） -->
                     <div class="mb-3">
@@ -206,6 +210,21 @@ function hideGeneratingToast() {
     }
 }
 
+function isQuotaBoundaryMessage(message) {
+    var text = String(message || '').toLowerCase();
+    return text.indexOf('共享 ai 额度') !== -1
+        || text.indexOf('共享ai额度') !== -1
+        || text.indexOf('quota_exceeded') !== -1;
+}
+
+function buildGenerateErrorMessage(message) {
+    var text = message || '未知错误';
+    if (isQuotaBoundaryMessage(text)) {
+        return text;
+    }
+    return '生成失败: ' + text;
+}
+
 function generateAILogAsync() {
     var date = document.getElementById('logDate').value;
     var userNote = document.getElementById('userNote').value.trim();
@@ -252,9 +271,12 @@ function generateAILogAsync() {
             setTimeout(function() { location.reload(); }, 500);
         } else {
             if (typeof showNotification === 'function') {
-                showNotification('生成失败: ' + (data.message || '未知错误'), 'error');
+                showNotification(
+                    buildGenerateErrorMessage(data.message),
+                    isQuotaBoundaryMessage(data.message) ? 'warning' : 'error'
+                );
             } else {
-                alert('生成失败: ' + (data.message || '未知错误'));
+                alert(buildGenerateErrorMessage(data.message));
             }
         }
     })

@@ -43,6 +43,13 @@ from functools import lru_cache, wraps
 from urllib.parse import quote, unquote
 from auth_utils import verify_signature as verify_hmac_signature
 from card_protocol import normalize_cards
+from help_content import (
+    HELP_BOUNDARY_GUIDE,
+    HELP_FAQ,
+    HELP_TOPICS,
+    HELP_TOPIC_ORDER,
+    normalize_help_topic,
+)
 from photo_status import (
     PHOTO_STATUS_BLOCKED,
     PHOTO_STATUS_OK,
@@ -119,6 +126,30 @@ DEFAULT_AVATAR_URL = "/api/default-avatar"
 DEFAULT_VIDEO_THUMB_URL = "/api/default-video-thumb"
 
 USER_CONFIG_FILE = USER_DATA_DIR / "config.json"
+
+
+def normalize_avatar_url(value: str) -> str:
+    avatar_url = (value or "").strip()
+    avatar_dir = USER_DATA_DIR / "avatars"
+
+    if avatar_url.startswith("/api/avatar/"):
+        filename = avatar_url.rsplit("/", 1)[-1]
+        if filename and (avatar_dir / filename).exists():
+            return avatar_url
+
+    if avatar_url and not avatar_url.startswith("/api/avatar/"):
+        return avatar_url
+
+    if avatar_dir.exists():
+        candidates = sorted(
+            (p for p in avatar_dir.iterdir() if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return f"/api/avatar/{candidates[0].name}"
+
+    return DEFAULT_AVATAR_URL
 
 
 def load_user_config():
@@ -415,9 +446,11 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
     baby_name = getattr(public_client, "baby_name", "宝宝")
     assets = (card or {}).get("assets") or {}
     role_name = assets.get("role_name") or card.get("role_name") or "虚拟角色"
+    role_display_name = assets.get("role_display_name") or card.get("role_display_name") or role_name
+    role_archetype = assets.get("role_archetype") or card.get("role_archetype") or role_name
     role_subtitle = assets.get("role_subtitle") or card.get("role_subtitle") or ""
-    role_storyline = assets.get("role_storyline") or card.get("role_storyline") or ""
-    role_signature = assets.get("role_signature") or card.get("role_signature") or ""
+    role_traits = assets.get("role_traits") or card.get("role_traits") or []
+    role_modifiers = assets.get("role_modifiers") or card.get("role_modifiers") or []
     scene_label = assets.get("scene_label") or card.get("scene_label") or source_record.get("scene") or ""
     activity_label = assets.get("activity_label") or card.get("activity_label") or source_record.get("activity") or ""
     emotion_label = assets.get("emotion_label") or card.get("emotion_label") or ""
@@ -435,15 +468,17 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
     prompt = (
         f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅角色肖像海报。"
         f"主角固定为{baby_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色和真实场景线索，不能换脸，不能变成陌生孩子。"
-        f"把她自然映射成“{role_name}”这一类人物气质，让人一眼看出还是{baby_name}本人，同时又能联想到这个角色。"
+        f"把她自然映射成“{role_archetype}”这一类人物气质，让人一眼看出还是{baby_name}本人，同时又能联想到这个角色。"
         f"允许加入少量与角色气质相符的服饰、道具或环境元素，但不要做夸张 cosplay。"
     )
+    if role_display_name and role_display_name != role_archetype:
+        prompt += f" 当前这张角色卡的展示名是：{role_display_name}。"
     if role_subtitle:
         prompt += f" 角色气质：{role_subtitle}。"
-    if role_storyline:
-        prompt += f" 角色说明：{role_storyline}。"
-    if role_signature:
-        prompt += f" 角色识别句：{role_signature}。"
+    if role_traits:
+        prompt += f" 角色识别点：{'、'.join(str(item).strip() for item in role_traits[:4] if str(item).strip())}。"
+    if role_modifiers:
+        prompt += f" 复合特征：{'、'.join(str(item).strip() for item in role_modifiers[:4] if str(item).strip())}。"
     if scene_label:
         prompt += f" 当前场景线索：{scene_label}。"
     if activity_label:
@@ -454,7 +489,7 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
         prompt += f" 真实素材摘要：{description}。"
     if style_prompt:
         prompt += f" 画面笔触与光线参考：{style_prompt}。"
-    prompt += f" 视觉氛围可参考：{_get_virtual_role_visual_hint(role_name)}。"
+    prompt += f" 视觉氛围可参考：{_get_virtual_role_visual_hint(role_archetype)}。"
     prompt += (
         " 只输出画面，不要出现任何中文、英文、数字、对白气泡、标题、logo、水印。"
         " 画面要温暖、有层次、有分享欲，像一张精心设计的角色海报。"
@@ -1081,9 +1116,10 @@ class PublicClient:
         self.is_paid = USER_CONFIG.get("is_paid", False)
         self.subdomain = USER_CONFIG.get("subdomain")
         self.public_url = USER_CONFIG.get("public_url")
-        self.avatar_url = (
-            USER_CONFIG.get("avatar_url") or DEFAULT_AVATAR_URL
-        )
+        self.avatar_url = normalize_avatar_url(USER_CONFIG.get("avatar_url"))
+        if USER_CONFIG.get("avatar_url") != self.avatar_url:
+            USER_CONFIG["avatar_url"] = self.avatar_url
+            save_user_config()
         self.client_version = USER_CONFIG.get("client_version", "2.0.0")
         self.index_after_date = USER_CONFIG.get("index_after_date", "")
         self.tunnel_active = False
@@ -1764,7 +1800,10 @@ class PublicClient:
 
                     print(f"✅ 注册成功!")
                     print(f"📱 客户端ID: {self.client_id}")
-                    print(f"💰 付费状态: {'付费用户' if self.is_paid else '免费用户'}")
+                    print(
+                        "💠 AI额度档位: "
+                        + ("扩展共享额度" if self.is_paid else "默认共享额度")
+                    )
                     logger.info(
                         f"注册成功: client_id={self.client_id}, is_paid={self.is_paid}"
                     )
@@ -2321,7 +2360,7 @@ ingress:
                     logger.info("凭证已失效，正在重新获取...")
                     self.check_and_refresh_credentials()
 
-                # 更新付费状态和配额信息（如果服务端返回了）
+                # 更新 AI 额度档位和配额信息（如果服务端返回了）
                 if data.get("success") and "client_info" in data:
                     client_info = data["client_info"]
                     old_is_paid = self.is_paid
@@ -2331,9 +2370,10 @@ ingress:
                         self.is_paid = new_is_paid
                         self.save_config()
                         print(
-                            f"💰 付费状态已更新: {'付费用户' if new_is_paid else '免费用户'}"
+                            "💠 AI额度档位已更新: "
+                            + ("扩展共享额度" if new_is_paid else "默认共享额度")
                         )
-                        logger.info(f"付费状态已更新: is_paid={new_is_paid}")
+                        logger.info(f"AI额度档位已更新: is_paid={new_is_paid}")
 
                     # 同步 subdomain 和 public_url
                     server_subdomain = client_info.get("subdomain")
@@ -2948,6 +2988,7 @@ def inject_quota_info():
 
     quota_used = 0
     quota_total = 50000
+    quota_remaining = 50000
     quota_percent = 0
     token_usage = {"total_tokens": 0, "total_prompt": 0, "total_completion": 0}
     image_usage = {"image_count": 0, "request_count": 0}
@@ -2971,6 +3012,9 @@ def inject_quota_info():
                     quota = data.get("quota", {})
                     quota_used = quota.get("used", 0)
                     quota_total = quota.get("limit", 50000)
+                    quota_remaining = quota.get(
+                        "remaining", max(0, quota_total - quota_used)
+                    )
                     quota_percent = (
                         int(quota_used / quota_total * 100) if quota_total > 0 else 0
                     )
@@ -2997,6 +3041,7 @@ def inject_quota_info():
     result = dict(
         quota_used=quota_used,
         quota_total=quota_total,
+        quota_remaining=quota_remaining,
         quota_percent=quota_percent,
         token_usage=token_usage,
         image_usage=image_usage,
@@ -3008,6 +3053,15 @@ def inject_quota_info():
         return result
 
     return cached
+
+
+@app.context_processor
+def inject_help_info():
+    return {
+        "help_topics": HELP_TOPICS,
+        "help_topic_order": HELP_TOPIC_ORDER,
+        "help_page_topics": [HELP_TOPICS[key] for key in HELP_TOPIC_ORDER if key != "overview"],
+    }
 
 
 # 全局客户端实例（在文件末尾创建，使用延迟连接）
@@ -3151,6 +3205,29 @@ def index():
         perf_parts,
     )
     return html
+
+
+@app.route("/help")
+def help_page():
+    """帮助中心。"""
+    current_topic = normalize_help_topic(request.args.get("topic"))
+    local_url = f"http://{public_client.get_local_ip()}:{public_client.client_port}"
+    return render_template(
+        "help.html",
+        baby_name=public_client.baby_name,
+        avatar_url=getattr(public_client, "avatar_url", DEFAULT_AVATAR_URL),
+        client_id=public_client.client_id,
+        public_url=public_client.public_url,
+        local_url=local_url,
+        baby_gender=getattr(public_client, "baby_gender", ""),
+        baby_birthday=getattr(public_client, "baby_birthday", ""),
+        user_city=getattr(public_client, "user_city", ""),
+        local_mode=LOCAL_MODE,
+        client_disabled=CLIENT_DISABLED,
+        current_help_topic=current_topic,
+        help_boundary_guide=HELP_BOUNDARY_GUIDE,
+        help_faq=HELP_FAQ,
+    )
 
 
 CARD_CATEGORY_META = {
@@ -4242,22 +4319,40 @@ def get_voice(filename):
             return jsonify({"success": False, "message": "无效文件名"}), 400
 
         # 从服务端获取语音文件
+        upstream_headers = {}
+        range_header = request.headers.get("Range")
+        if range_header:
+            upstream_headers["Range"] = range_header
+
         response = public_client.signed_request(
             "GET",
             f"{public_client.server_url}/czrz/voice/{public_client.client_id}/{filename}",
+            headers=upstream_headers,
             timeout=30,
             stream=True,
         )
 
-        if response.status_code == 200:
-            # 确定 MIME 类型
-            mime_type = "audio/mpeg" if filename.endswith(".mp3") else "audio/webm"
+        if response.status_code in (200, 206):
+            passthrough_headers = {}
+            for header_name in (
+                "Content-Type",
+                "Content-Length",
+                "Content-Range",
+                "Accept-Ranges",
+                "Cache-Control",
+                "ETag",
+                "Last-Modified",
+            ):
+                header_value = response.headers.get(header_name)
+                if header_value:
+                    passthrough_headers[header_name] = header_value
+            passthrough_headers["Content-Disposition"] = f"inline; filename={filename}"
 
-            # 流式返回
             return Response(
                 response.iter_content(chunk_size=8192),
-                mimetype=mime_type,
-                headers={"Content-Disposition": f"inline; filename={filename}"},
+                status=response.status_code,
+                headers=passthrough_headers,
+                direct_passthrough=True,
             )
         else:
             return jsonify(
@@ -4490,7 +4585,8 @@ def upload_avatar():
         avatar_dir.mkdir(exist_ok=True)
 
         # 保存并压缩头像
-        avatar_filename = f"avatar_{public_client.client_id}{ext}"
+        avatar_owner = public_client.client_id or "local"
+        avatar_filename = f"avatar_{avatar_owner}{ext}"
         avatar_path = avatar_dir / avatar_filename
 
         # 保存文件
@@ -4527,7 +4623,7 @@ def upload_avatar():
             output.save(avatar_path, "PNG")
 
         # 更新配置
-        avatar_url = f"/api/avatar/{avatar_filename}"
+        avatar_url = normalize_avatar_url(f"/api/avatar/{avatar_filename}")
         public_client.avatar_url = avatar_url
         public_client.save_config()
 
@@ -7188,7 +7284,8 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
             AI_REVIEW_TASKS[task_id]["status"] = "failed"
             AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
             AI_REVIEW_TASKS[task_id]["message"] = (
-                f"Token配额已用完（已用 {used:,} / 限额 {limit:,}）"
+                f"当前共享 AI 额度已用完（已用 {used:,} / 总量 {limit:,}）。"
+                " 这次画像刷新会调用多种 AI 模型，已先暂停；照片浏览、上传、分享和留言不受影响。"
             )
             return
 
@@ -7447,9 +7544,12 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
 
                     except Exception as e:
                         error_msg = str(e)
+                        normalized_error = error_msg.lower()
                         if (
-                            "Token配额" in error_msg
-                            or "ALL_MODELS_EXHAUSTED" in error_msg
+                            "共享 ai 额度" in normalized_error
+                            or "共享ai额度" in normalized_error
+                            or "quota_exceeded" in normalized_error
+                            or "all_models_exhausted" in normalized_error
                         ):
                             AI_REVIEW_TASKS[task_id]["completed"] = True
                             AI_REVIEW_TASKS[task_id]["status"] = "failed"
@@ -9838,7 +9938,7 @@ def get_story_collection_data(
         "cover_image": cover_moment.get("photo") or "",
         "cover_thumb": cover_moment.get("thumb") or cover_moment.get("photo") or "",
         "cover_album": cover_moment.get("album") or cover_moment.get("photo") or "",
-        "cover_title": "沐沐成长日志系统 mumu.ftir.fun",
+        "cover_title": "mumu成长日志系统 mumu.ftir.fun",
         "cover_summary": cover_moment.get("summary") or "",
         "cover_collage": cover_collage,
         "date_span": date_span,
@@ -11452,10 +11552,14 @@ def storybook_page():
         public_client.client_id,
         generate_missing=False,
     )
+    avatar_url = getattr(
+        public_client, "avatar_url", DEFAULT_AVATAR_URL
+    )
     return render_template(
         "storybook.html",
         baby_name=public_client.baby_name,
         collection=collection,
+        avatar_url=avatar_url,
     )
 
 
@@ -11466,10 +11570,14 @@ def storybook_print_page():
         public_client.client_id,
         generate_missing=False,
     )
+    avatar_url = getattr(
+        public_client, "avatar_url", DEFAULT_AVATAR_URL
+    )
     return render_template(
         "storybook_print.html",
         baby_name=public_client.baby_name,
         collection=collection,
+        avatar_url=avatar_url,
     )
 
 

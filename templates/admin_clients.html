@@ -136,8 +136,8 @@
                         <th>ID</th>
                         <th>宝宝名字</th>
                         <th>状态</th>
-                        <th>付费</th>
-                        <th>Token使用</th>
+                        <th>档位</th>
+                        <th>AI额度</th>
                         <th>图片生成</th>
                         <th>公网地址</th>
                         <th>IP:端口</th>
@@ -162,9 +162,9 @@
                         </td>
                         <td>
                             {% if client.is_paid %}
-                            <span class="badge badge-paid">付</span>
+                            <span class="badge badge-paid">扩</span>
                             {% else %}
-                            <span class="badge badge-free">免</span>
+                            <span class="badge badge-free">默</span>
                             {% endif %}
                         </td>
                         <td>
@@ -199,7 +199,7 @@
                             </button>
                             <button class="btn btn-sm btn-outline-primary action-btn" 
                                     onclick="togglePaid('{{ client.id }}', {{ 'true' if client.is_paid else 'false' }})">
-                                {% if client.is_paid %}取消付费{% else %}设为付费{% endif %}
+                                {% if client.is_paid %}设为默认{% else %}设为扩展{% endif %}
                             </button>
                             <button class="btn btn-sm btn-outline-info action-btn" 
                                     onclick="reassignTunnel('{{ client.id }}')"
@@ -208,7 +208,7 @@
                             </button>
                             <button class="btn btn-sm btn-outline-primary action-btn" 
                                     onclick="setQuota('{{ client.id }}', {{ client.custom_token_limit or 'null' }})"
-                                    title="设置自定义Token限额">
+                                    title="设置自定义 AI 额度">
                                 调节限额
                             </button>
                             {% if client.enabled != false %}
@@ -237,7 +237,7 @@
         <div class="alert alert-info mt-4">
             <h6><i class="bi bi-info-circle"></i> 使用说明</h6>
             <ul class="mb-0">
-                <li><strong>Token配额</strong>: 免费用户 {{ "{:,}".format(admin_config.quota_settings.free_token_quota|default(50000)) }} tokens，付费用户 {{ "{:,}".format(admin_config.quota_settings.paid_token_quota|default(500000)) }} tokens</li>
+                <li><strong>AI 共享额度</strong>: 默认档 {{ "{:,}".format(admin_config.quota_settings.free_token_quota|default(50000)) }} tokens，扩展档 {{ "{:,}".format(admin_config.quota_settings.paid_token_quota|default(500000)) }} tokens</li>
                 <li><strong>禁用/启用</strong>: 禁用的客户端无法获取凭证和使用AI服务</li>
                 <li><strong>隧道状态</strong>: 显示客户端的Cloudflare Tunnel是否活跃</li>
                 <li>表格每30秒自动刷新一次</li>
@@ -392,7 +392,7 @@
             });
         }
         
-        // 切换付费状态
+        // 切换 AI 额度档位
         function togglePaid(clientId, isCurrentlyPaid) {
             fetch(`/admin/clients/${clientId}/toggle-paid`, {
                 method: 'POST',
@@ -525,7 +525,7 @@
         }
         
         function setQuota(clientId, currentLimit) {
-            const limit = prompt('设置自定义 Token 限额：\n\n留空或输入 0 表示使用默认配额\n当前限额: ' + (currentLimit || '默认'), currentLimit || '');
+            const limit = prompt('设置自定义 AI 额度：\n\n留空或输入 0 表示使用当前档位默认额度\n当前限额: ' + (currentLimit || '当前档位默认值'), currentLimit || '');
             
             if (limit === null) return;
             

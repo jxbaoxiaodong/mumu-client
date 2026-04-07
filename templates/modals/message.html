@@ -259,9 +259,33 @@ function getSelectedRole() {
 let msgMediaRecorder = null;
 let msgAudioChunks = [];
 let msgAudioBlob = null;
+let msgAudioMimeType = '';
 let msgRecordingTimer = null;
 let msgRecordingSeconds = 0;
 let msgIsRecording = false;
+
+function messageModalPickAudioMimeType() {
+    if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+        return '';
+    }
+
+    const candidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/ogg'
+    ];
+
+    for (const mimeType of candidates) {
+        if (MediaRecorder.isTypeSupported(mimeType)) {
+            return mimeType;
+        }
+    }
+
+    return '';
+}
 
 function messageModalToggleRecording() {
     const recordBtn = document.getElementById('recordBtn');
@@ -278,13 +302,21 @@ function messageModalToggleRecording() {
     
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
-            msgMediaRecorder = new MediaRecorder(stream);
+            const preferredMimeType = messageModalPickAudioMimeType();
+            msgMediaRecorder = preferredMimeType
+                ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+                : new MediaRecorder(stream);
             msgAudioChunks = [];
+            msgAudioBlob = null;
+            msgAudioMimeType = msgMediaRecorder.mimeType || preferredMimeType || '';
             
             msgMediaRecorder.ondataavailable = e => msgAudioChunks.push(e.data);
             
             msgMediaRecorder.onstop = () => {
-                msgAudioBlob = new Blob(msgAudioChunks, { type: 'audio/webm' });
+                const chunkMimeType = msgAudioChunks.find(chunk => chunk && chunk.type)?.type || '';
+                const finalMimeType = msgAudioMimeType || chunkMimeType || 'audio/webm';
+                msgAudioBlob = new Blob(msgAudioChunks, { type: finalMimeType });
+                msgAudioMimeType = finalMimeType;
                 const audioPreview = document.getElementById('audioPreview');
                 audioPreview.src = URL.createObjectURL(msgAudioBlob);
                 document.getElementById('voicePreview').style.display = 'block';
