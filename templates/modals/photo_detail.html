@@ -114,16 +114,20 @@ function showCurrentPhoto() {
     // 设置图片
     var img = document.getElementById('detailPhoto');
     var safeFilename = photo.filename.split('/').pop();
-    var imageUrl = photo.url || '/photo/' + encodeURIComponent(safeFilename);
-    img.src = imageUrl;
-    
-    // 图片加载失败时尝试缩略图
-    img.onerror = function() {
-        console.log('[详情] 图片加载失败，尝试缩略图');
-        if (img.src.indexOf('/photo/thumb/') === -1) {
-            img.src = '/photo/thumb/' + encodeURIComponent(safeFilename);
-        }
-    };
+    if (typeof loadImagePreferCompressed === 'function') {
+        loadImagePreferCompressed(img, safeFilename, null);
+    } else {
+        img.src = '/image/compressed/' + encodeURIComponent(safeFilename);
+        img.onerror = function() {
+            if (img.src.indexOf('/photo/thumb/') === -1 && img.src.indexOf('/photo/') === -1) {
+                img.src = '/photo/' + encodeURIComponent(safeFilename);
+                return;
+            }
+            if (img.src.indexOf('/photo/thumb/') === -1) {
+                img.src = '/photo/thumb/' + encodeURIComponent(safeFilename);
+            }
+        };
+    }
     
     // 设置描述和日期
     document.getElementById('detailCaption').textContent = photo.caption || photo.tag || '无标注';

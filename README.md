@@ -52,7 +52,7 @@ Mumu 是一个给父母自用、给家人分享的宝宝成长记录系统。
 
 ## 当前服务结构
 
-Mumu 当前由三个进程协作：
+Mumu 当前由三个 Python 进程协作，但正式环境的控制面不是手动拉起这三个进程，而是统一交给 `mumu-all.service`。
 
 | 服务 | 入口文件 | 端口 | 作用 |
 | --- | --- | --- | --- |
@@ -62,6 +62,9 @@ Mumu 当前由三个进程协作：
 
 说明：
 
+- 正式环境统一由 systemd 单元 `mumu-all.service` 管理
+- `/etc/systemd/system/mumu-all.service` 当前通过 `restart_all.sh restart` 统一拉起三个进程
+- 因此正式重启、状态检查、故障恢复都应以 `mumu-all.service` 为准
 - 当前仓库只包含 Mumu 客户端和服务端代码
 - 健康 AI 服务位于同级项目 `../baby_health_ai`
 - 前台“帮助中心”已经内建到客户端路由 `/help`
@@ -219,13 +222,15 @@ Mumu 当前由三个进程协作：
 
 ## 本地运行
 
+这一节用于开发调试，不代表正式环境的运维方式。
+
 ### 初始化虚拟环境
 
 ```bash
 ./setup_venv.sh
 ```
 
-### 单独启动
+### 单独启动（开发调试）
 
 ```bash
 source venv/bin/activate
@@ -241,19 +246,51 @@ source .venv/bin/activate
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-### 一键重启三个进程
+### 一键重启三个进程（开发调试）
 
 ```bash
 ./restart_all.sh restart
 ```
 
+## 正式环境服务管理
+
+正式环境当前统一使用：
+
+- `mumu-all.service`
+
+常用命令：
+
+```bash
+# 重启正式服务
+systemctl restart mumu-all.service
+
+# 查看状态
+systemctl status mumu-all.service --no-pager
+
+# 快速确认是否存活
+systemctl is-active mumu-all.service
+
+# 服务端健康检查
+curl http://127.0.0.1:8000/czrz/health
+```
+
+说明：
+
+- 不建议把直接运行 `python server_public.py` / `python client_public_final.py` 当成正式重启方式
+- `restart_all.sh` 是 `mumu-all.service` 当前调用的底层进程管理脚本，但正式操作优先用 `systemctl`
+
 ## 现有 systemd 文件
 
-仓库内已经提供拆分后的服务文件示例：
+仓库内已经提供拆分后的服务文件示例，但当前正式生效的统一入口是 `mumu-all.service`：
 
 - `mumu-health-ai.service`
 - `mumu-server.service`
 - `mumu-client.service`
+
+补充说明：
+
+- 上面三个拆分文件更适合作为结构参考或独立部署参考
+- 当前这台机器的真实生产控制面仍然是 `/etc/systemd/system/mumu-all.service`
 
 ## 常见日志文件
 

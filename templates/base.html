@@ -11,10 +11,46 @@
     <title>{% block title %}成长记录 - {{ baby_name }}的成长点滴{% endblock %}</title>
     
     <!-- Bootstrap 5 CSS (本地) -->
+    {% if inline_bootstrap_css %}
+    <style id="bootstrap-inline-css">{{ inline_bootstrap_css | safe }}</style>
+    {% else %}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.min.css') }}">
+    {% endif %}
     
-    <!-- Font Awesome (本地) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
+    <!-- Font Awesome（首页延后到空闲时加载，避免抢占首屏带宽） -->
+    {% if defer_fontawesome %}
+    <script>
+    (function() {
+        var loaded = false;
+        var href = "{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}";
+
+        function loadFontAwesome() {
+            if (loaded) return;
+            loaded = true;
+            var link = document.createElement('link');
+            link.rel = 'stylesheet';
+            link.href = href;
+            document.head.appendChild(link);
+        }
+
+        window.loadDeferredFontAwesome = loadFontAwesome;
+        ['pointerdown', 'keydown', 'touchstart'].forEach(function(eventName) {
+            window.addEventListener(eventName, loadFontAwesome, { once: true, passive: true });
+        });
+        window.addEventListener('load', function() {
+            window.setTimeout(loadFontAwesome, 6000);
+        }, { once: true });
+    })();
+    </script>
+    <noscript>
+        <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
+    </noscript>
+    {% else %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="{{ url_for('static', filename='vendor/fontawesome/fontawesome-6.4.0.all.min.css') }}">
+    </noscript>
+    {% endif %}
     
     <!-- 基础样式 - 保持简单稳定 -->
     <style>
@@ -39,7 +75,11 @@
     </style>
     
     <!-- 自定义 CSS -->
+    {% if inline_style_css %}
+    <style id="app-inline-css">{{ inline_style_css | safe }}</style>
+    {% else %}
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% endif %}
     
     <!-- 导航栏头像样式 - 响应式大小，无边框 -->
     <style>
@@ -69,9 +109,6 @@
 
     </style>
     
-    <!-- 日历 CSS (本地) -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.css') }}">
-    
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -94,7 +131,7 @@
     <nav class="navbar navbar-expand-lg navbar-light fixed-top">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">
-                <img src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="navbar-avatar rounded-circle me-2">
+                <img src="{{ initial_avatar_url or avatar_url or '/api/default-avatar' }}" data-lazy-src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="navbar-avatar rounded-circle me-2 js-deferred-avatar" decoding="async" fetchpriority="low">
                 <span class="brand-text">{{ baby_name }}的成长记录</span>
             </a>
             
@@ -284,23 +321,71 @@
     })();
     </script>
     
-    <!-- 中国省市区数据 -->
-    <script src="{{ url_for('static', filename='js/china_cities.js') }}"></script>
-    
     <!-- Bootstrap JS (本地) -->
     <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.bundle.min.js') }}"></script>
     
-    <!-- 日历组件 (本地) -->
-    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/flatpickr/flatpickr.zh.js') }}"></script>
-    
     <!-- 自定义 JS -->
+    {% if inline_main_js %}
+    <script>{{ inline_main_js | safe }}</script>
+    {% else %}
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% endif %}
     
     {% block extra_js %}{% endblock %}
     
     <!-- 初始化脚本 -->
     <script>
+        function scheduleNonCriticalTask(callback, timeoutMs) {
+            if (typeof callback !== 'function') {
+                return;
+            }
+
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(callback, { timeout: timeoutMs || 3000 });
+                return;
+            }
+
+            window.setTimeout(callback, timeoutMs || 3000);
+        }
+
+        window.scheduleNonCriticalTask = scheduleNonCriticalTask;
+        window.loadDeferredAvatars = function() {
+            document.querySelectorAll('img[data-lazy-src]').forEach(function(img) {
+                var targetSrc = img.getAttribute('data-lazy-src');
+                if (!targetSrc || img.getAttribute('src') === targetSrc) {
+                    return;
+                }
+
+                var preloader = new Image();
+                preloader.decoding = 'async';
+                preloader.onload = function() {
+                    img.src = targetSrc;
+                    img.removeAttribute('data-lazy-src');
+                };
+                preloader.src = targetSrc;
+            });
+        };
+
+        window.ensureChinaCitiesData = function() {
+            if (window.CHINA_REGIONS && typeof window.initRegionSelector === 'function') {
+                return Promise.resolve();
+            }
+
+            if (window._chinaCitiesLoaderPromise) {
+                return window._chinaCitiesLoaderPromise;
+            }
+
+            window._chinaCitiesLoaderPromise = new Promise(function(resolve, reject) {
+                var script = document.createElement('script');
+                script.src = "{{ url_for('static', filename='js/china_cities.js') }}";
+                script.onload = function() { resolve(); };
+                script.onerror = function() { reject(new Error('china_cities.js 加载失败')); };
+                document.body.appendChild(script);
+            });
+
+            return window._chinaCitiesLoaderPromise;
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
             // 初始化工具提示
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
@@ -322,31 +407,15 @@
             if (typeof initCalendar === 'function') {
                 initCalendar();
             }
-            
-            // 加载二维码图片（仅首页）
-            if (typeof loadQRCode === 'function' && document.querySelector('.footer')) {
-                loadQRCode();
+
+            if (document.readyState === 'complete') {
+                window.setTimeout(window.loadDeferredAvatars, 6000);
+            } else {
+                window.addEventListener('load', function() {
+                    window.setTimeout(window.loadDeferredAvatars, 6000);
+                }, { once: true });
             }
         });
-        
-        // 加载二维码
-        function loadQRCode() {
-            fetch('/api/qrcode')
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (data.success) {
-                        var img = document.getElementById('footer-qrcode');
-                        if (data.qr_code_data) {
-                            img.src = data.qr_code_data;
-                            img.style.display = 'inline-block';
-                        } else if (data.qr_code_url) {
-                            img.src = data.qr_code_url;
-                            img.style.display = 'inline-block';
-                        }
-                    }
-                })
-                .catch(function(e) { console.log('加载二维码失败:', e); });
-        }
     </script>
 </body>
 </html>

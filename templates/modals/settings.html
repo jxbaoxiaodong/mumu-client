@@ -175,7 +175,7 @@
                         <div class="card-body text-center">
                             <div class="mb-3">
                                 <div class="avatar-upload-settings" onclick="document.getElementById('settingsAvatarInput').click()">
-                                    <img id="settingsAvatarPreview" src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
+                                    <img id="settingsAvatarPreview" src="{{ initial_avatar_url or avatar_url or '/api/default-avatar' }}" data-modal-avatar-src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="rounded-circle" style="width: 100px; height: 100px; object-fit: cover; border: 3px solid var(--accent-sage); cursor: pointer;">
                                     <div class="avatar-overlay-settings">
                                         <i class="fas fa-camera"></i>
                                     </div>
@@ -504,6 +504,18 @@
 </style>
 
 <script>
+function loadSettingsAvatarPreview() {
+    var avatar = document.getElementById('settingsAvatarPreview');
+    if (!avatar) return;
+
+    var targetSrc = avatar.getAttribute('data-modal-avatar-src');
+    if (!targetSrc || avatar.getAttribute('src') === targetSrc) {
+        return;
+    }
+
+    avatar.src = targetSrc;
+}
+
 // 上传设置模态框头像
 function uploadSettingsAvatar(input) {
     if (!input.files || input.files.length === 0) return;
@@ -521,7 +533,11 @@ function uploadSettingsAvatar(input) {
         if (data.success) {
             // 更新设置模态框头像
             var newUrl = data.avatar_url + '?t=' + Date.now();
-            document.getElementById('settingsAvatarPreview').src = newUrl;
+            var settingsAvatar = document.getElementById('settingsAvatarPreview');
+            if (settingsAvatar) {
+                settingsAvatar.src = newUrl;
+                settingsAvatar.setAttribute('data-modal-avatar-src', newUrl);
+            }
             
             // 更新导航栏头像
             var navAvatar = document.querySelector('.navbar-brand img');
@@ -708,6 +724,7 @@ function openSettingsEditor() {
     document.getElementById('enterModifySection').classList.add('d-none');
     document.getElementById('settingsContentSection').classList.remove('d-none');
     document.querySelector('#settingsModal .modal-title').innerHTML = '<i class="fas fa-cog me-2"></i>修改设置';
+    loadSettingsAvatarPreview();
     loadCurrentSettings();
 }
 
@@ -890,7 +907,6 @@ function loadCurrentSettings() {
                     document.getElementById('customStyleText').value = data.custom_style;
                 }
                 toggleCustomStyleInput();
-                initModalCitySelector(data.user_city || '');
                 
                 var folderList = document.getElementById('modalFolderList');
                 folderList.innerHTML = '';
@@ -904,6 +920,18 @@ function loadCurrentSettings() {
                     });
                 } else {
                     addModalFolder();
+                }
+
+                if (typeof window.ensureChinaCitiesData === 'function') {
+                    window.ensureChinaCitiesData()
+                        .then(function() {
+                            initModalCitySelector(data.user_city || '');
+                        })
+                        .catch(function(error) {
+                            console.error('加载城市数据失败:', error);
+                        });
+                } else {
+                    initModalCitySelector(data.user_city || '');
                 }
             }
         })

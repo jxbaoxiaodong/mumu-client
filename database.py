@@ -810,6 +810,14 @@ def get_log_dict(client_id: str, date_str: str) -> Optional[Dict]:
     """获取日志（字典格式）"""
     log = get_log(client_id, date_str)
     if log:
+        has_weather = any(
+            value is not None and str(value).strip() != ""
+            for value in (
+                log["weather_city"],
+                log["weather_temperature"],
+                log["weather_condition"],
+            )
+        )
         return {
             "date": log["date"],
             "content": log["content"],
@@ -818,7 +826,7 @@ def get_log_dict(client_id: str, date_str: str) -> Optional[Dict]:
                 "temperature": log["weather_temperature"],
                 "condition": log["weather_condition"],
             }
-            if log["weather_city"]
+            if has_weather
             else None,
             "calendar": {
                 "weekday": log["weekday"],

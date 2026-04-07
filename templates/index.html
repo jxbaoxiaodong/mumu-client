@@ -1589,8 +1589,8 @@
         <!-- 日期头部 - 紧凑版 -->
         <div class="date-header-unified">
             <div class="date-main-unified">
-                <button class="nav-btn-uni" onclick="changeDate(-1)" title="前一天">
-                    <i class="fas fa-chevron-left"></i>
+                <button class="nav-btn-uni" onclick="changeDate(-1)" title="前一天" aria-label="前一天">
+                    <span aria-hidden="true">‹</span>
                 </button>
                 
                 <div style="display:flex;align-items:center;gap:15px;">
@@ -1605,8 +1605,8 @@
                     </div>
                 </div>
                 
-                <button class="nav-btn-uni" onclick="changeDate(1)" title="后一天" id="nextDayBtn">
-                    <i class="fas fa-chevron-right"></i>
+                <button class="nav-btn-uni" onclick="changeDate(1)" title="后一天" id="nextDayBtn" aria-label="后一天">
+                    <span aria-hidden="true">›</span>
                 </button>
             </div>
             
@@ -1670,13 +1670,13 @@
                 {{ today_log.content | replace('\n', '<br>') | e }}
             </div>
             
-            {% if news_item %}
+            {% if news_item_display %}
             <div class="news-quote-uni">
                 <div class="news-quote-header-uni">
                     <i class="fas fa-globe"></i>
                     <span>今日世界</span>
                 </div>
-                <div class="news-quote-text-uni">{{ news_item.title }}</div>
+                <div class="news-quote-text-uni">{{ news_item_display }}</div>
             </div>
             {% endif %}
             
@@ -1761,14 +1761,14 @@
             <div class="photo-frame-inner" id="photoFrameInner" style="display: {% if today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
                 <div class="frame-photo-wrapper" id="featuredPhotoWrapper">
                     {% if featured_photo_hash %}
-                    <img src="{{ url_for('get_photo_by_hash', file_hash=featured_photo_hash) }}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">
+                    <img src="{{ url_for('get_photo_album_image', filename=featured_photo) if featured_photo else url_for('get_photo_by_hash', file_hash=featured_photo_hash) }}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">
                     {% elif featured_photo %}
-                    <img src="{{ url_for('get_photo', filename=featured_photo) }}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">
+                    <img src="{{ url_for('get_photo_album_image', filename=featured_photo) }}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">
                     {% elif default_photo %}
                         {% if default_is_video %}
                         <img src="{{ url_for('get_video_thumb', filename=default_photo) }}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='/api/default-video-thumb'">
                         {% else %}
-                        <img src="{{ url_for('get_photo', filename=default_photo) }}" alt="今日照片" id="featuredPhoto" style="image-orientation:from-image;">
+                        <img src="{{ url_for('get_photo_album_image', filename=default_photo) }}" alt="今日照片" id="featuredPhoto" style="image-orientation:from-image;">
                         {% endif %}
                     {% endif %}
                 </div>
@@ -1781,7 +1781,7 @@
             
             <!-- 空状态 -->
             <div class="frame-empty-state" id="frameEmptyState" style="display: {% if today_photos and today_photos|length > 0 %}none{% else %}flex{% endif %};width:100%;height:100%;">
-                <i class="fas fa-image"></i>
+                <span aria-hidden="true">🖼️</span>
                 <span class="frame-empty-text">这天还没有素材</span>
                 <button class="btn-create-uni" data-bs-toggle="modal" data-bs-target="#uploadModal" style="padding:12px 24px;font-size:0.9rem;">
                     <i class="fas fa-camera me-2"></i>传几张照片
@@ -1792,10 +1792,10 @@
         <!-- 照片操作按钮 -->
         <div class="photo-action-buttons" id="photoActionButtons" style="display: {% if daily_story and daily_story.panels %}none{% elif today_photos and today_photos|length > 0 %}block{% else %}none{% endif %};">
             <button class="btn btn-sm btn-outline-primary" onclick="autoSelectFeatured()" title="AI选择最佳照片">
-                <i class="fas fa-magic"></i>
+                <span aria-hidden="true">✨</span>
             </button>
             <button class="btn btn-sm btn-outline-secondary" onclick="openPhotoSelector()" title="手动更换照片">
-                <i class="fas fa-images"></i>
+                <span aria-hidden="true">🖼️</span>
             </button>
         </div>
         
@@ -1840,12 +1840,12 @@
             {% for photo in today_photos %}
             <div class="gallery-item-uni {% if photo.is_video %}is-video{% endif %}" data-photo-id="{{ photo.filename }}" title="{{ photo.path }}" onclick="{% if photo.is_video %}playVideo('{{ photo.filename }}'){% else %}selectAsFeatured('{{ photo.filename }}'){% endif %}">
                 {% if photo.is_video %}
-                <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" onerror="this.src='/api/default-video-thumb'">
+                <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='/api/default-video-thumb'">
                 <div class="video-play-icon">
                     <i class="fas fa-play-circle"></i>
                 </div>
                 {% else %}
-                <img src="{{ url_for('get_photo_thumb', filename=photo.filename) }}" alt="{{ photo.caption }}" onerror="this.src='{{ url_for('get_photo', filename=photo.filename) }}'">
+                <img src="{{ url_for('get_photo_thumb', filename=photo.filename) }}" alt="{{ photo.caption }}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='{{ url_for('get_photo', filename=photo.filename) }}'">
                 {% endif %}
                 <!-- 标签显示 - 底部中央 -->
                 {% if photo.tag and photo.tag.tag %}
@@ -1965,10 +1965,10 @@
 
 <!-- 成长画像入口 -->
 <section class="mt-4">
-    <div class="profile-entry-card">
+    <div class="profile-entry-card" id="profileEntryCard">
         <div class="profile-entry-header">
             <div class="profile-entry-avatar" id="profileEntryAvatar">
-                <img src="{{ avatar_url or '/api/default-avatar' }}" alt="头像">
+                <img src="{{ initial_avatar_url or avatar_url or '/api/default-avatar' }}" data-lazy-src="{{ avatar_url or '/api/default-avatar' }}" alt="头像" class="js-deferred-avatar" decoding="async" fetchpriority="low">
             </div>
             <div class="profile-entry-info" style="flex: 1; min-width: 0;">
                 <h5 id="profileEntryName" class="profile-entry-title" style="margin-bottom: 0;">加载中...</h5>
@@ -2113,10 +2113,10 @@
 <div class="quick-actions-uni">
     <div class="quick-actions-inner-uni">
         <button class="btn-quick-uni btn-quick-rose" data-bs-toggle="modal" data-bs-target="#uploadModal">
-            <i class="fas fa-camera"></i>
+            <span aria-hidden="true">📷</span>
         </button>
         <button class="btn-quick-uni btn-quick-sage" onclick="window.location.href='/cards?category=tags'">
-            <i class="fas fa-tags"></i>
+            <span aria-hidden="true">🏷️</span>
         </button>
     </div>
 </div>
@@ -2127,6 +2127,7 @@
 <script>
 // 当前选中的代表照片（从服务端渲染获取，可能为空）
 let currentFeaturedPhoto = '{{ featured_photo if featured_photo else "" }}';
+window.initialDatePayload = {{ initial_date_payload | tojson }} || null;
 
 // 当前客户端ID（用于AI生成日志）
 window.currentClientId = '{{ client_id or "" }}';
@@ -2161,7 +2162,7 @@ function changeDate(days) {
 
 // 万年历逻辑
 if (typeof window.currentCalendarDate === 'undefined') {
-    window.currentCalendarDate = new Date();
+    window.currentCalendarDate = new Date('{{ today }}T12:00:00');
 }
 if (typeof window.calendarWeekdays === 'undefined') {
     window.calendarWeekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -2329,30 +2330,134 @@ function updateNavButtons() {
 }
 
 // 加载日期数据 - 完整更新页面内容
-function loadDateData(dateStr) {
+function loadDateData(dateStr, options) {
+    options = options || {};
+
     // 清除之前的轮播
     clearNewsRotation();
     
     // 显示加载状态
-    document.body.style.cursor = 'wait';
-    
-    fetch(`/api/date/${dateStr}`)
+    if (!options.silent) {
+        document.body.style.cursor = 'wait';
+    }
+
+    const requestId = (window.activeDateLoadRequestId || 0) + 1;
+    window.activeDateLoadRequestId = requestId;
+
+    if (options.skipFast) {
+        return fetch(`/api/date/${dateStr}?skip_messages=1`)
+            .then(r => r.json())
+            .then(data => {
+                if (requestId !== window.activeDateLoadRequestId) {
+                    return;
+                }
+                if (data.success) {
+                    updatePageWithDateData(data, dateStr);
+                } else {
+                    console.error('补充远程数据失败:', data.message);
+                }
+            })
+            .catch(function(err) {
+                if (requestId !== window.activeDateLoadRequestId) {
+                    return;
+                }
+                console.error('补充远程数据失败:', err);
+            })
+            .finally(function() {
+                if (!options.silent && requestId === window.activeDateLoadRequestId) {
+                    document.body.style.cursor = 'default';
+                }
+            });
+    }
+
+    const fastLoad = fetch(`/api/date/${dateStr}?fast=1`)
         .then(r => r.json())
         .then(data => {
-            if (data.success) {
-                updatePageWithDateData(data, dateStr);
-            } else {
-                console.error('API返回错误:', data.message);
-                location.reload();
+            if (requestId !== window.activeDateLoadRequestId) {
+                return false;
             }
+            if (!data.success) {
+                throw new Error(data.message || '快速加载失败');
+            }
+            updatePageWithDateData(data, dateStr);
+            return true;
         })
         .catch(function(err) {
-            console.error('加载数据失败:', err);
-            location.reload();
+            if (requestId !== window.activeDateLoadRequestId) {
+                return false;
+            }
+            console.error('加载快速数据失败:', err);
+            return true;
         })
-        .then(function() {
-            document.body.style.cursor = 'default';
+        .finally(function() {
+            if (!options.silent && requestId === window.activeDateLoadRequestId) {
+                document.body.style.cursor = 'default';
+            }
         });
+
+    return fastLoad.then(function(shouldLoadRemote) {
+        if (!shouldLoadRemote || requestId !== window.activeDateLoadRequestId) {
+            return;
+        }
+
+        return fetch(`/api/date/${dateStr}?skip_messages=1`)
+            .then(r => r.json())
+            .then(data => {
+                if (requestId !== window.activeDateLoadRequestId) {
+                    return;
+                }
+                if (data.success) {
+                    updatePageWithDateData(data, dateStr);
+                } else {
+                    console.error('补充远程数据失败:', data.message);
+                }
+            })
+            .catch(function(err) {
+                if (requestId !== window.activeDateLoadRequestId) {
+                    return;
+                }
+                console.error('补充远程数据失败:', err);
+            });
+    });
+}
+
+function primeInitialDateState() {
+    const initialData = window.initialDatePayload;
+    if (!initialData || !initialData.success) {
+        return;
+    }
+
+    window.cachedPhotos = Array.isArray(initialData.photos) ? initialData.photos : [];
+    window.currentPhotos = window.cachedPhotos.slice();
+
+    if (!currentFeaturedPhoto && window.cachedPhotos.length > 0) {
+        currentFeaturedPhoto = window.cachedPhotos[0].filename || '';
+    }
+
+    scheduleCommentsLoad(formatDate(window.currentCalendarDate));
+}
+
+function scheduleInitialDateRefresh() {
+    if (window._initialDateRefreshScheduled) {
+        return;
+    }
+    window._initialDateRefreshScheduled = true;
+
+    const initialDate = formatDate(window.currentCalendarDate);
+    const triggerRefresh = function() {
+        if (formatDate(window.currentCalendarDate) !== initialDate) {
+            return;
+        }
+        loadDateData(initialDate, { skipFast: true, silent: true });
+    };
+
+    if (document.readyState === 'complete') {
+        window.setTimeout(triggerRefresh, 5000);
+    } else {
+        window.addEventListener('load', function() {
+            window.setTimeout(triggerRefresh, 5000);
+        }, { once: true });
+    }
 }
 
 // 使用返回的数据更新页面
@@ -2421,10 +2526,13 @@ function updatePageWithDateData(data, dateStr) {
         photoCountEl.textContent = `${data.photos.length} 个片段记录这天`;
     }
 
-    refreshStoryGenerationState(dateStr, data.story);
+    if (!data.deferred_remote && hasPendingStoryJob(dateStr)) {
+        refreshStoryGenerationState(dateStr, data.story);
+    }
     
     // 9. 加载留言 - 使用API返回的数据（如果有），否则单独请求
     if (data.messages !== undefined) {
+        clearScheduledCommentsLoad();
         // 使用API返回的留言数据
         const commentsList = document.getElementById('commentsList');
         if (commentsList) {
@@ -2453,9 +2561,54 @@ function updatePageWithDateData(data, dateStr) {
             }
         }
     } else {
-        // 首屏摘要未携带留言时，再单独补一次留言请求
-        loadMessages(dateStr);
+        // 留言区在首屏下方，滚动接近时再加载
+        scheduleCommentsLoad(dateStr);
     }
+}
+
+let commentsLoadObserver = null;
+let commentsLoadTimer = null;
+let pendingCommentsDate = '';
+
+function clearScheduledCommentsLoad() {
+    if (commentsLoadObserver) {
+        commentsLoadObserver.disconnect();
+        commentsLoadObserver = null;
+    }
+    if (commentsLoadTimer) {
+        clearTimeout(commentsLoadTimer);
+        commentsLoadTimer = null;
+    }
+    pendingCommentsDate = '';
+}
+
+function scheduleCommentsLoad(dateStr) {
+    const commentsList = document.getElementById('commentsList');
+    if (!commentsList) return;
+
+    clearScheduledCommentsLoad();
+    pendingCommentsDate = dateStr;
+
+    const triggerLoad = function() {
+        if (pendingCommentsDate !== dateStr) return;
+        pendingCommentsDate = '';
+        loadMessages(dateStr);
+    };
+
+    if ('IntersectionObserver' in window) {
+        commentsLoadObserver = new IntersectionObserver(function(entries) {
+            if (entries.some(function(entry) { return entry.isIntersecting; })) {
+                clearScheduledCommentsLoad();
+                triggerLoad();
+            }
+        }, { rootMargin: '320px 0px' });
+        commentsLoadObserver.observe(commentsList);
+    }
+
+    commentsLoadTimer = setTimeout(function() {
+        clearScheduledCommentsLoad();
+        triggerLoad();
+    }, 12000);
 }
 
 // 加载留言 - 云朵气泡式
@@ -2466,6 +2619,7 @@ function loadMessages(dateStr) {
     fetch(`/api/messages/${dateStr}`)
         .then(r => r.json())
         .then(data => {
+            if (dateStr !== formatDate(window.currentCalendarDate)) return;
             if (data.success && data.messages && data.messages.length > 0) {
                 commentsList.innerHTML = data.messages.map((message, index) => `
                     <div class="comment-bubble ${index % 2 === 0 ? '' : 'own'}">
@@ -2691,7 +2845,6 @@ function bootstrapStoryGenerationState() {
     if (hasPendingStoryJob(dateStr)) {
         setStoryButtonsBusy(dateStr, '后台生成中...');
     }
-    refreshStoryGenerationState(dateStr, null);
 }
 
 function generateDailyStory(dateStr, regenerate = false, triggerEl = null) {
@@ -2940,12 +3093,12 @@ function updatePhotoGallery(photos, dateStr) {
         galleryGrid.innerHTML = photos.map(photo => `
             <div class="gallery-item-uni ${photo.is_video ? 'is-video' : ''}" data-photo-id="${photo.filename}" title="${photo.path || photo.filename}" onclick="${photo.is_video ? `playVideo('${photo.filename}')` : `selectAsFeatured('${photo.filename}')`}">
                 ${photo.is_video ? `
-                    <img src="/video/thumb/${photo.filename}" alt="视频" onerror="this.src='/api/default-video-thumb'">
+                    <img src="/video/thumb/${photo.filename}" alt="视频" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='/api/default-video-thumb'">
                     <div class="video-play-icon">
                         <i class="fas fa-play-circle"></i>
                     </div>
                 ` : `
-                    <img src="/photo/thumb/${photo.filename}" alt="${photo.caption || ''}" onerror="this.src='/photo/${photo.filename}'">
+                    <img src="/photo/thumb/${photo.filename}" alt="${photo.caption || ''}" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='/photo/${photo.filename}'">
                 `}
                 <!-- 标签显示 - 底部中央 -->
                 ${photo.tag && photo.tag.tag ? `
@@ -3061,9 +3214,21 @@ function updateFeaturedPhoto(story, photos, featuredPhoto, featuredPhotoHash) {
         console.log('  - featuredWrapper exists:', !!featuredWrapper);
         
         if (featuredWrapper) {
-            const imgUrl = featuredPhotoHash ? 
-                `/photo/hash/${featuredPhotoHash}` :
-                `/photo/${featuredPhoto}`;
+            let matchedPhoto = null;
+            if (photos && photos.length > 0) {
+                matchedPhoto = photos.find(function(photo) {
+                    if (!photo || photo.is_video) return false;
+                    if (featuredPhoto && photo.filename === featuredPhoto) return true;
+                    if (featuredPhotoHash && photo.hash === featuredPhotoHash) return true;
+                    return false;
+                }) || null;
+            }
+
+            const imgUrl = matchedPhoto && matchedPhoto.filename
+                ? `/photo/album/${encodeURIComponent(matchedPhoto.filename)}`
+                : (featuredPhoto
+                    ? `/photo/album/${encodeURIComponent(featuredPhoto)}`
+                    : `/photo/hash/${featuredPhotoHash}`);
             
             console.log('[FeaturedPhoto] Image URL:', imgUrl);
             
@@ -3123,13 +3288,10 @@ function updateFeaturedPhoto(story, photos, featuredPhoto, featuredPhotoHash) {
     }
     
     if (featuredWrapper && displayPhoto) {
-        const photoHash = displayPhoto.hash;
         if (isVideo) {
             featuredWrapper.innerHTML = `<img src="/video/thumb/${displayPhoto.filename}" alt="视频缩略图" id="featuredPhoto" style="image-orientation:from-image;" onerror="this.src='/api/default-video-thumb'">`;
-        } else if (photoHash) {
-            featuredWrapper.innerHTML = `<img src="/photo/hash/${photoHash}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">`;
         } else {
-            featuredWrapper.innerHTML = `<img src="/photo/${displayPhoto.filename}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">`;
+            featuredWrapper.innerHTML = `<img src="/photo/album/${encodeURIComponent(displayPhoto.filename)}" alt="今日精选" id="featuredPhoto" style="image-orientation:from-image;">`;
         }
         showPhotoFrame();
     }
@@ -3141,10 +3303,12 @@ function fallbackToFirstPhoto(imgElement) {
     const photos = window.cachedPhotos || [];
     if (photos.length > 0) {
         const firstPhoto = photos[0];
-        if (firstPhoto.hash) {
+        if (firstPhoto && firstPhoto.is_video && firstPhoto.filename) {
+            imgElement.src = `/video/thumb/${encodeURIComponent(firstPhoto.filename)}`;
+        } else if (firstPhoto && firstPhoto.filename) {
+            imgElement.src = `/photo/album/${encodeURIComponent(firstPhoto.filename)}`;
+        } else if (firstPhoto.hash) {
             imgElement.src = `/photo/hash/${firstPhoto.hash}`;
-        } else {
-            imgElement.src = `/photo/${firstPhoto.filename}`;
         }
     } else {
         imgElement.style.display = 'none';
@@ -3182,7 +3346,7 @@ function autoSelectFeatured() {
             // 更新照片框
             const featuredWrapper = document.getElementById('featuredPhotoWrapper');
             if (featuredWrapper) {
-                featuredWrapper.innerHTML = `<img src="/photo/${data.photo}" alt="今日精选" id="featuredPhoto">`;
+                featuredWrapper.innerHTML = `<img src="/photo/album/${encodeURIComponent(data.photo)}" alt="今日精选" id="featuredPhoto">`;
             }
             currentFeaturedPhoto = data.photo;
             
@@ -3335,10 +3499,6 @@ function initCalendar() {
         }
     }
     updateCalendarDisplay();
-    
-    // 初始加载当前日期的留言
-    const dateStr = formatDate(window.currentCalendarDate);
-    loadMessages(dateStr);
 }
 
 // 选择代表照片
@@ -3351,12 +3511,10 @@ function selectAsFeatured(filename) {
     if (featuredWrapper && featuredPhoto) {
         // 通过哈希查找照片
         const photoEntry = window.cachedPhotos.find(p => p.filename === filename);
-        const fileHash = photoEntry ? photoEntry.hash : null;
-        
-        if (fileHash) {
-            featuredPhoto.src = `/photo/hash/${fileHash}`;
+        if (photoEntry && photoEntry.is_video) {
+            featuredPhoto.src = `/video/thumb/${encodeURIComponent(filename)}`;
         } else {
-            featuredPhoto.src = `/photo/${filename}`;
+            featuredPhoto.src = `/photo/album/${encodeURIComponent(filename)}`;
         }
         currentFeaturedPhoto = filename;
         
@@ -3866,7 +4024,10 @@ function viewPhotoDetail(filename) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                document.getElementById('detailPhoto').src = data.url;
+                const detailPhoto = document.getElementById('detailPhoto');
+                if (detailPhoto) {
+                    loadImagePreferCompressed(detailPhoto, filename, null);
+                }
                 document.getElementById('detailCaption').textContent = data.caption || '无标注';
                 document.getElementById('detailDate').textContent = data.date;
                 new bootstrap.Modal(document.getElementById('photoDetailModal')).show();
@@ -4221,6 +4382,72 @@ function openFullscreen(filename, isVideo) {
     setupFullscreenTouchGestures(overlay);
 }
 
+function getSafePhotoFilename(filename) {
+    return String(filename || '').split('/').pop();
+}
+
+function getCompressedImageUrl(filename) {
+    return '/image/compressed/' + encodeURIComponent(getSafePhotoFilename(filename));
+}
+
+function getOriginalImageUrl(filename) {
+    return '/photo/' + encodeURIComponent(getSafePhotoFilename(filename));
+}
+
+function getThumbImageUrl(filename) {
+    return '/photo/thumb/' + encodeURIComponent(getSafePhotoFilename(filename));
+}
+
+function loadImagePreferCompressed(img, filename, loadingText) {
+    const safeFilename = getSafePhotoFilename(filename);
+    if (!safeFilename || !img) {
+        if (loadingText) {
+            loadingText.style.display = 'block';
+            loadingText.textContent = '图片加载失败';
+        }
+        return;
+    }
+
+    let stage = 'compressed';
+
+    if (loadingText) {
+        loadingText.style.display = 'block';
+        loadingText.textContent = '正在加载图片...';
+    }
+
+    img.onload = function() {
+        if (loadingText) {
+            loadingText.style.display = 'none';
+        }
+    };
+
+    img.onerror = function() {
+        if (stage === 'compressed') {
+            stage = 'original';
+            if (loadingText) {
+                loadingText.textContent = '正在加载原图...';
+            }
+            img.src = getOriginalImageUrl(safeFilename);
+            return;
+        }
+
+        if (stage === 'original') {
+            stage = 'thumb';
+            if (loadingText) {
+                loadingText.textContent = '正在加载缩略图...';
+            }
+            img.src = getThumbImageUrl(safeFilename);
+            return;
+        }
+
+        if (loadingText) {
+            loadingText.textContent = '图片加载失败';
+        }
+    };
+
+    img.src = getCompressedImageUrl(safeFilename);
+}
+
 function showFullscreenPhoto() {
     if (fullscreenPhotoList.length === 0) return;
     
@@ -4235,10 +4462,6 @@ function showFullscreenPhoto() {
     loadingText.style.display = 'block';
     loadingText.textContent = '正在加载图片...';
     
-    // 设置图片源
-    const imageUrl = photo.url || `/photo/${photo.filename}`;
-    img.src = imageUrl;
-    
     // 更新计数器
     counter.textContent = `${fullscreenPhotoIndex + 1} / ${fullscreenPhotoList.length}`;
     
@@ -4246,19 +4469,7 @@ function showFullscreenPhoto() {
     prevBtn.style.visibility = fullscreenPhotoIndex === 0 ? 'hidden' : 'visible';
     nextBtn.style.visibility = fullscreenPhotoIndex === fullscreenPhotoList.length - 1 ? 'hidden' : 'visible';
     
-    // 图片加载完成
-    img.onload = function() {
-        loadingText.style.display = 'none';
-    };
-    
-    // 图片加载失败，尝试压缩版
-    img.onerror = function() {
-        if (img.src.indexOf('/photo/thumb/') === -1) {
-            img.src = '/photo/thumb/' + photo.filename;
-        } else {
-            loadingText.textContent = '图片加载失败';
-        }
-    };
+    loadImagePreferCompressed(img, photo.filename, loadingText);
 }
 
 // 全屏照片查看器的触摸手势支持
@@ -4441,20 +4652,49 @@ function doDeleteMessage(messageId) {
 
 // 初始化
 document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(initCalendar, 100);
     createGlobalShareModal();
-    loadProfileEntry();
-    setTimeout(bootstrapStoryGenerationState, 800);
-    setTimeout(bootstrapStoryGenerationState, 2500);
-
-    // 首屏先渲染本地内容，再异步补齐日志/天气/留言/精选照片。
-    setTimeout(function() {
-        loadDateData(formatDate(window.currentCalendarDate));
-    }, 50);
+    bootstrapStoryGenerationState();
+    primeInitialDateState();
+    scheduleProfileEntryLoad();
+    scheduleInitialDateRefresh();
 });
 
+let profileEntryRequested = false;
+let profileEntryObserver = null;
+let profileEntryTimer = null;
+
+function scheduleProfileEntryLoad() {
+    if (profileEntryRequested) return;
+
+    const profileCard = document.getElementById('profileEntryCard');
+    const triggerLoad = function() {
+        if (profileEntryRequested) return;
+        profileEntryRequested = true;
+        if (profileEntryObserver) {
+            profileEntryObserver.disconnect();
+            profileEntryObserver = null;
+        }
+        if (profileEntryTimer) {
+            clearTimeout(profileEntryTimer);
+            profileEntryTimer = null;
+        }
+        loadProfileEntry();
+    };
+
+    if (profileCard && 'IntersectionObserver' in window) {
+        profileEntryObserver = new IntersectionObserver(function(entries) {
+            if (entries.some(function(entry) { return entry.isIntersecting; })) {
+                triggerLoad();
+            }
+        }, { rootMargin: '280px 0px' });
+        profileEntryObserver.observe(profileCard);
+    }
+
+    profileEntryTimer = setTimeout(triggerLoad, 12000);
+}
+
 function loadProfileEntry() {
-    fetch('/api/ai/profile')
+    return fetch('/api/ai/profile')
         .then(r => r.json())
         .then(function(data) {
             if (data.success && data.profile) {

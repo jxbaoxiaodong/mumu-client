@@ -255,8 +255,18 @@ function installUpdate() {
         });
 }
 
-// 页面加载完成后检查
-setTimeout(checkNotificationsAndUpdates, 2000);
+// 页面加载完成后再检查，避免和首页首屏请求抢网络
+window.addEventListener('load', function() {
+    setTimeout(function() {
+        if (typeof window.scheduleNonCriticalTask === 'function') {
+            window.scheduleNonCriticalTask(checkNotificationsAndUpdates, 3000);
+        } else if ('requestIdleCallback' in window) {
+            requestIdleCallback(checkNotificationsAndUpdates, { timeout: 3000 });
+        } else {
+            setTimeout(checkNotificationsAndUpdates, 1000);
+        }
+    }, 15000);
+}, { once: true });
 
 // 每5分钟检查一次通知
 setInterval(checkNotificationsAndUpdates, 5 * 60 * 1000);

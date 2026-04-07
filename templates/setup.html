@@ -370,36 +370,48 @@ function findProvinceByCity(cityName) {
 
 // 初始化省市区选择器
 document.addEventListener('DOMContentLoaded', function() {
-    // 计算默认值
-    let defaultProvince = '';
-    let defaultCity = '';
-    
-    if (savedCity) {
-        // 尝试查找省份
-        const province = findProvinceByCity(savedCity);
-        if (province) {
-            defaultProvince = province;
-            defaultCity = savedCity;
-        } else {
-            // 如果没找到，可能是直辖市只保存了省份名（如"北京"）
-            // 尝试匹配省份
-            if (CHINA_REGIONS[savedCity + '市']) {
-                defaultProvince = savedCity + '市';
-                defaultCity = savedCity + '市';
+    const initializeRegionSelector = function() {
+        // 计算默认值
+        let defaultProvince = '';
+        let defaultCity = '';
+        
+        if (savedCity) {
+            // 尝试查找省份
+            const province = findProvinceByCity(savedCity);
+            if (province) {
+                defaultProvince = province;
+                defaultCity = savedCity;
+            } else {
+                // 如果没找到，可能是直辖市只保存了省份名（如"北京"）
+                // 尝试匹配省份
+                if (CHINA_REGIONS[savedCity + '市']) {
+                    defaultProvince = savedCity + '市';
+                    defaultCity = savedCity + '市';
+                }
             }
         }
+        
+        initRegionSelector({
+            provinceSelect: 'province',
+            citySelect: 'city',
+            defaultProvince: defaultProvince,
+            defaultCity: defaultCity,
+            onChange: function(data) {
+                // 选择变化时的回调
+                console.log('Selected:', data);
+            }
+        });
+    };
+
+    if (typeof window.ensureChinaCitiesData === 'function') {
+        window.ensureChinaCitiesData()
+            .then(initializeRegionSelector)
+            .catch(function(error) {
+                console.error('加载城市数据失败:', error);
+            });
+    } else {
+        initializeRegionSelector();
     }
-    
-    initRegionSelector({
-        provinceSelect: 'province',
-        citySelect: 'city',
-        defaultProvince: defaultProvince,
-        defaultCity: defaultCity,
-        onChange: function(data) {
-            // 选择变化时的回调
-            console.log('Selected:', data);
-        }
-    });
     
     // 为第一个文件夹输入框添加 Enter 键监听
     const firstFolderInput = document.querySelector('#folderList .media-folder');

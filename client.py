@@ -22,6 +22,7 @@ import atexit
 import re
 import signal
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 import threading
 import time
@@ -124,8 +125,21 @@ DEFAULT_STORY_IMAGE_MODEL = "qwen-image-2.0-pro"
 DEFAULT_STORY_IMAGE_SIZE = "1024*1024"
 DEFAULT_AVATAR_URL = "/api/default-avatar"
 DEFAULT_VIDEO_THUMB_URL = "/api/default-video-thumb"
+INLINE_AVATAR_PLACEHOLDER = (
+    "data:image/svg+xml;charset=UTF-8,"
+    "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E"
+    "%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E"
+    "%3Cstop offset='0%25' stop-color='%23f8f0e1'/%3E"
+    "%3Cstop offset='100%25' stop-color='%23d9e7db'/%3E"
+    "%3C/linearGradient%3E%3C/defs%3E"
+    "%3Crect width='120' height='120' rx='60' fill='url(%23g)'/%3E"
+    "%3Ccircle cx='60' cy='44' r='22' fill='%23ffffff' fill-opacity='0.9'/%3E"
+    "%3Cpath d='M30 95c6-18 18-27 30-27s24 9 30 27' fill='%23ffffff' fill-opacity='0.9'/%3E"
+    "%3C/svg%3E"
+)
 
 USER_CONFIG_FILE = USER_DATA_DIR / "config.json"
+INLINE_ASSET_CACHE = {}
 
 
 def normalize_avatar_url(value: str) -> str:
@@ -150,6 +164,75 @@ def normalize_avatar_url(value: str) -> str:
             return f"/api/avatar/{candidates[0].name}"
 
     return DEFAULT_AVATAR_URL
+
+
+def get_inline_asset_text(relative_path: str) -> str:
+    """读取并缓存适合内联到模板的静态资源。"""
+    asset_path = Path(__file__).parent / relative_path
+    if not asset_path.exists():
+        return ""
+
+    try:
+        mtime_ns = asset_path.stat().st_mtime_ns
+    except OSError:
+        return ""
+
+    cache_key = str(asset_path)
+    cached = INLINE_ASSET_CACHE.get(cache_key)
+    if cached and cached.get("mtime_ns") == mtime_ns:
+        return cached.get("content", "")
+
+    try:
+        content = asset_path.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"读取内联资源失败 {asset_path}: {e}")
+        return ""
+
+    INLINE_ASSET_CACHE[cache_key] = {"mtime_ns": mtime_ns, "content": content}
+    return content
+
+
+def normalize_news_titles(raw_news) -> list[str]:
+    """把数据库或接口里的新闻字段统一转成标题列表。"""
+    if not raw_news:
+        return []
+
+    if isinstance(raw_news, list):
+        items = raw_news
+    elif isinstance(raw_news, dict):
+        items = [raw_news]
+    elif isinstance(raw_news, str):
+        stripped = raw_news.strip()
+        if not stripped:
+            return []
+        try:
+            decoded = json.loads(stripped)
+            if isinstance(decoded, list):
+                items = decoded
+            elif isinstance(decoded, dict):
+                items = [decoded]
+            else:
+                items = [str(decoded)]
+        except Exception:
+            items = [stripped]
+    else:
+        items = [raw_news]
+
+    titles = []
+    for item in items:
+        if isinstance(item, dict):
+            title = str(
+                item.get("title")
+                or item.get("headline")
+                or item.get("content")
+                or item.get("text")
+                or ""
+            ).strip()
+        else:
+            title = str(item or "").strip()
+        if title:
+            titles.append(title)
+    return titles[:3]
 
 
 def load_user_config():
@@ -194,7 +277,7 @@ def load_user_config():
 USER_CONFIG = load_user_config()
 
 TEMPLATE_REMOTE_TIMEOUT = 2
-DATE_API_REMOTE_TIMEOUT = 8
+DATE_API_REMOTE_TIMEOUT = 4
 TEMPLATE_QUOTA_CACHE_TTL = 60
 TEMPLATE_QUOTA_CACHE = {
     "expires_at": 0.0,
@@ -2061,6 +2144,7 @@ class PublicClient:
 
             config_content = f"""tunnel: {tunnel_id}
 credentials-file: {creds_file}
+protocol: quic
 
 ingress:
   - hostname: {self.subdomain}
@@ -2100,6 +2184,8 @@ ingress:
                 "tunnel",
                 "--config",
                 str(config_file),
+                "--protocol",
+                "quic",
                 "run",
             ]
 
@@ -3099,6 +3185,8 @@ def index():
     weekday = weekdays[display_datetime.weekday()]
     today = display_date
 
+    client_id = public_client.client_id
+
     # 获取农历信息
     lunar_date = None
     step_started = time.perf_counter()
@@ -3161,11 +3249,66 @@ def index():
             default_photo = today_photos[0].get("filename")
             default_is_video = today_photos[0].get("is_video", False)
 
-    # 首屏不再同步依赖公网接口，避免 tunnel 抖动或超时阻塞 HTML 返回。
+    # 首屏优先使用本地已缓存内容，避免依赖公网接口。
     featured_photo = None
     featured_photo_hash = None
     weather = None
     daily_story = None
+    today_log = None
+    news_titles = []
+    news_item_display = None
+    step_started = time.perf_counter()
+    try:
+        from database import get_featured_photo, get_log_dict
+
+        if client_id:
+            cached_log = get_log_dict(client_id, display_date)
+            if cached_log and cached_log.get("content"):
+                today_log = cached_log
+            if cached_log and cached_log.get("weather"):
+                weather = cached_log.get("weather")
+            if cached_log:
+                cached_calendar = cached_log.get("calendar") or {}
+                if cached_calendar.get("weekday"):
+                    weekday = cached_calendar.get("weekday")
+                if cached_calendar.get("lunar"):
+                    lunar_date = cached_calendar.get("lunar")
+                news_titles = normalize_news_titles(cached_log.get("news"))
+                if news_titles:
+                    news_item_display = news_titles[0]
+
+            local_featured = get_featured_photo(client_id, display_date)
+            if local_featured:
+                featured_photo = local_featured.get("filename") or None
+                featured_photo_hash = local_featured.get("file_hash") or None
+
+            daily_story = load_daily_story(display_date, client_id)
+    except Exception as e:
+        logger.info(f"[PERF] 首页读取本地缓存失败 {display_date}: {e}")
+    perf_parts["local_cache_ms"] = round(
+        (time.perf_counter() - step_started) * 1000, 1
+    )
+
+    initial_date_payload = {
+        "success": True,
+        "date": display_date,
+        "is_today": display_date == datetime.now().strftime("%Y-%m-%d"),
+        "photos": today_photos,
+        "has_content": bool(today_photos or today_log or daily_story),
+        "featured_photo": featured_photo,
+        "featured_photo_hash": featured_photo_hash,
+        "weather": weather,
+        "lunar": lunar_date,
+        "weekday": weekday,
+        "story": daily_story,
+        "log": {
+            "content": today_log.get("content", ""),
+            "generated_at": today_log.get("generated_at"),
+        }
+        if today_log and today_log.get("content")
+        else None,
+        "news": news_titles,
+    }
 
     html = render_template(
         "index.html",
@@ -3177,6 +3320,8 @@ def index():
         today=today,
         weekday=weekday,
         lunar_date=lunar_date,
+        today_log=today_log,
+        news_item_display=news_item_display,
         local_url=local_url,
         client_version=getattr(public_client, "client_version", "2.0.0"),
         today_messages=today_messages,
@@ -3184,6 +3329,7 @@ def index():
         avatar_url=getattr(
             public_client, "avatar_url", DEFAULT_AVATAR_URL
         ),
+        initial_avatar_url=INLINE_AVATAR_PLACEHOLDER,
         user_city=getattr(public_client, "user_city", ""),
         local_mode=LOCAL_MODE,
         client_disabled=CLIENT_DISABLED,
@@ -3194,6 +3340,10 @@ def index():
         daily_story=daily_story,
         index_after_date=getattr(public_client, "index_after_date", ""),
         weather=weather,
+        initial_date_payload=initial_date_payload,
+        inline_style_css=get_inline_asset_text("static/css/style.css"),
+        inline_main_js=get_inline_asset_text("static/js/main.js"),
+        defer_fontawesome=True,
         comic_style_presets=get_comic_style_presets(),
     )
 
@@ -3911,7 +4061,7 @@ def get_photo(filename):
             folder_path = Path(folder)
             for file_path in folder_path.rglob(filename):
                 if file_path.is_file():
-                    return send_file(file_path)
+                    return send_file(file_path, max_age=3600)
 
         return jsonify({"success": False, "message": "照片不存在"}), 404
 
@@ -3951,9 +4101,9 @@ def get_photo_by_hash(file_hash):
                     Path(entry["path"]), entry["filename"]
                 )
                 if compressed_path and compressed_path.exists():
-                    return send_file(compressed_path)
+                    return send_file(compressed_path, max_age=86400)
 
-        return send_file(Path(entry["path"]))
+        return send_file(Path(entry["path"]), max_age=3600)
 
     except Exception as e:
         print(f"[ERROR] 通过哈希获取照片失败: {e}")
@@ -4186,14 +4336,14 @@ def get_photo_thumb(filename):
             size=PHOTO_THUMB_SIZE,
             cache_tag="thumb",
         )
-        return send_file(thumb_path)
+        return send_file(thumb_path, max_age=86400)
 
     except Exception as e:
         print(f"[ERROR] 获取缩略图失败: {e}")
         if photo_path and photo_path.exists():
             try:
                 print(f"[INFO] 缩略图失败，回退原图: {photo_path}")
-                return send_file(photo_path)
+                return send_file(photo_path, max_age=3600)
             except Exception as fallback_error:
                 print(f"[ERROR] 回退原图也失败: {fallback_error}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -4217,14 +4367,14 @@ def get_photo_album_image(filename):
             size=ALBUM_IMAGE_SIZE,
             cache_tag="album",
         )
-        return send_file(album_path)
+        return send_file(album_path, max_age=86400)
 
     except Exception as e:
         print(f"[ERROR] 获取时光相册图片失败: {e}")
         if photo_path and photo_path.exists():
             try:
                 print(f"[INFO] 相册图失败，回退原图: {photo_path}")
-                return send_file(photo_path)
+                return send_file(photo_path, max_age=3600)
             except Exception as fallback_error:
                 print(f"[ERROR] 回退原图也失败: {fallback_error}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -4253,11 +4403,11 @@ def get_video_thumb(filename):
             return jsonify({"success": False, "message": "视频文件不存在"}), 404
 
         thumb_path = get_or_create_video_thumbnail(video_path)
-        return send_file(thumb_path)
+        return send_file(thumb_path, max_age=86400)
 
     except Exception as e:
         print(f"[ERROR] 获取视频缩略图失败: {e}")
-        return send_file(ensure_default_video_thumb())
+        return send_file(ensure_default_video_thumb(), max_age=86400)
 
 
 @app.route("/video/<filename>")
@@ -4643,9 +4793,9 @@ def get_avatar(filename):
         avatar_path = avatar_dir / filename
 
         if avatar_path.exists():
-            return send_file(avatar_path, mimetype="image/png")
+            return send_file(avatar_path, mimetype="image/png", max_age=86400)
         else:
-            return send_file(ensure_default_avatar(), mimetype="image/png")
+            return send_file(ensure_default_avatar(), mimetype="image/png", max_age=86400)
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -4653,12 +4803,12 @@ def get_avatar(filename):
 
 @app.route(DEFAULT_AVATAR_URL)
 def get_default_avatar():
-    return send_file(ensure_default_avatar(), mimetype="image/png")
+    return send_file(ensure_default_avatar(), mimetype="image/png", max_age=86400)
 
 
 @app.route(DEFAULT_VIDEO_THUMB_URL)
 def get_default_video_thumb():
-    return send_file(ensure_default_video_thumb(), mimetype="image/jpeg")
+    return send_file(ensure_default_video_thumb(), mimetype="image/jpeg", max_age=86400)
 
 
 @app.route("/api/photos/by_date/<date>")
@@ -4857,13 +5007,18 @@ def get_date_details(date):
     try:
         from datetime import datetime
 
+        request_started_at = time.perf_counter()
+        fast_mode = request.args.get("fast", "").strip().lower() in {"1", "true", "yes"}
+        skip_messages = request.args.get("skip_messages", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+
         is_today = date == datetime.now().strftime("%Y-%m-%d")
 
-        # 初始化精选照片变量
-        featured_photo = None
-        featured_photo_hash = None
-
         # 获取照片
+        photo_scan_started_at = time.perf_counter()
         media_folders = getattr(public_client, "media_folders", [])
         photos = []
         if media_folders:
@@ -4881,92 +5036,194 @@ def get_date_details(date):
                 photo_info["tag"] = tag_info
                 photo_info["caption"] = tag_info.get("tag", "") if tag_info else ""
                 photos.append(photo_info)
+        photo_scan_elapsed_ms = int((time.perf_counter() - photo_scan_started_at) * 1000)
 
-        # 获取精选照片信息（从服务端获取）
-        try:
-            featured_info = get_featured_photo_info(
-                date,
-                public_client.client_id,
-                timeout=DATE_API_REMOTE_TIMEOUT,
-            )
-            print(
-                f"[DEBUG] 获取精选照片: date={date}, client_id={public_client.client_id}, info={featured_info}"
-            )
-            if featured_info:
-                featured_photo = featured_info.get("filename") or ""
-                featured_photo_hash = featured_info.get("file_hash") or ""
-        except Exception as e:
-            print(f"[WARN] 获取精选照片失败: {e}")
-
-        # 获取日志和相关数据（从服务端获取）
         response_data = {
             "date": date,
             "is_today": is_today,
             "photos": photos,
             "has_content": len(photos) > 0,
-            "featured_photo": featured_photo,
-            "featured_photo_hash": featured_photo_hash,
+            "featured_photo": None,
+            "featured_photo_hash": None,
+            "story": None,
         }
+        user_city = getattr(public_client, "user_city", None) or "上海"
+        client_id = public_client.client_id
 
-        # 从服务端获取日志
         try:
-            user_city = getattr(public_client, "user_city", None) or "上海"
-            log_url = (
-                f"{public_client.server_url}/czrz/baby/log?city={user_city}&date={date}"
-            )
-            if public_client.client_id:
-                log_url += f"&client_id={public_client.client_id}"
+            from database import get_featured_photo, get_log_dict
 
-            log_resp = public_client.signed_request(
-                "GET",
-                log_url,
-                timeout=DATE_API_REMOTE_TIMEOUT,
-            )
-            if log_resp.status_code == 200:
-                resp_data = log_resp.json()
-                if resp_data.get("success"):
-                    # 日志内容
-                    if resp_data.get("log"):
-                        response_data["log"] = {
-                            "content": resp_data.get("log", ""),
-                            "generated_at": resp_data.get(
-                                "generated_at", datetime.now().isoformat()
-                            ),
-                        }
-                        response_data["has_content"] = True
+            cached_log = get_log_dict(client_id, date) if client_id else None
+            if cached_log:
+                if cached_log.get("content"):
+                    response_data["log"] = {
+                        "content": cached_log.get("content", ""),
+                        "generated_at": cached_log.get("generated_at")
+                        or datetime.now().isoformat(),
+                    }
+                    response_data["has_content"] = True
 
-                    # 天气、农历等信息（即使没有日志也返回）
-                    if resp_data.get("weather"):
-                        response_data["weather"] = resp_data.get("weather")
-                    if resp_data.get("lunar"):
-                        response_data["lunar"] = resp_data.get("lunar")
-                    if resp_data.get("weekday"):
-                        response_data["weekday"] = resp_data.get("weekday")
-                    if resp_data.get("news"):
-                        response_data["news"] = resp_data.get("news")
+                weather_payload = cached_log.get("weather")
+                if weather_payload:
+                    response_data["weather"] = weather_payload
+
+                calendar_payload = cached_log.get("calendar") or {}
+                if calendar_payload.get("lunar"):
+                    response_data["lunar"] = calendar_payload.get("lunar")
+                if calendar_payload.get("weekday"):
+                    response_data["weekday"] = calendar_payload.get("weekday")
+
+                cached_news = cached_log.get("news")
+                normalized_news = normalize_news_titles(cached_news)
+                if normalized_news:
+                    response_data["news"] = normalized_news
+
+            local_featured = get_featured_photo(client_id, date) if client_id else None
+            if local_featured:
+                response_data["featured_photo"] = (
+                    local_featured.get("filename") or None
+                )
+                response_data["featured_photo_hash"] = (
+                    local_featured.get("file_hash") or None
+                )
+
+            local_story = load_daily_story(date, client_id)
+            if local_story:
+                response_data["story"] = local_story
+                response_data["has_content"] = True
         except Exception as e:
-            print(f"[WARN] 从服务端获取日志失败: {e}")
+            logger.info(f"[PERF] 读取本地日志缓存失败 {date}: {e}")
 
-        # 从服务端获取留言
-        try:
-            if public_client.client_id:
-                messages_url = f"{public_client.server_url}/czrz/messages/{public_client.client_id}/{date}"
-                messages_resp = public_client.signed_request(
-                    "GET",
-                    messages_url,
+        if fast_mode:
+            response_data["deferred_remote"] = True
+            total_elapsed_ms = int((time.perf_counter() - request_started_at) * 1000)
+            logger.info(
+                "[PERF] /api/date/%s fast total=%sms photos=%sms photos_count=%s cached_log=%s",
+                date,
+                total_elapsed_ms,
+                photo_scan_elapsed_ms,
+                len(photos),
+                bool(response_data.get("log")),
+            )
+            return jsonify({"success": True, **response_data})
+
+        def fetch_featured_payload():
+            started_at = time.perf_counter()
+            payload = {"featured_photo": None, "featured_photo_hash": None}
+            try:
+                featured_info = get_featured_photo_info(
+                    date,
+                    client_id,
                     timeout=DATE_API_REMOTE_TIMEOUT,
                 )
-                if messages_resp.status_code == 200:
-                    messages_data = messages_resp.json()
-                    if messages_data.get("success"):
-                        response_data["messages"] = messages_data.get("messages", [])
-                        if response_data["messages"]:
-                            response_data["has_content"] = True
-        except Exception as e:
-            print(f"[WARN] 从服务端获取留言失败: {e}")
-            response_data["messages"] = []
+                print(
+                    f"[DEBUG] 获取精选照片: date={date}, client_id={client_id}, info={featured_info}"
+                )
+                if featured_info:
+                    payload["featured_photo"] = featured_info.get("filename") or ""
+                    payload["featured_photo_hash"] = (
+                        featured_info.get("file_hash") or ""
+                    )
+            except Exception as e:
+                print(f"[WARN] 获取精选照片失败: {e}")
+            payload["_elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
+            return payload
 
-        response_data["story"] = None
+        def fetch_log_payload():
+            started_at = time.perf_counter()
+            payload = {}
+            try:
+                log_url = (
+                    f"{public_client.server_url}/czrz/baby/log?city={user_city}&date={date}"
+                )
+                if client_id:
+                    log_url += f"&client_id={client_id}"
+
+                log_resp = public_client.signed_request(
+                    "GET",
+                    log_url,
+                    timeout=DATE_API_REMOTE_TIMEOUT,
+                )
+                if log_resp.status_code == 200:
+                    resp_data = log_resp.json()
+                    if resp_data.get("success"):
+                        if resp_data.get("log"):
+                            payload["log"] = {
+                                "content": resp_data.get("log", ""),
+                                "generated_at": resp_data.get(
+                                    "generated_at", datetime.now().isoformat()
+                                ),
+                            }
+
+                        if resp_data.get("weather"):
+                            payload["weather"] = resp_data.get("weather")
+                        if resp_data.get("lunar"):
+                            payload["lunar"] = resp_data.get("lunar")
+                        if resp_data.get("weekday"):
+                            payload["weekday"] = resp_data.get("weekday")
+                        if resp_data.get("news"):
+                            payload["news"] = resp_data.get("news")
+            except Exception as e:
+                print(f"[WARN] 从服务端获取日志失败: {e}")
+            payload["_elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
+            return payload
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            featured_future = executor.submit(fetch_featured_payload)
+            log_future = executor.submit(fetch_log_payload)
+            messages_future = None
+            if not skip_messages:
+                def fetch_messages_payload():
+                    started_at = time.perf_counter()
+                    payload = {"messages": []}
+                    try:
+                        if client_id:
+                            messages_url = (
+                                f"{public_client.server_url}/czrz/messages/{client_id}/{date}"
+                            )
+                            messages_resp = public_client.signed_request(
+                                "GET",
+                                messages_url,
+                                timeout=DATE_API_REMOTE_TIMEOUT,
+                            )
+                            if messages_resp.status_code == 200:
+                                messages_data = messages_resp.json()
+                                if messages_data.get("success"):
+                                    payload["messages"] = messages_data.get("messages", [])
+                    except Exception as e:
+                        print(f"[WARN] 从服务端获取留言失败: {e}")
+                    payload["_elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
+                    return payload
+
+                messages_future = executor.submit(fetch_messages_payload)
+
+            featured_payload = featured_future.result()
+            log_payload = log_future.result()
+            messages_payload = messages_future.result() if messages_future else {}
+
+        featured_elapsed_ms = featured_payload.pop("_elapsed_ms", 0)
+        log_elapsed_ms = log_payload.pop("_elapsed_ms", 0)
+        messages_elapsed_ms = messages_payload.pop("_elapsed_ms", 0)
+
+        response_data.update(featured_payload)
+        response_data.update(log_payload)
+        response_data.update(messages_payload)
+        if response_data.get("log") or response_data.get("messages"):
+            response_data["has_content"] = True
+
+        total_elapsed_ms = int((time.perf_counter() - request_started_at) * 1000)
+        logger.info(
+            "[PERF] /api/date/%s total=%sms photos=%sms featured=%sms log=%sms messages=%sms photos_count=%s messages_count=%s has_log=%s",
+            date,
+            total_elapsed_ms,
+            photo_scan_elapsed_ms,
+            featured_elapsed_ms,
+            log_elapsed_ms,
+            messages_elapsed_ms,
+            len(photos),
+            len(response_data.get("messages") or []),
+            bool(response_data.get("log")),
+        )
 
         return jsonify({"success": True, **response_data})
 
@@ -5301,23 +5558,6 @@ def api_mark_notification_read():
             return jsonify(response.json())
         else:
             return jsonify({"success": False, "message": "标记失败"})
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)})
-
-
-@app.route("/api/qrcode")
-def api_get_qrcode():
-    """获取二维码图片"""
-    try:
-        response = public_client.signed_request(
-            "GET", f"{public_client.server_url}/czrz/qrcode", timeout=30
-        )
-
-        if response.status_code == 200:
-            return jsonify(response.json())
-        else:
-            return jsonify({"success": False, "message": "获取失败"})
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)})
