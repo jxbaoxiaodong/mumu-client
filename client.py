@@ -41,7 +41,7 @@ from werkzeug.utils import secure_filename
 import requests
 import urllib3
 from functools import lru_cache, wraps
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlencode
 from auth_utils import verify_signature as verify_hmac_signature
 from card_protocol import normalize_cards
 from help_content import (
@@ -1689,6 +1689,24 @@ class PublicClient:
         self.start_cloudflare_tunnel(credentials)
         return True
 
+    def _tunnel_restart_stamp_file(self):
+        return self.data_dir / "tunnel_daily_restart.txt"
+
+    def _load_tunnel_restart_stamp(self) -> str:
+        try:
+            return self._tunnel_restart_stamp_file().read_text(encoding="utf-8").strip()
+        except Exception:
+            return ""
+
+    def _save_tunnel_restart_stamp(self, value: str) -> None:
+        try:
+            self._tunnel_restart_stamp_file().write_text(
+                str(value or "").strip(),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning(f"保存 Tunnel 重启标记失败: {e}")
+
     def connect_to_public_server(self, background_subdomain=False, auto_build_index=True):
         """强制连接到公网服务端"""
         print(f"🌐 强制连接到公网服务端: {self.server_url}")
@@ -1884,8 +1902,8 @@ class PublicClient:
                     print(f"✅ 注册成功!")
                     print(f"📱 客户端ID: {self.client_id}")
                     print(
-                        "💠 AI额度档位: "
-                        + ("扩展共享额度" if self.is_paid else "默认共享额度")
+                        "💠 AI服务状态: "
+                        + ("已开通" if self.is_paid else "未开通")
                     )
                     logger.info(
                         f"注册成功: client_id={self.client_id}, is_paid={self.is_paid}"
@@ -2142,9 +2160,11 @@ class PublicClient:
             with open(creds_file, "w", encoding="utf-8") as f:
                 json.dump(credentials, f, indent=2)
 
+            transport_protocol = "auto"
+
             config_content = f"""tunnel: {tunnel_id}
 credentials-file: {creds_file}
-protocol: quic
+protocol: {transport_protocol}
 
 ingress:
   - hostname: {self.subdomain}
@@ -2185,7 +2205,7 @@ ingress:
                 "--config",
                 str(config_file),
                 "--protocol",
-                "quic",
+                transport_protocol,
                 "run",
             ]
 
@@ -2456,10 +2476,10 @@ ingress:
                         self.is_paid = new_is_paid
                         self.save_config()
                         print(
-                            "💠 AI额度档位已更新: "
-                            + ("扩展共享额度" if new_is_paid else "默认共享额度")
+                            "💠 AI服务状态已更新: "
+                            + ("已开通" if new_is_paid else "未开通")
                         )
-                        logger.info(f"AI额度档位已更新: is_paid={new_is_paid}")
+                        logger.info(f"AI服务状态已更新: is_paid={new_is_paid}")
 
                     # 同步 subdomain 和 public_url
                     server_subdomain = client_info.get("subdomain")
@@ -2701,7 +2721,7 @@ ingress:
 
         def heartbeat_worker():
             print(f"💓 心跳循环已启动（每 {HEARTBEAT_INTERVAL_SECONDS} 秒一次）")
-            last_restart_hour = -1  # 记录上次重启的小时
+            last_restart_day = self._load_tunnel_restart_stamp()
             heartbeat_failures = 0
 
             while True:
@@ -2709,17 +2729,18 @@ ingress:
                     time.sleep(HEARTBEAT_INTERVAL_SECONDS)
 
                     # 检查并重启 Tunnel（每天凌晨 3 点）
-                    current_hour = datetime.now().hour
-                    if current_hour == 3 and last_restart_hour != 3:
+                    now = datetime.now()
+                    current_hour = now.hour
+                    current_day = now.strftime("%Y-%m-%d")
+                    if current_hour == 3 and last_restart_day != current_day:
                         if self._tunnel_credentials and self.tunnel_active:
                             print("🔄 定时重启 Tunnel（凌晨 3 点）...")
                             logger.info("定时重启 Tunnel")
                             self.stop_cloudflare_tunnel()
                             time.sleep(2)
                             self.start_cloudflare_tunnel(self._tunnel_credentials)
-                        last_restart_hour = 3
-                    elif current_hour != 3:
-                        last_restart_hour = -1
+                            last_restart_day = current_day
+                            self._save_tunnel_restart_stamp(current_day)
 
                     # 检查 Tunnel 进程是否存活
                     if self.tunnel_active and self._tunnel_credentials:
@@ -2996,6 +3017,20 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # 注意：在本地开发或非HTTPS环境下，不要设置 SESSION_COOKIE_SECURE
 
 
+def _is_problematic_mobile_browser() -> bool:
+    ua = (request.headers.get("User-Agent") or "").lower()
+    return any(
+        token in ua
+        for token in (
+            "vivo",
+            "bbk",
+            "funtouch",
+            "oppo",
+            "coloros",
+        )
+    )
+
+
 @app.before_request
 def enforce_family_code_access():
     """
@@ -3035,7 +3070,31 @@ def enforce_family_code_access():
     if path.startswith("/api/"):
         return _build_family_gate_response()
 
+    if path == "/":
+        return render_template(
+            "family_access.html",
+            baby_name=getattr(public_client, "baby_name", "宝宝"),
+            next_url="/",
+        )
+
     return redirect(f"/family-access?next={quote(next_path or '/', safe='')}")
+
+
+@app.after_request
+def apply_mobile_browser_compat_headers(response):
+    try:
+        path = request.path or "/"
+        if _is_problematic_mobile_browser():
+            response.headers["Alt-Svc"] = "clear"
+
+        if path == "/sw.js":
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        elif path == "/family-access":
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    except Exception as e:
+        logger.warning(f"兼容响应头写入失败: {e}")
+
+    return response
 
 # 调试信息
 logger.info(f"模板文件夹: {template_folder}")
@@ -3063,19 +3122,12 @@ def datetime_format(value, format="%Y-%m-%d %H:%M"):
 
 @app.context_processor
 def inject_quota_info():
-    """自动注入配额信息到所有模板。
-
-    模板渲染阶段只读缓存或使用极短超时，避免公网接口阻塞首屏。
-    """
+    """自动注入 AI 使用记录到模板。"""
     now = time.time()
     cached = TEMPLATE_QUOTA_CACHE.get("data")
     if cached and now < TEMPLATE_QUOTA_CACHE.get("expires_at", 0):
         return cached
 
-    quota_used = 0
-    quota_total = 50000
-    quota_remaining = 50000
-    quota_percent = 0
     token_usage = {"total_tokens": 0, "total_prompt": 0, "total_completion": 0}
     image_usage = {"image_count": 0, "request_count": 0}
     fetched_any = False
@@ -3085,29 +3137,6 @@ def inject_quota_info():
         and hasattr(public_client, "client_id")
         and public_client.client_id
     ):
-        try:
-            resp = public_client.signed_request(
-                "GET",
-                f"{public_client.server_url}/czrz/quota/status",
-                params={"client_id": public_client.client_id},
-                timeout=TEMPLATE_REMOTE_TIMEOUT,
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                if data.get("success"):
-                    quota = data.get("quota", {})
-                    quota_used = quota.get("used", 0)
-                    quota_total = quota.get("limit", 50000)
-                    quota_remaining = quota.get(
-                        "remaining", max(0, quota_total - quota_used)
-                    )
-                    quota_percent = (
-                        int(quota_used / quota_total * 100) if quota_total > 0 else 0
-                    )
-                    fetched_any = True
-        except Exception as e:
-            logger.info(f"[Quota] 获取Token使用失败: {e}")
-
         try:
             resp = public_client.signed_request(
                 "GET",
@@ -3125,10 +3154,10 @@ def inject_quota_info():
             pass
 
     result = dict(
-        quota_used=quota_used,
-        quota_total=quota_total,
-        quota_remaining=quota_remaining,
-        quota_percent=quota_percent,
+        quota_used=0,
+        quota_total=0,
+        quota_remaining=0,
+        quota_percent=0,
         token_usage=token_usage,
         image_usage=image_usage,
     )
@@ -3147,6 +3176,17 @@ def inject_help_info():
         "help_topics": HELP_TOPICS,
         "help_topic_order": HELP_TOPIC_ORDER,
         "help_page_topics": [HELP_TOPICS[key] for key in HELP_TOPIC_ORDER if key != "overview"],
+    }
+
+
+@app.context_processor
+def inject_android_companion_info():
+    apk_path = get_android_companion_apk_path()
+    return {
+        "android_companion_apk_available": bool(apk_path),
+        "android_companion_apk_name": apk_path.name if apk_path else "",
+        "android_companion_apk_url": "/android-companion/apk" if apk_path else "",
+        "android_companion_page_url": "/android-companion",
     }
 
 
@@ -3760,6 +3800,27 @@ def api_setup():
 
         public_client.save_config()
 
+        # 设置更新后，刷新依赖媒体目录的管理器
+        try:
+            from video_compressor import init_compression_manager
+
+            init_compression_manager(
+                public_client.data_dir,
+                [Path(folder) for folder in valid_folders if Path(folder).exists()],
+            )
+        except Exception as e:
+            print(f"⚠️ 刷新压缩管理器失败: {e}")
+
+        try:
+            from media_folder_shrinker import init_media_folder_shrinker
+
+            init_media_folder_shrinker(
+                public_client.data_dir,
+                [Path(folder) for folder in valid_folders if Path(folder).exists()],
+            )
+        except Exception as e:
+            print(f"⚠️ 刷新媒体压缩管理器失败: {e}")
+
         is_first_registration = not public_client.client_id
         if is_first_registration:
             print("🚀 首次设置完成，正在注册到服务端...")
@@ -4151,6 +4212,50 @@ def ensure_default_avatar() -> Path:
     draw.rounded_rectangle((86, 165, 234, 265), radius=52, fill=(248, 240, 225, 255))
     img.save(target)
     return target
+
+
+def ensure_pwa_icon(size: int) -> Path:
+    """生成 PWA 图标，供桌面安装与系统分享入口复用。"""
+    clamped_size = max(64, min(int(size or 192), 512))
+    target = GENERATED_ASSETS_DIR / f"pwa-icon-{clamped_size}.png"
+    if target.exists():
+        return target
+
+    from PIL import Image
+
+    with Image.open(ensure_default_avatar()) as img:
+        icon = img.convert("RGBA").resize(
+            (clamped_size, clamped_size), Image.Resampling.LANCZOS
+        )
+        icon.save(target, "PNG")
+    return target
+
+
+def get_android_companion_apk_path():
+    """返回安卓伴侣 APK 路径；没有现成包时返回 None。"""
+    candidate_dirs = [
+        Path(__file__).resolve().parent / "landing_page" / "download",
+        USER_DATA_DIR / "android_companion",
+        USER_DATA_DIR / "downloads",
+    ]
+    patterns = [
+        "mumu-android*.apk",
+        "mumu-companion*.apk",
+        "mumu*.apk",
+    ]
+
+    candidates = []
+    for folder in candidate_dirs:
+        if not folder.exists():
+            continue
+        for pattern in patterns:
+            candidates.extend(folder.glob(pattern))
+
+    candidates = [path for path in candidates if path.is_file()]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates[0]
 
 
 def get_or_create_thumbnail(
@@ -4582,87 +4687,101 @@ def get_photo_detail(filename):
 # ==================== 照片上传API ====================
 
 
+def _get_upload_photo_manager():
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        raise ValueError("未配置媒体保存文件夹，请在设置中配置")
+
+    from photo_manager import PhotoManager
+
+    return PhotoManager(media_folders, public_client.data_dir)
+
+
+def _save_uploaded_file_items(files, caption: str = "", upload_date: str = "") -> dict:
+    """保存上传文件，供普通上传和系统分享导入共用。"""
+    if not files:
+        raise ValueError("没有选择文件")
+
+    pm = _get_upload_photo_manager()
+
+    saved_files = []
+    skipped_files = []
+    for file in files:
+        if not file or not file.filename:
+            continue
+
+        safe_filename = secure_filename(file.filename)
+        ext = Path(safe_filename).suffix.lower()
+        is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+
+        target_path = pm.get_upload_target_path(safe_filename)
+        if target_path.exists():
+            print(f"⏭️ 跳过已存在文件: {safe_filename}")
+            skipped_files.append(safe_filename)
+            continue
+
+        partial_path = target_path.with_name(f".{safe_filename}.uploading")
+        partial_path.unlink(missing_ok=True)
+
+        try:
+            file.save(partial_path)
+
+            if target_path.exists():
+                print(f"⏭️ 并发上传已存在文件: {safe_filename}")
+                skipped_files.append(safe_filename)
+                partial_path.unlink(missing_ok=True)
+                continue
+
+            partial_path.replace(target_path)
+            result = pm.register_saved_upload_with_date(
+                target_path,
+                safe_filename,
+                upload_date,
+                fast_hash=is_video,
+            )
+        except PermissionError:
+            raise
+        except Exception:
+            partial_path.unlink(missing_ok=True)
+            if target_path.exists():
+                target_path.unlink(missing_ok=True)
+            raise
+
+        if caption:
+            result["caption"] = caption
+
+        saved_files.append(result)
+
+    return {
+        "saved_files": saved_files,
+        "skipped_files": skipped_files,
+    }
+
+
 @app.route("/upload", methods=["POST"])
 @require_local_or_password
 def upload_photos():
     """上传文件到本地文件夹"""
     try:
-        # 检查是否配置了媒体文件夹
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
-            return jsonify(
-                {"success": False, "message": "未配置媒体保存文件夹，请在设置中配置"}
-            )
-
-        # 初始化照片管理器（支持多文件夹）
-        from photo_manager import PhotoManager
-
-        pm = PhotoManager(media_folders, public_client.data_dir)
-
-        # 获取上传的文件和日期
         files = request.files.getlist("files")
         caption = request.form.get("caption", "")
-        upload_date = request.form.get("date", "")  # 用户指定的日期
+        upload_date = request.form.get("date", "")
+        result = _save_uploaded_file_items(files, caption=caption, upload_date=upload_date)
+        saved_files = result["saved_files"]
+        skipped_files = result["skipped_files"]
 
-        if not files:
-            return jsonify({"success": False, "message": "没有选择文件"})
-
-        saved_files = []
-        skipped_files = []
-        for file in files:
-            if file.filename:
-                from pathlib import Path
-                safe_filename = secure_filename(file.filename)
-                ext = Path(safe_filename).suffix.lower()
-                is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
-
-                target_path = pm.get_upload_target_path(safe_filename)
-                if target_path.exists():
-                    print(f"⏭️ 跳过已存在文件: {safe_filename}")
-                    skipped_files.append(safe_filename)
-                    continue
-
-                partial_path = target_path.with_name(f".{safe_filename}.uploading")
-                partial_path.unlink(missing_ok=True)
-
-                try:
-                    # 直接写入最终目录，减少公网视频上传成功后的额外等待时间。
-                    file.save(partial_path)
-
-                    if target_path.exists():
-                        print(f"⏭️ 并发上传已存在文件: {safe_filename}")
-                        skipped_files.append(safe_filename)
-                        partial_path.unlink(missing_ok=True)
-                        continue
-
-                    partial_path.replace(target_path)
-
-                    result = pm.register_saved_upload_with_date(
-                        target_path,
-                        safe_filename,
-                        upload_date,
-                        fast_hash=is_video,
-                    )
-                except PermissionError:
-                    raise
-                except Exception:
-                    partial_path.unlink(missing_ok=True)
-                    if target_path.exists():
-                        target_path.unlink(missing_ok=True)
-                    raise
-
-                # 添加标注（如果有）
-                if caption:
-                    result["caption"] = caption
-
-                saved_files.append(result)
+        message = f"成功上传 {len(saved_files)} 个文件"
+        if skipped_files:
+            message += f"，跳过 {len(skipped_files)} 个已存在文件"
 
         return jsonify(
             {
                 "success": True,
-                "message": f"成功上传 {len(saved_files)} 个文件",
+                "message": message,
                 "count": len(saved_files),
                 "files": saved_files,
+                "skipped_count": len(skipped_files),
+                "skipped_files": skipped_files,
             }
         )
 
@@ -4680,6 +4799,129 @@ def upload_photos():
 
         traceback.print_exc()
         return jsonify({"success": False, "message": f"上传失败: {str(e)}"})
+
+
+@app.route("/share-target", methods=["POST"])
+def import_shared_files():
+    """PWA 系统分享导入入口。"""
+    source_ip = get_request_source_ip()
+    if not (_is_private_or_loopback_ip(source_ip) or is_family_code_verified()):
+        return redirect("/family-access?next=%2F", code=303)
+
+    try:
+        result = _save_uploaded_file_items(request.files.getlist("files"))
+        params = {
+            "share_import": "1",
+            "share_saved": len(result["saved_files"]),
+            "share_skipped": len(result["skipped_files"]),
+        }
+        return redirect(f"/?{urlencode(params)}", code=303)
+    except Exception as e:
+        params = {
+            "share_import": "1",
+            "share_error": str(e)[:160],
+        }
+        return redirect(f"/?{urlencode(params)}", code=303)
+
+
+@app.route("/manifest.webmanifest")
+def pwa_manifest():
+    """PWA 清单，支持安装后从系统相册直接分享导入。"""
+    baby_name = (public_client.baby_name or "沐沐").strip()
+    manifest = {
+        "id": "/",
+        "name": f"{baby_name}成长记录",
+        "short_name": f"{baby_name}记录",
+        "description": "安装到手机后，可从系统相册直接多选并分享导入照片和视频。",
+        "start_url": "/?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#fff8f4",
+        "theme_color": "#FF9A8B",
+        "icons": [
+            {
+                "src": "/api/pwa-icon/192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+            },
+            {
+                "src": "/api/pwa-icon/512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+            },
+        ],
+        "share_target": {
+            "action": "/share-target",
+            "method": "POST",
+            "enctype": "multipart/form-data",
+            "params": {
+                "files": [
+                    {"name": "files", "accept": ["image/*", "video/*"]},
+                ]
+            },
+        },
+    }
+    return app.response_class(
+        json.dumps(manifest, ensure_ascii=False),
+        mimetype="application/manifest+json",
+    )
+
+
+@app.route("/sw.js")
+def pwa_service_worker():
+    """清理旧 PWA 残留的 Service Worker。"""
+    script = """
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+    } catch (error) {}
+
+    try {
+      await self.registration.unregister();
+    } catch (error) {}
+  })());
+});
+"""
+    response = app.response_class(script.strip() + "\n", mimetype="application/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
+@app.route("/api/pwa-icon/<int:size>.png")
+def get_pwa_icon(size: int):
+    icon_path = ensure_pwa_icon(size)
+    return send_file(icon_path, mimetype="image/png", max_age=86400)
+
+
+@app.route("/android-companion")
+def android_companion_page():
+    """安卓伴侣入口：直接跳下载或首页，不再单独保留说明页。"""
+    apk_path = get_android_companion_apk_path()
+    if apk_path:
+        return redirect("/android-companion/apk")
+    return redirect("/")
+
+
+@app.route("/android-companion/apk")
+def download_android_companion_apk():
+    """下载安卓伴侣 APK。"""
+    apk_path = get_android_companion_apk_path()
+    if not apk_path:
+        return redirect("/android-companion")
+    return send_file(
+        apk_path,
+        mimetype="application/vnd.android.package-archive",
+        as_attachment=True,
+        download_name=apk_path.name,
+        max_age=3600,
+    )
 
 
 @app.route("/api/settings/log-style", methods=["POST"])
@@ -7517,18 +7759,6 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
         AI_REVIEW_TASKS[task_id]["total"] = len(dates_to_process)
         AI_REVIEW_TASKS[task_id]["message"] = f"正在准备处理数据..."
 
-        # 检查初始配额
-        can_use, used, limit = _check_token_quota()
-        if not can_use:
-            AI_REVIEW_TASKS[task_id]["completed"] = True
-            AI_REVIEW_TASKS[task_id]["status"] = "failed"
-            AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
-            AI_REVIEW_TASKS[task_id]["message"] = (
-                f"当前共享 AI 额度已用完（已用 {used:,} / 总量 {limit:,}）。"
-                " 这次画像刷新会调用多种 AI 模型，已先暂停；照片浏览、上传、分享和留言不受影响。"
-            )
-            return
-
         success_count = 0
         skipped_count = 0
         import time
@@ -7786,14 +8016,12 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                         error_msg = str(e)
                         normalized_error = error_msg.lower()
                         if (
-                            "共享 ai 额度" in normalized_error
-                            or "共享ai额度" in normalized_error
-                            or "quota_exceeded" in normalized_error
+                            "ai_access_required" in normalized_error
+                            or "需要调用第三方付费大模型" in error_msg
                             or "all_models_exhausted" in normalized_error
                         ):
                             AI_REVIEW_TASKS[task_id]["completed"] = True
                             AI_REVIEW_TASKS[task_id]["status"] = "failed"
-                            AI_REVIEW_TASKS[task_id]["quota_exceeded"] = True
                             if "ALL_MODELS_EXHAUSTED:" in error_msg:
                                 friendly_msg = error_msg.split("ALL_MODELS_EXHAUSTED:")[
                                     1
@@ -7802,7 +8030,7 @@ def run_ai_auto_review(task_id, media_folders, child_id, ai_config):
                                 friendly_msg = error_msg
                             AI_REVIEW_TASKS[task_id]["message"] = friendly_msg
                             report_error(
-                                "ai_review_quota", friendly_msg, f"date={date}"
+                                "ai_review_access_required", friendly_msg, f"date={date}"
                             )
                             return
                         logger.info(f"[AI回顾] AI分析失败 {date}: {e}")
@@ -11626,6 +11854,732 @@ def get_ai_review_status(task_id):
 # ==================== 压缩服务 API ====================
 
 
+def _get_media_folder_shrinker_manager():
+    from media_folder_shrinker import init_media_folder_shrinker
+
+    media_folders = [
+        Path(folder)
+        for folder in (getattr(public_client, "media_folders", []) or [])
+        if Path(folder).exists()
+    ]
+    return init_media_folder_shrinker(public_client.data_dir, media_folders)
+
+
+def _decorate_blurry_scan_result(result):
+    result = dict(result or {})
+    items = []
+    for item in result.get("items", []) or []:
+        row = dict(item)
+        row["thumb_url"] = (
+            "/api/media-quality/file-preview?thumb=1&path=" + quote(row["path"], safe="")
+        )
+        row["image_url"] = (
+            "/api/media-quality/file-preview?path=" + quote(row["path"], safe="")
+        )
+        items.append(row)
+    result["items"] = items
+    return result
+
+
+def _build_media_relative_path(file_path: Path) -> str:
+    for folder in (getattr(public_client, "media_folders", []) or []):
+        try:
+            return str(Path(file_path).relative_to(Path(folder)))
+        except Exception:
+            continue
+    return Path(file_path).name
+
+
+def _decorate_duplicate_groups(result):
+    result = dict(result or {})
+    groups = []
+    for group in result.get("groups", []) or []:
+        row = dict(group)
+        keep = dict(row.get("keep") or {})
+        if keep.get("path"):
+            keep["preview_url"] = (
+                "/api/media-quality/file-preview?thumb=1&path="
+                + quote(keep.get("path", ""), safe="")
+            )
+            keep["full_url"] = (
+                "/api/media-quality/file-preview?path="
+                + quote(keep.get("path", ""), safe="")
+            )
+        row["keep"] = keep
+
+        duplicates = []
+        for item in row.get("duplicates", []) or []:
+            dup = dict(item)
+            if dup.get("path"):
+                dup["preview_url"] = (
+                    "/api/media-quality/file-preview?thumb=1&path="
+                    + quote(dup.get("path", ""), safe="")
+                )
+                dup["full_url"] = (
+                    "/api/media-quality/file-preview?path="
+                    + quote(dup.get("path", ""), safe="")
+                )
+            duplicates.append(dup)
+        row["duplicates"] = duplicates
+        groups.append(row)
+    result["groups"] = groups
+    return result
+
+
+def _decorate_ai_deep_cleanup_result(result):
+    result = dict(result or {})
+    blurry_items = []
+    for item in result.get("blurry_items", []) or []:
+        row = dict(item)
+        row["thumb_url"] = (
+            "/api/media-quality/file-preview?thumb=1&path=" + quote(row["path"], safe="")
+        )
+        row["image_url"] = (
+            "/api/media-quality/file-preview?path=" + quote(row["path"], safe="")
+        )
+        blurry_items.append(row)
+    result["blurry_items"] = blurry_items
+    result["duplicate_groups"] = _decorate_duplicate_groups(
+        {"groups": result.get("duplicate_groups", []) or []}
+    ).get("groups", [])
+    return result
+
+
+def _remove_media_paths_from_photo_index(raw_paths):
+    removed_from_index = []
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders or not raw_paths:
+        return removed_from_index
+
+    from photo_manager import PhotoManager
+
+    pm = PhotoManager(media_folders, public_client.data_dir)
+    for deleted_path in raw_paths:
+        try:
+            if pm.remove_photo_by_path(deleted_path):
+                removed_from_index.append(deleted_path)
+        except Exception:
+            continue
+    return removed_from_index
+
+
+AI_DEEP_CLEANUP_LOCK = threading.Lock()
+AI_DEEP_CLEANUP_THREAD = None
+AI_DEEP_CLEANUP_STATUS = {
+    "running": False,
+    "task_id": None,
+    "phase": "idle",
+    "current": 0,
+    "total": 0,
+    "percent": 0,
+    "current_date": None,
+    "current_file": None,
+    "message": "",
+    "started_at": None,
+    "finished_at": None,
+    "error": None,
+    "estimate": None,
+    "result": None,
+    "resource_hint": "AI 深度去重会按日期分批调用商业视觉模型，并在每批后释放内存。",
+}
+
+
+def _new_ai_deep_cleanup_status():
+    return {
+        "running": False,
+        "task_id": None,
+        "phase": "idle",
+        "current": 0,
+        "total": 0,
+        "percent": 0,
+        "current_date": None,
+        "current_file": None,
+        "message": "",
+        "started_at": None,
+        "finished_at": None,
+        "error": None,
+        "estimate": None,
+        "result": None,
+        "resource_hint": "AI 深度去重会按日期分批调用商业视觉模型，并在每批后释放内存。",
+    }
+
+
+def _collect_ai_deep_cleanup_inventory(sample_limit: int = 80):
+    from photo_manager import PhotoManager
+
+    media_folders = getattr(public_client, "media_folders", []) or []
+    if not media_folders:
+        return {"date_groups": [], "image_count": 0, "total_bytes": 0, "sample_paths": []}
+
+    pm = PhotoManager(media_folders, public_client.data_dir)
+    date_groups = []
+    image_count = 0
+    total_bytes = 0
+    sample_paths = []
+    image_exts = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".heic", ".heif"}
+
+    for date in sorted(pm.get_all_dates() or []):
+        entries = pm.get_photos_by_date(date) or []
+        paths = []
+        for item in entries:
+            if item.get("is_video"):
+                continue
+            path = Path(item.get("path", ""))
+            if not path.exists() or path.suffix.lower() not in image_exts:
+                continue
+            paths.append(str(path))
+            try:
+                total_bytes += path.stat().st_size
+            except OSError:
+                pass
+            if len(sample_paths) < sample_limit:
+                sample_paths.append(str(path))
+        if paths:
+            image_count += len(paths)
+            date_groups.append({"date": date, "paths": paths})
+
+    return {
+        "date_groups": date_groups,
+        "image_count": image_count,
+        "total_bytes": total_bytes,
+        "sample_paths": sample_paths,
+    }
+
+
+def _estimate_ai_deep_cleanup_payload():
+    inventory = _collect_ai_deep_cleanup_inventory()
+    total_images = int(inventory.get("image_count") or 0)
+    total_bytes = int(inventory.get("total_bytes") or 0)
+    date_groups = inventory.get("date_groups") or []
+
+    return {
+        "total_images": total_images,
+        "date_count": len(date_groups),
+        "total_bytes": total_bytes,
+        "vision_model_hint": "会调用商业图像识别模型逐批分析照片内容、模糊情况和相似重复。",
+    }
+
+
+def _build_ai_deep_blurry_item(path: str, date: str, photo_info: dict):
+    source_info = dict(photo_info or {})
+    return {
+        "path": path,
+        "filename": Path(path).name,
+        "relative_path": _build_media_relative_path(Path(path)),
+        "date": date,
+        "size_bytes": Path(path).stat().st_size if Path(path).exists() else 0,
+        "file_type": "image",
+        "reason": source_info.get("description", "") or "AI 判定为模糊照片",
+        "scene": source_info.get("scene", "") or "",
+        "activity": source_info.get("activity", "") or "",
+    }
+
+
+def _build_ai_deep_duplicate_group(paths: list, date: str, photos_dict: dict):
+    entries = []
+    for raw_path in paths or []:
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        info = dict((photos_dict or {}).get(path.name, {}) or {})
+        stat = path.stat()
+        entries.append(
+            {
+                "path": str(path),
+                "filename": path.name,
+                "relative_path": _build_media_relative_path(path),
+                "size_bytes": stat.st_size,
+                "modified": stat.st_mtime,
+                "file_type": "image",
+                "date": date,
+                "reason": info.get("description", "") or "AI 判定为相似重复照片",
+            }
+        )
+
+    if len(entries) <= 1:
+        return None
+
+    keep = entries[0]
+    duplicates = entries[1:]
+    return {
+        "group_id": hashlib.sha1(f"{date}|{'|'.join(item['path'] for item in entries)}".encode("utf-8")).hexdigest()[:12],
+        "match_type": "ai_similar",
+        "date": date,
+        "keep": keep,
+        "duplicates": duplicates,
+        "duplicate_count": len(duplicates),
+        "wasted_bytes": sum(int(item["size_bytes"]) for item in duplicates),
+    }
+
+
+@app.route("/api/media-folder-shrink/stats")
+@require_local_or_password
+def get_media_folder_shrink_stats():
+    """获取媒体目录体积统计。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        stats = manager.collect_folder_stats()
+        return jsonify({"success": True, "data": stats})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-folder-shrink/preview", methods=["POST"])
+@require_local_or_password
+def create_media_folder_shrink_preview():
+    """生成原地压缩样例预览。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        data = request.get_json(silent=True) or {}
+        target_total_bytes = int(data.get("target_total_bytes") or 0)
+        preview = manager.create_preview(target_total_bytes)
+        return jsonify({"success": True, "data": preview})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-folder-shrink/preview/<token>", methods=["DELETE"])
+@require_local_or_password
+def clear_media_folder_shrink_preview(token):
+    """清理样例预览。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        manager.cleanup_preview(token)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-folder-shrink/preview-file/<token>/<variant>")
+@require_local_or_password
+def get_media_folder_shrink_preview_file(token, variant):
+    """读取样例预览文件。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        file_path = manager.get_preview_file(token, variant)
+        if not file_path:
+            return jsonify({"success": False, "message": "预览已失效"}), 404
+
+        ext = file_path.suffix.lower()
+        if ext in [".jpg", ".jpeg"]:
+            mimetype = "image/jpeg"
+        elif ext == ".png":
+            mimetype = "image/png"
+        elif ext == ".webp":
+            mimetype = "image/webp"
+        elif ext in [".mp4", ".m4v"]:
+            mimetype = "video/mp4"
+        elif ext == ".mov":
+            mimetype = "video/quicktime"
+        elif ext == ".mkv":
+            mimetype = "video/x-matroska"
+        else:
+            mimetype = "application/octet-stream"
+        return send_file(file_path, mimetype=mimetype, max_age=60)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-folder-shrink/start", methods=["POST"])
+@require_local_or_password
+def start_media_folder_shrink():
+    """启动原地压缩任务。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        data = request.get_json(silent=True) or {}
+        token = (data.get("token") or "").strip()
+        result = manager.start_batch_compression(token)
+        return jsonify({"success": True, "data": result, "message": "压缩任务已启动"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-folder-shrink/status")
+@require_local_or_password
+def get_media_folder_shrink_status():
+    """获取原地压缩任务状态。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        return jsonify({"success": True, "data": manager.get_batch_status()})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/file-preview")
+@require_local_or_password
+def media_quality_file_preview():
+    """按路径读取媒体文件预览。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        raw_path = (request.args.get("path") or "").strip()
+        file_path = manager.resolve_media_path(raw_path)
+        if not file_path or not file_path.exists():
+            return jsonify({"success": False, "message": "文件不存在"}), 404
+
+        use_thumb = (request.args.get("thumb") or "").strip() in {"1", "true", "yes"}
+        source_ext = file_path.suffix.lower()
+        is_video = source_ext in getattr(manager, "VIDEO_EXTENSIONS", set())
+        if use_thumb and not is_video:
+            preview_path = get_or_create_thumbnail(
+                file_path,
+                size=(360, 360),
+                cache_tag="blur_preview",
+            )
+        elif use_thumb and is_video:
+            preview_path = get_or_create_video_thumbnail(file_path)
+        else:
+            preview_path = file_path
+
+        ext = preview_path.suffix.lower()
+        if ext in [".jpg", ".jpeg"]:
+            mimetype = "image/jpeg"
+        elif ext == ".png":
+            mimetype = "image/png"
+        elif ext == ".webp":
+            mimetype = "image/webp"
+        elif ext == ".gif":
+            mimetype = "image/gif"
+        elif ext in [".mp4", ".m4v"]:
+            mimetype = "video/mp4"
+        elif ext == ".mov":
+            mimetype = "video/quicktime"
+        elif ext == ".mkv":
+            mimetype = "video/x-matroska"
+        elif ext == ".webm":
+            mimetype = "video/webm"
+        else:
+            mimetype = "application/octet-stream"
+
+        return send_file(preview_path, mimetype=mimetype, max_age=120)
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/blurry/scan")
+@require_local_or_password
+def scan_blurry_media_images():
+    """扫描明显模糊的图片候选。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        sensitivity = (request.args.get("sensitivity") or "standard").strip().lower()
+        result = manager.scan_blurry_images(sensitivity=sensitivity)
+        return jsonify({"success": True, "data": _decorate_blurry_scan_result(result)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/blurry/scan/start", methods=["POST"])
+@require_local_or_password
+def start_scan_blurry_media_images():
+    """后台启动明显模糊图片扫描。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        data = request.get_json(silent=True) or {}
+        sensitivity = (data.get("sensitivity") or "standard").strip().lower()
+        result = manager.start_blurry_scan(sensitivity=sensitivity)
+        return jsonify({"success": True, "data": result, "message": "模糊扫描已启动"})
+    except ValueError as e:
+        return jsonify({"success": False, "message": str(e)}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/blurry/scan/status")
+@require_local_or_password
+def get_scan_blurry_media_images_status():
+    """获取模糊图片扫描状态。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        status = manager.get_blurry_scan_status()
+        if status.get("result"):
+            status["result"] = _decorate_blurry_scan_result(status["result"])
+        return jsonify({"success": True, "data": status})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/duplicates/scan")
+@require_local_or_password
+def scan_duplicate_media_files():
+    """扫描同名重复的媒体文件。"""
+    try:
+        manager = _get_media_folder_shrinker_manager()
+        result = manager.scan_same_name_duplicates()
+        return jsonify({"success": True, "data": _decorate_duplicate_groups(result)})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/duplicates/delete", methods=["POST"])
+@require_local_or_password
+def delete_duplicate_media_files():
+    """批量删除确认后的同名重复照片。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_paths = data.get("paths") or []
+        if not raw_paths:
+            return jsonify({"success": False, "message": "未选择要删除的同名重复照片"}), 400
+
+        manager = _get_media_folder_shrinker_manager()
+        result = manager.delete_files(raw_paths)
+
+        removed_from_index = _remove_media_paths_from_photo_index(result.get("deleted"))
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"已删除 {len(result.get('deleted', []))} 张同名重复照片",
+                "data": {
+                    **result,
+                    "removed_from_index": removed_from_index,
+                },
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+def _run_ai_deep_cleanup_task(task_id: str, estimate: dict):
+    global AI_DEEP_CLEANUP_STATUS
+
+    try:
+        from select_best_photo import analyze_all_photos
+        import gc
+
+        inventory = _collect_ai_deep_cleanup_inventory()
+        date_groups = inventory.get("date_groups") or []
+        total_dates = len(date_groups)
+        total_images = int(inventory.get("image_count") or 0)
+        processed_images = 0
+        blurry_items = []
+        duplicate_groups = []
+        analyzed_dates = 0
+        child_id = get_ai_identity_client_id(getattr(public_client, "client_id", ""))
+        client_id = getattr(public_client, "client_id", "")
+
+        with AI_DEEP_CLEANUP_LOCK:
+            AI_DEEP_CLEANUP_STATUS = _new_ai_deep_cleanup_status()
+            AI_DEEP_CLEANUP_STATUS.update(
+                {
+                    "running": True,
+                    "task_id": task_id,
+                    "phase": "running",
+                    "current": 0,
+                    "total": total_images,
+                    "percent": 0,
+                    "message": "正在启动 AI 深度清理任务",
+                    "started_at": time.time(),
+                    "estimate": estimate,
+                }
+            )
+
+        for group_index, group in enumerate(date_groups, start=1):
+            date = group["date"]
+            photo_paths = group["paths"]
+            with AI_DEEP_CLEANUP_LOCK:
+                AI_DEEP_CLEANUP_STATUS["current_date"] = date
+                AI_DEEP_CLEANUP_STATUS["message"] = f"正在分析 {date} 的照片"
+
+            ai_result, _skipped = _describe_photos_with_block_fallback(
+                photo_paths,
+                child_id=child_id,
+                client_id=client_id,
+                date=date,
+                log_prefix="[AI深度清理]",
+            )
+
+            if ai_result:
+                analyze_all_photos(
+                    photo_paths,
+                    max_photos=len(photo_paths),
+                    client_id=client_id,
+                    date=date,
+                    ai_result=ai_result,
+                )
+                photos_dict = ai_result.get("photos", {}) or {}
+                for raw_path in ai_result.get("blurry", []) or []:
+                    if raw_path:
+                        blurry_items.append(
+                            _build_ai_deep_blurry_item(raw_path, date, photos_dict.get(Path(raw_path).name, {}))
+                        )
+                for dup_group in ai_result.get("duplicates", []) or []:
+                    normalized = _build_ai_deep_duplicate_group(dup_group, date, photos_dict)
+                    if normalized:
+                        duplicate_groups.append(normalized)
+
+            processed_images += len(photo_paths)
+            analyzed_dates += 1
+            with AI_DEEP_CLEANUP_LOCK:
+                AI_DEEP_CLEANUP_STATUS["current"] = processed_images
+                AI_DEEP_CLEANUP_STATUS["total"] = total_images
+                AI_DEEP_CLEANUP_STATUS["percent"] = (
+                    int(round((processed_images / total_images) * 100)) if total_images else 100
+                )
+                AI_DEEP_CLEANUP_STATUS["current_file"] = None
+                AI_DEEP_CLEANUP_STATUS["message"] = (
+                    f"已完成 {analyzed_dates}/{total_dates} 个日期批次"
+                )
+            gc.collect()
+            time.sleep(0.05)
+
+        result = {
+            "blurry_items": blurry_items,
+            "duplicate_groups": duplicate_groups,
+            "summary": {
+                "analyzed_dates": analyzed_dates,
+                "analyzed_images": total_images,
+                "blurry_count": len(blurry_items),
+                "duplicate_group_count": len(duplicate_groups),
+                "duplicate_file_count": sum(len(group.get("duplicates", [])) for group in duplicate_groups),
+            },
+        }
+        with AI_DEEP_CLEANUP_LOCK:
+            AI_DEEP_CLEANUP_STATUS["running"] = False
+            AI_DEEP_CLEANUP_STATUS["phase"] = "done"
+            AI_DEEP_CLEANUP_STATUS["percent"] = 100
+            AI_DEEP_CLEANUP_STATUS["finished_at"] = time.time()
+            AI_DEEP_CLEANUP_STATUS["message"] = "AI 深度去重与模糊识别完成"
+            AI_DEEP_CLEANUP_STATUS["result"] = result
+            AI_DEEP_CLEANUP_STATUS["resource_hint"] = "结果已生成，可直接在弹窗里筛选删除。"
+    except Exception as e:
+        with AI_DEEP_CLEANUP_LOCK:
+            AI_DEEP_CLEANUP_STATUS["running"] = False
+            AI_DEEP_CLEANUP_STATUS["phase"] = "failed"
+            AI_DEEP_CLEANUP_STATUS["finished_at"] = time.time()
+            AI_DEEP_CLEANUP_STATUS["message"] = "AI 深度清理失败"
+            AI_DEEP_CLEANUP_STATUS["error"] = str(e)
+
+
+@app.route("/api/media-quality/ai-deep/estimate")
+@require_local_or_password
+def estimate_ai_deep_media_cleanup():
+    """读取 AI 深度去重与模糊识别的待处理规模。"""
+    try:
+        estimate = _estimate_ai_deep_cleanup_payload()
+        return jsonify({"success": True, "data": estimate})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/ai-deep/start", methods=["POST"])
+@require_local_or_password
+def start_ai_deep_media_cleanup():
+    """启动 AI 深度去重与模糊识别。"""
+    global AI_DEEP_CLEANUP_THREAD, AI_DEEP_CLEANUP_STATUS
+
+    try:
+        estimate = _estimate_ai_deep_cleanup_payload()
+
+        with AI_DEEP_CLEANUP_LOCK:
+            if AI_DEEP_CLEANUP_STATUS.get("running"):
+                return jsonify({"success": False, "message": "已有 AI 深度清理任务正在运行中"}), 400
+
+            task_id = uuid.uuid4().hex
+            AI_DEEP_CLEANUP_STATUS = _new_ai_deep_cleanup_status()
+            AI_DEEP_CLEANUP_STATUS.update(
+                {
+                    "running": True,
+                    "task_id": task_id,
+                    "phase": "starting",
+                    "started_at": time.time(),
+                    "message": "正在准备 AI 深度清理任务",
+                    "estimate": estimate,
+                }
+            )
+
+        AI_DEEP_CLEANUP_THREAD = threading.Thread(
+            target=_run_ai_deep_cleanup_task,
+            args=(task_id, estimate),
+            daemon=True,
+        )
+        AI_DEEP_CLEANUP_THREAD.start()
+        return jsonify({"success": True, "data": {"task_id": task_id}, "message": "AI 深度清理已启动"})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/ai-deep/status")
+@require_local_or_password
+def get_ai_deep_media_cleanup_status():
+    """获取 AI 深度清理状态。"""
+    try:
+        with AI_DEEP_CLEANUP_LOCK:
+            status = dict(AI_DEEP_CLEANUP_STATUS)
+        if status.get("result"):
+            status["result"] = _decorate_ai_deep_cleanup_result(status["result"])
+        return jsonify({"success": True, "data": status})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/ai-deep/delete", methods=["POST"])
+@require_local_or_password
+def delete_ai_deep_media_cleanup_files():
+    """删除 AI 深度清理选中的照片。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_paths = data.get("paths") or []
+        if not raw_paths:
+            return jsonify({"success": False, "message": "未选择要删除的照片"}), 400
+
+        manager = _get_media_folder_shrinker_manager()
+        result = manager.delete_files(raw_paths)
+        removed_from_index = _remove_media_paths_from_photo_index(result.get("deleted"))
+        return jsonify(
+            {
+                "success": True,
+                "message": f"已删除 {len(result.get('deleted', []))} 张照片",
+                "data": {**result, "removed_from_index": removed_from_index},
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@app.route("/api/media-quality/blurry/delete", methods=["POST"])
+@require_local_or_password
+def delete_blurry_media_images():
+    """批量删除已确认的模糊图片原文件。"""
+    try:
+        data = request.get_json(silent=True) or {}
+        raw_paths = data.get("paths") or []
+        if not raw_paths:
+            return jsonify({"success": False, "message": "未选择要删除的图片"}), 400
+
+        manager = _get_media_folder_shrinker_manager()
+        result = manager.delete_files(raw_paths)
+
+        removed_from_index = []
+        media_folders = getattr(public_client, "media_folders", [])
+        if media_folders and result.get("deleted"):
+            from photo_manager import PhotoManager
+
+            pm = PhotoManager(media_folders, public_client.data_dir)
+            for deleted_path in result["deleted"]:
+                try:
+                    if pm.remove_photo_by_path(deleted_path):
+                        removed_from_index.append(deleted_path)
+                except Exception:
+                    continue
+
+        return jsonify(
+            {
+                "success": True,
+                "message": f"已删除 {len(result.get('deleted', []))} 张模糊图片",
+                "data": {
+                    **result,
+                    "removed_from_index": removed_from_index,
+                },
+            }
+        )
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @app.route("/api/compression/status")
 def get_compression_status():
     """获取压缩状态"""
@@ -12237,7 +13191,7 @@ def show_welcome_dialog():
 • 首页：查看今日照片和成长日志
 • 画像：AI 生成的宝宝性格兴趣画像
 • 日历：按日期浏览历史记录
-• 设置：修改配置、查看配额
+• 设置：修改配置、查看调用记录
 
 【提示】
 • 首次运行会自动打开浏览器

@@ -185,52 +185,17 @@
             </div>
         </div>
 
-        <!-- API 配额设置卡片 -->
+        <!-- AI 访问说明卡片 -->
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-graph-up"></i> AI 共享额度设置</h5>
+                <h5 class="mb-0"><i class="bi bi-graph-up"></i> AI 服务说明</h5>
             </div>
             <div class="card-body">
-                <form id="quotaSettingsForm" onsubmit="saveQuotaSettings(event)">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    <span class="quota-badge quota-free">默认档</span> Token 额度
-                                </label>
-                                <div class="input-group">
-                                    <input type="number" class="form-control" id="free_token_quota" 
-                                           value="{{ admin_config.quota_settings.free_token_quota|default(50000) }}" min="1000" required>
-                                    <span class="input-group-text">tokens</span>
-                                </div>
-                                <small class="text-muted">默认共享额度（约可支持 50 次左右日志生成）</small>
-                            </div>
-                        </div>
-                        
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label class="form-label">
-                                    <span class="quota-badge quota-paid">扩展档</span> Token 额度
-                                </label>
-                                <div class="input-group">
-                                    <input type="number" class="form-control" id="paid_token_quota" 
-                                           value="{{ admin_config.quota_settings.paid_token_quota|default(500000) }}" min="1000" required>
-                                    <span class="input-group-text">tokens</span>
-                                </div>
-                                <small class="text-muted">扩展共享额度（约可支持 500 次左右日志生成）</small>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i> 
-                        <strong>说明：</strong>这里控制的是共享 AI 服务的累计额度。技术字段仍沿用旧命名，但前台统一按“默认档 / 扩展档”来表达。
-                    </div>
-                    
-                    <button type="submit" class="btn btn-save">
-                        <i class="bi bi-check-circle"></i> 保存配额设置
-                    </button>
-                </form>
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle"></i>
+                    当前系统只保留 AI 调用记录与成本统计，不再按 Token 做免费额度、付费额度或限额拦截。
+                    是否允许某个客户端使用第三方模型，改为单独开通 AI 服务来控制。
+                </div>
             </div>
         </div>
         
@@ -319,7 +284,7 @@
                     <h6><i class="bi bi-exclamation-triangle"></i> 重要提示</h6>
                     <ul class="mb-0">
                         <li>修改管理员密码后，请妥善保管新密码</li>
-                        <li>配额设置修改后，对现有用户立即生效</li>
+                        <li>AI 调用记录会持续累计，可用于后续核算成本</li>
                         <li>建议定期备份数据目录中的重要文件</li>
                         <li>系统重启后，所有设置将保持不变</li>
                     </ul>
@@ -372,33 +337,11 @@
             });
         }
         
-        // 保存配额设置
+        // 保留占位，旧的额度设置入口已停用
         function saveQuotaSettings(event) {
-            event.preventDefault();
-            
-            const quotaData = {
-                free_token_quota: parseInt(document.getElementById('free_token_quota').value),
-                paid_token_quota: parseInt(document.getElementById('paid_token_quota').value),
-            };
-            
-            fetch('/admin/settings/quota', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(quotaData)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Token 配额设置已保存！');
-                } else {
-                    alert('保存失败: ' + data.message);
-                }
-            })
-            .catch(error => {
-                alert('请求失败: ' + error);
-            });
+            if (event) {
+                event.preventDefault();
+            }
         }
         
         // 二维码预览

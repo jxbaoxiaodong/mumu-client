@@ -279,6 +279,101 @@ curl http://127.0.0.1:8000/czrz/health
 - 不建议把直接运行 `python server_public.py` / `python client_public_final.py` 当成正式重启方式
 - `restart_all.sh` 是 `mumu-all.service` 当前调用的底层进程管理脚本，但正式操作优先用 `systemctl`
 
+## 备份与发布
+
+### 备份当前项目
+
+```bash
+cd /home/bob/projects/mumu
+./backup.sh
+```
+
+当前脚本会打包：
+
+- `mumu`
+- `../baby_health_ai`
+
+备份输出目录当前为：
+
+- `/media/bob/System/LINUX_FILES/projects_backup/`
+
+### 发布客户端新版本
+
+正式发布入口当前使用仓库根目录脚本：
+
+```bash
+cd /home/bob/projects/mumu
+./release.sh v45 "release: 版本说明"
+```
+
+补充说明：
+
+- `release.sh` 会联动 `mumu-client` 仓库完成同步、打 tag、回拉产物等动作
+- 发布时建议始终显式传入版本号，不要依赖默认 tag
+- 发布完成后官网下载镜像目录为：
+  - `landing_page/download/`
+
+## 宣传视频二次替换
+
+如果你想把宣传视频里的图片、配音、背景音乐手动换成自己挑的版本，当前最简单的方式是：
+
+### 1. 替换同名素材
+
+图片截图目录：
+
+- `outputs/gift_video_v2/captures/`
+
+常用文件：
+
+- `mobile_session_viewport.png`
+- `mobile_calendar_modal.png`
+- `calendar_day2.png`
+- `profile_mobile_full.png`
+- `cards_comic_mobile_full.png`
+- `storybook_mobile_full.png`
+
+配音目录：
+
+- `outputs/gift_video_v2/audio/`
+
+常用文件：
+
+- `01_open.mp3`
+- `02_memory.mp3`
+- `03_home.mp3`
+- `04_calendar.mp3`
+- `05_profile.mp3`
+- `06_role.mp3`
+- `07_compare.mp3`
+- `08_storybook.mp3`
+- `09_gift.mp3`
+
+背景音乐文件：
+
+- `outputs/gift_video_v2/audio/warm_bed.wav`
+
+### 2. 只重渲染，不重新抓图
+
+替换完素材后运行：
+
+```bash
+cd /home/bob/projects/mumu
+./rerender_gift_video.sh
+```
+
+说明：
+
+- 这个脚本只会读取：
+  - `outputs/gift_video_v2/resolved_spec.json`
+- 它不会重新抓取页面截图
+- 因此不会覆盖你手工替换掉的同名素材
+
+如果你还改了配音文案本身，而不只是替换音频文件，记得同步修改：
+
+- `outputs/gift_video_v2/resolved_spec.json`
+
+否则字幕和配音内容可能对不上。
+
 ## 现有 systemd 文件
 
 仓库内已经提供拆分后的服务文件示例，但当前正式生效的统一入口是 `mumu-all.service`：

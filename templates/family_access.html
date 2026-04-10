@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ baby_name }}的成长记录 - 家庭码验证</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap-5.3.0.min.css') }}">
     <style>
         body {
             min-height: 100vh;
@@ -42,6 +41,45 @@
             background: linear-gradient(135deg, #ff7a59 0%, #ff9f68 100%);
             color: #fff;
             font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .form-row {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.95rem;
+            color: #444;
+            font-weight: 600;
+        }
+        .form-control {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #d7d7d7;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 1rem;
+            line-height: 1.4;
+            background: #fff;
+            outline: none;
+        }
+        .form-control:focus {
+            border-color: #ff9f68;
+            box-shadow: 0 0 0 3px rgba(255, 159, 104, 0.18);
+        }
+        .error-msg {
+            display: none;
+            margin-bottom: 14px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: #fff1f0;
+            color: #b42318;
+            font-size: 0.92rem;
+        }
+        .error-msg.show {
+            display: block;
         }
     </style>
 </head>
@@ -51,11 +89,11 @@
         <div class="family-subtitle">请输入家庭码后继续访问。首次验证成功后会自动记住。</div>
 
         <form id="familyAccessForm">
-            <div class="mb-3">
+            <div class="form-row">
                 <label for="familyCode" class="form-label">家庭码</label>
-                <input type="password" id="familyCode" class="form-control form-control-lg" placeholder="请输入家庭码" required autofocus>
+                <input type="password" id="familyCode" class="form-control" placeholder="请输入家庭码" required autofocus>
             </div>
-            <div id="errorMsg" class="alert alert-danger d-none py-2"></div>
+            <div id="errorMsg" class="error-msg"></div>
             <button class="btn-verify" type="submit">进入</button>
         </form>
     </div>
@@ -67,28 +105,39 @@
             e.preventDefault();
             const code = document.getElementById('familyCode').value || '';
             const errorMsg = document.getElementById('errorMsg');
+            errorMsg.classList.remove('show');
 
-            fetch('/api/family-access', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    family_code: code,
-                    next: NEXT_URL
-                })
-            })
-            .then(function(res) { return res.json(); })
-            .then(function(data) {
-                if (data && data.success) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/family-access', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState !== 4) {
+                    return;
+                }
+
+                var data = null;
+                try {
+                    data = JSON.parse(xhr.responseText || '{}');
+                } catch (error) {
+                    data = null;
+                }
+
+                if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
                     window.location.href = data.next || NEXT_URL || '/';
                     return;
                 }
-                errorMsg.textContent = (data && data.message) || '家庭码错误';
-                errorMsg.classList.remove('d-none');
-            })
-            .catch(function() {
+
+                errorMsg.textContent = (data && data.message) || '验证失败，请稍后重试';
+                errorMsg.classList.add('show');
+            };
+            xhr.onerror = function() {
                 errorMsg.textContent = '验证失败，请稍后重试';
-                errorMsg.classList.remove('d-none');
-            });
+                errorMsg.classList.add('show');
+            };
+            xhr.send(JSON.stringify({
+                family_code: code,
+                next: NEXT_URL
+            }));
         });
     </script>
 </body>

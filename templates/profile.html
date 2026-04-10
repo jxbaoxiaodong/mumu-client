@@ -1033,9 +1033,14 @@ function checkAIReviewProgress(taskId) {
                 if (status.message === '完全无变化') {
                     showNotification('完全无变化，无需更新', 'info');
                 } else {
-                    if (status.quota_exceeded || isQuotaBoundaryMessage(status.message) || isQuotaBoundaryMessage(status.portrait_message)) {
+                    if (isQuotaBoundaryMessage(status.message) || isQuotaBoundaryMessage(status.portrait_message)) {
+                        if (typeof window.showAIAccessRequiredModal === 'function') {
+                            window.showAIAccessRequiredModal({
+                                message: status.portrait_message || status.message
+                            });
+                        }
                         showNotification(
-                            status.portrait_message || status.message || '当前共享 AI 额度不足，这次画像刷新已暂停。照片浏览、上传、分享和留言不受影响。',
+                            status.portrait_message || status.message || '这次画像刷新需要先配置第三方大模型服务。',
                             'warning'
                         );
                     } else if (status.portrait_refresh === 'failed' || status.portrait_llm_valid === false) {
@@ -1066,9 +1071,9 @@ function hideProgressFooter() {
 
 function isQuotaBoundaryMessage(message) {
     var text = String(message || '').toLowerCase();
-    return text.indexOf('共享 ai 额度') !== -1
-        || text.indexOf('共享ai额度') !== -1
-        || text.indexOf('quota_exceeded') !== -1;
+    return text.indexOf('ai_access_required') !== -1
+        || text.indexOf('第三方付费大模型') !== -1
+        || text.indexOf('管理员代为配置') !== -1;
 }
 
 // 提交反馈
@@ -1118,7 +1123,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="modal-body">
                 <div class="alert alert-light border small text-muted">
                     这是重度 AI 操作：会依次调用图片理解、语音识别、文本/画像模型。<br>
-                    如果当前共享 AI 额度暂停，这一步会先停下来；照片浏览、上传、分享、留言和手动整理内容不受影响。
+                    如果当前没有配置第三方大模型服务，这一步会先提示你查看说明；照片浏览、上传、分享、留言和手动整理内容不受影响。
                 </div>
                 <p class="text-muted mb-3">将对所有索引中有日期的项进行全量处理：</p>
                 <ul class="mb-4">

@@ -13,11 +13,36 @@
                     <div class="text-center py-5">
                         <i class="fas fa-cloud-upload-alt fa-4x text-primary mb-3"></i>
                         <h4>上传照片/视频</h4>
-                        <p class="text-muted mb-1" id="uploadHint">可一次选择多张，也可多次添加</p>
+                        <p class="text-muted mb-1" id="uploadHint">支持多选后上传</p>
                         <input type="file" id="fileInput" multiple accept="image/*,video/*" style="display: none;">
-                        <button class="btn btn-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+                        <input type="file" id="cameraInput" accept="image/*,video/*" capture="environment" style="display: none;">
+                        <button class="btn btn-primary btn-lg" onclick="triggerNativeFileSelect()">
                             <i class="fas fa-images me-2"></i>选择照片/视频
                         </button>
+                        <div class="small text-muted mt-2" id="uploadCapabilityHint">如相册没直接进入多选，先长按一张。</div>
+                        {% if android_companion_apk_available %}
+                        <div class="small mt-2" id="uploadApkHint">
+                            <span class="text-muted">vivo、OPPO、部分华为可直接安装 </span>
+                            <a href="{{ android_companion_apk_url }}" class="fw-semibold">mumu成长助手 APK</a>
+                            <span class="text-muted"> 批量上传。</span>
+                        </div>
+                        {% endif %}
+                        <div id="mobileUploadAssist" class="d-none mt-3">
+                            <div class="d-flex flex-wrap justify-content-center gap-2">
+                                <button type="button" class="btn btn-outline-primary" onclick="triggerMobileGalleryPicker()">
+                                    <i class="fas fa-images me-1"></i>从相册导入
+                                </button>
+                                <button type="button" class="btn btn-outline-success" onclick="triggerMobileCameraPicker()">
+                                    <i class="fas fa-camera me-1"></i>直接拍照/录像
+                                </button>
+                                <button type="button" class="btn btn-outline-dark d-none" id="advancedPickerBtn" onclick="tryAdvancedPickerFromUi()">
+                                    <i class="fas fa-layer-group me-1"></i>尝试另一种选择器
+                                </button>
+                            </div>
+                            <div class="small text-muted mt-2" id="mobileUploadAssistHint">
+                                手机上会先尽量自动打开系统选择器；如果被拦截，再手动点上面的按钮。
+                            </div>
+                        </div>
                         <p class="text-muted mt-3 mb-0">
                             <small>支持：JPG, PNG, GIF, WebP, MP4, MOV</small>
                         </p>
@@ -28,26 +53,8 @@
                 <div id="previewArea" class="mt-4" style="display: none;">
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <h6 class="mb-0">已选择 <span id="fileCount">0</span> 个文件</h6>
-                        <div>
-                            <button class="btn btn-sm btn-outline-primary me-1" onclick="addMoreFiles()">
-                                <i class="fas fa-plus me-1"></i>继续添加
-                            </button>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="clearSelectedFiles()">
-                                <i class="fas fa-times me-1"></i>清空
-                            </button>
-                        </div>
                     </div>
                     <div class="row" id="previewGrid"></div>
-                </div>
-                
-                <!-- 标注输入 -->
-                <div class="mt-4">
-                    <label class="form-label">
-                        <i class="fas fa-tag me-2"></i>照片标注（可选）
-                    </label>
-                    <input type="text" class="form-control" id="photoCaption" 
-                           placeholder="例如：第一次抬头、第一次叫妈妈...">
-                    <small class="text-muted">为每张照片添加有意义的标注，记录成长瞬间</small>
                 </div>
                 
                 <!-- 上传进度 -->
@@ -139,37 +146,190 @@
 <script>
 var selectedFiles = [];
 var autoContinueMode = false;
+var mobileUploadState = {
+    isMobile: false,
+    isLocalNetwork: false,
+    autoPickerAttempted: false,
+    isCompanionApp: false
+};
+var uploadCapabilityState = {
+    advancedPickerAvailable: false
+};
 
-// 检测浏览器是否支持多选
-function checkMultipleSupport() {
-    var testInput = document.createElement('input');
-    testInput.type = 'file';
-    testInput.multiple = true;
-    
+function refreshUploadCapabilities() {
     var ua = navigator.userAgent.toLowerCase();
     var problematicBrowsers = ['vivo', 'oppo', 'coloros', 'funtouch', 'ucbrowser', 'baidu', 'huawei'];
     var isProblematic = problematicBrowsers.some(function(b) { return ua.indexOf(b) !== -1; });
-    
-    // 检测是否是 Android 且可能是问题设备
     var isAndroid = ua.indexOf('android') !== -1;
-    
-    if (isProblematic || (isAndroid && !('multiple' in testInput))) {
-        console.log('检测到多选受限设备，启用快速连续选择模式');
-        autoContinueMode = true;
-        // 更新提示文字
-        var hint = document.getElementById('uploadHint');
-        if (hint) {
-            hint.innerHTML = '<span class="text-warning"><i class="fas fa-info-circle"></i> 当前浏览器不支持一次多选，请多次点击"继续添加"</span>';
+    var isIOS = /iphone|ipad|ipod/.test(ua);
+    var isCompanionApp = ua.indexOf('mumucompanion') !== -1;
+    uploadCapabilityState.advancedPickerAvailable =
+        typeof window.canUseAdvancedOpenPicker === 'function' && window.canUseAdvancedOpenPicker();
+
+    autoContinueMode = !isCompanionApp && (isProblematic || (isAndroid && !uploadCapabilityState.advancedPickerAvailable));
+
+    var hint = document.getElementById('uploadHint');
+    var capabilityHint = document.getElementById('uploadCapabilityHint');
+    var advancedPickerBtn = document.getElementById('advancedPickerBtn');
+    var apkHint = document.getElementById('uploadApkHint');
+    if (hint) {
+        if (isCompanionApp) {
+            hint.textContent = '已进入 mumu成长助手，可直接批量上传';
+        } else if (isIOS) {
+            hint.textContent = 'iPhone 一般支持多选上传';
+        } else if (autoContinueMode) {
+            hint.textContent = '网页多选受限时，可安装 mumu成长助手 APK';
+        } else {
+            hint.textContent = '支持多选后上传';
         }
-        return false;
     }
+    if (capabilityHint) {
+        if (isCompanionApp) {
+            capabilityHint.textContent = '如相册没直接进入多选，先长按一张。';
+        } else if (isIOS) {
+            capabilityHint.textContent = '如未进入多选，请改从照片图库选择。';
+        } else if (uploadCapabilityState.advancedPickerAvailable) {
+            capabilityHint.textContent = '如系统相册异常，可试另一种选择器。';
+        } else {
+            capabilityHint.textContent = '如相册没直接进入多选，先长按一张。';
+        }
+    }
+    if (advancedPickerBtn) {
+        advancedPickerBtn.classList.toggle('d-none', isCompanionApp || !uploadCapabilityState.advancedPickerAvailable);
+    }
+    if (apkHint) {
+        apkHint.classList.toggle('d-none', isCompanionApp || isIOS || !isAndroid);
+    }
+}
+
+document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+document.getElementById('cameraInput').addEventListener('change', handleFileSelect);
+
+function detectMobileUploadContext() {
+    var ua = navigator.userAgent || '';
+    mobileUploadState.isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    mobileUploadState.isCompanionApp = /mumucompanion/i.test(ua);
+    var isIOS = /iPhone|iPad|iPod/i.test(ua);
+    var host = window.location.hostname || '';
+    mobileUploadState.isLocalNetwork =
+        host === 'localhost' ||
+        host === '127.0.0.1' ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+
+    var assist = document.getElementById('mobileUploadAssist');
+    if (!assist) return;
+    if (mobileUploadState.isMobile && mobileUploadState.isLocalNetwork) {
+        assist.classList.remove('d-none');
+    } else {
+        assist.classList.add('d-none');
+    }
+
+    var mobileHint = document.getElementById('mobileUploadAssistHint');
+    if (mobileHint) {
+        mobileHint.textContent = mobileUploadState.isCompanionApp
+            ? '如相册没直接进入多选，先长按一张。'
+            : isIOS
+                ? 'iPhone 建议从照片图库选择。'
+                : '点上面的按钮即可。';
+    }
+
+    var androidCompanionAssist = document.getElementById('androidCompanionAssist');
+    if (androidCompanionAssist) {
+        if (mobileUploadState.isMobile && !mobileUploadState.isCompanionApp) {
+            androidCompanionAssist.classList.remove('d-none');
+        } else {
+            androidCompanionAssist.classList.add('d-none');
+        }
+    }
+    refreshUploadCapabilities();
+}
+
+async function openAdvancedFilePicker() {
+    var handles = await window.showOpenFilePicker({
+        multiple: true,
+        excludeAcceptAllOption: false,
+        types: [
+            {
+                description: '照片和视频',
+                accept: {
+                    'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'],
+                    'video/*': ['.mp4', '.mov', '.m4v', '.avi', '.mkv', '.3gp', '.webm']
+                }
+            }
+        ]
+    });
+    var files = [];
+    for (var i = 0; i < handles.length; i += 1) {
+        files.push(await handles[i].getFile());
+    }
+    if (files.length > 0) {
+        addFilesToSelection(files);
+    }
+    return files.length > 0;
+}
+
+async function openBestFilePicker() {
+    if (uploadCapabilityState.advancedPickerAvailable) {
+        try {
+            var picked = await openAdvancedFilePicker();
+            if (picked) {
+                return true;
+            }
+        } catch (error) {
+            if (error && error.name === 'AbortError') {
+                return false;
+            }
+            console.warn('高级多选通道失败，回退普通选择器:', error);
+        }
+    }
+    document.getElementById('fileInput').click();
     return true;
 }
 
-// 页面加载时检测
-checkMultipleSupport();
+function triggerNativeFileSelect() {
+    document.getElementById('fileInput').click();
+}
 
-document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+function tryAdvancedPickerFromUi() {
+    openBestFilePicker().catch(function(error) {
+        console.warn('尝试另一种选择器失败:', error);
+        if (typeof showNotification === 'function') {
+            showNotification('另一种选择器未成功打开，已保留原生选择方式。', 'warning', 3500);
+        }
+    });
+}
+
+function triggerMobileGalleryPicker() {
+    triggerNativeFileSelect();
+}
+
+function triggerMobileCameraPicker() {
+    document.getElementById('cameraInput').click();
+}
+
+function tryAutoOpenMobilePicker(force) {
+    if (!(mobileUploadState.isMobile && mobileUploadState.isLocalNetwork)) {
+        return false;
+    }
+    if (mobileUploadState.autoPickerAttempted && !force) {
+        return false;
+    }
+    mobileUploadState.autoPickerAttempted = true;
+    try {
+        triggerNativeFileSelect();
+    } catch (error) {
+        var hint = document.getElementById('mobileUploadAssistHint');
+        if (hint) {
+            hint.textContent = mobileUploadState.isCompanionApp
+                ? '当前系统没有直接拉起选择器，请手动点“从相册导入”或“直接拍照/录像”。'
+                : '当前手机浏览器拦截了自动拉起，请改点“从相册导入”或“直接拍照/录像”。';
+        }
+        console.warn('自动拉起选择器失败:', error);
+    }
+    return true;
+}
 
 function handleFileSelect(event) {
     var files = event.target.files;
@@ -193,13 +353,13 @@ function showQuickAddBar() {
         quickBar.id = 'quickAddBar';
         quickBar.className = 'position-fixed bottom-0 start-0 end-0 p-3 bg-white border-top shadow-lg';
         quickBar.style.cssText = 'z-index: 1060;';
-        quickBar.innerHTML = '<div class="d-flex justify-content-center align-items-center gap-3"><button class="btn btn-outline-secondary" onclick="clearSelectedFiles(); hideQuickAddBar();"><i class="fas fa-trash me-1"></i>清空</button><button class="btn btn-primary btn-lg px-4" onclick="triggerFileSelect()"><i class="fas fa-plus me-1"></i>继续添加</button><button class="btn btn-success btn-lg px-4" onclick="startUpload()"><i class="fas fa-upload me-1"></i>上传 (' + selectedFiles.length + '张)</button></div>';
+        quickBar.innerHTML = '<div class="d-flex justify-content-center align-items-center gap-3"><button class="btn btn-outline-secondary" onclick="clearSelectedFiles(); hideQuickAddBar();"><i class="fas fa-trash me-1"></i>清空</button><button class="btn btn-primary btn-lg px-4" onclick="triggerFileSelect()"><i class="fas fa-plus me-1"></i>继续添加</button><button class="btn btn-success btn-lg px-4" onclick="startUpload()"><i class="fas fa-upload me-1"></i>上传 (' + selectedFiles.length + '项)</button></div>';
         document.body.appendChild(quickBar);
     } else {
         // 更新数量
         var uploadBtn = quickBar.querySelector('.btn-success');
         if (uploadBtn) {
-            uploadBtn.innerHTML = '<i class="fas fa-upload me-1"></i>上传 (' + selectedFiles.length + '张)';
+            uploadBtn.innerHTML = '<i class="fas fa-upload me-1"></i>上传 (' + selectedFiles.length + '项)';
         }
         quickBar.style.display = 'block';
     }
@@ -213,7 +373,7 @@ function hideQuickAddBar() {
 }
 
 function triggerFileSelect() {
-    document.getElementById('fileInput').click();
+    triggerNativeFileSelect();
 }
 
 function startUpload() {
@@ -290,7 +450,7 @@ function updatePreview() {
 }
 
 function addMoreFiles() {
-    document.getElementById('fileInput').click();
+    triggerNativeFileSelect();
 }
 
 function clearSelectedFiles() {
@@ -332,9 +492,7 @@ function uploadFiles() {
     if (selectedFiles.length === 0) return;
     
     var formData = new FormData();
-    var caption = document.getElementById('photoCaption').value;
-    
-    formData.append('caption', caption);
+    formData.append('caption', '');
     
     // 计算总大小
     var totalSize = 0;
@@ -427,7 +585,6 @@ function uploadFiles() {
 
             // 重置表单
             document.getElementById('fileInput').value = '';
-            document.getElementById('photoCaption').value = '';
             document.getElementById('previewArea').style.display = 'none';
             document.getElementById('uploadProgress').style.display = 'none';
             document.getElementById('uploadBtn').disabled = true;
@@ -476,4 +633,16 @@ function formatSize(bytes) {
     var i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
+
+detectMobileUploadContext();
+
+document.getElementById('uploadModal').addEventListener('shown.bs.modal', function () {
+    detectMobileUploadContext();
+    refreshUploadCapabilities();
+    if (mobileUploadState.isMobile && mobileUploadState.isLocalNetwork && selectedFiles.length === 0) {
+        setTimeout(function() {
+            tryAutoOpenMobilePicker(false);
+        }, 120);
+    }
+});
 </script>

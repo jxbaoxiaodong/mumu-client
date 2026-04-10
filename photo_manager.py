@@ -236,3 +236,15 @@ class PhotoManager:
             是否成功移除
         """
         return self.index_manager.remove_from_index(filename)
+
+    def remove_photo_by_path(self, file_path: str) -> bool:
+        """
+        按完整路径从索引中移除照片（不删除实际文件）
+
+        Args:
+            file_path: 文件完整路径
+
+        Returns:
+            是否成功移除
+        """
+        return self.index_manager.remove_from_index_by_path(file_path)

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}安卓伴侣 - {{ baby_name }}成长记录{% endblock %}
+
+{% block extra_css %}
+<style>
+.android-helper-shell {
+    max-width: 860px;
+    margin: 96px auto 48px;
+    padding: 0 16px;
+}
+.android-helper-card {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.06);
+    padding: 24px;
+}
+.android-helper-step {
+    border-radius: 14px;
+    background: #f8f9fb;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="android-helper-shell">
+    <div class="android-helper-card">
+        <div class="mb-3">
+            <div class="small text-uppercase text-muted mb-2">安卓伴侣</div>
+            <h1 class="h3 mb-2">打开 APK 就是本站网页，再补一层原生上传</h1>
+            <p class="text-muted mb-0">
+                对部分手机，尤其是 vivo、OPPO 等 ROM，网页即使在 Chrome 里也可能被系统选图器限制。装到主屏幕通常也解决不了这个问题。
+                真正更稳的是安卓伴侣 APK：安装后先直接进入本站网页，右下角再补一个原生批量导入上传入口。
+            </p>
+        </div>
+
+        {% if apk_available %}
+        <div class="alert alert-success">
+            当前已提供安卓伴侣 APK：<strong>{{ apk_name }}</strong>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mb-4">
+            <a class="btn btn-dark" href="{{ apk_url }}">
+                <i class="fas fa-download me-2"></i>下载安卓伴侣 APK
+            </a>
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            当前还没有现成的安卓伴侣 APK 包可下载。这里不再继续推荐“装到桌面”，避免误导。
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+            <h2 class="h5 mb-3">安装步骤</h2>
+            <div class="android-helper-step">
+                1. 在手机上打开这个页面，如果已经有 APK，就点“下载安卓伴侣 APK”。
+            </div>
+            <div class="android-helper-step">
+                2. 下载完成后，打开 APK。第一次安装时，系统可能会要求你授权“允许此来源安装应用”。
+            </div>
+            <div class="android-helper-step">
+                3. 安装完成后，打开 APK 就是本站网页。如果你走公网入口，仍然按现有逻辑首次输入一次家庭码即可。
+            </div>
+            <div class="android-helper-step mb-0">
+                4. 网页里照常浏览，右下角“导入上传”会调用原生多选和系统文件能力；如果网页自己的上传框表现正常，也还能继续用。
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

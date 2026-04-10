@@ -9,6 +9,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="format-detection" content="telephone=no">
     <title>{% block title %}成长记录 - {{ baby_name }}的成长点滴{% endblock %}</title>
+    <link rel="apple-touch-icon" href="/api/pwa-icon/192.png">
     
     <!-- Bootstrap 5 CSS (本地) -->
     {% if inline_bootstrap_css %}
@@ -199,6 +200,12 @@
                     <div class="mb-2" style="font-size: 1.5rem;">💕</div>
                     <h5 class="mb-1">{{ baby_name }}的成长记录</h5>
                     <p class="mb-2 text-muted">记录宝宝的点点滴滴，留住那些温暖的小时光</p>
+                    {% if android_companion_apk_available %}
+                    <p class="mb-2 small">
+                        <span class="text-muted">安卓手机如果受系统选图器 / ROM 限制无法批量上传，可直接安装安卓伴侣：</span>
+                        <a href="{{ android_companion_apk_url }}" class="fw-semibold">下载 APK</a>
+                    </p>
+                    {% endif %}
                     <small class="text-muted">mumu成长日志系统 &copy; mumu.ftir.fun</small>
                 </div>
             </div>
@@ -228,7 +235,7 @@
                     <div class="mb-4">
                         <h6 class="fw-bold mb-3">先看帮助中心</h6>
                         <p class="text-muted mb-3">
-                            站内说明已经从旧弹窗改成帮助中心。那里会按真实功能边界写清楚：哪些操作不走 AI、哪些操作会调用模型、额度不足时还能继续做什么。
+                            站内说明已经从旧弹窗改成帮助中心。那里会按真实功能边界写清楚：哪些操作不走 AI、哪些操作会调用模型、以及还没配置 AI 时该怎么处理。
                         </p>
                         <div class="d-grid gap-2 d-md-flex">
                             <a href="/help" class="btn btn-dark">
@@ -247,7 +254,7 @@
                             会调用 AI：AI 日记、AI 问答、成长画像刷新、图片理解、视频转写、漫画卡和虚拟角色图生成。
                         </p>
                         <p class="small mb-0">
-                            当前如果共享 AI 额度暂停，基础功能仍可继续使用；暂停的是新的 AI 调用，不是整个网站。
+                            基础功能始终可继续使用；只有需要第三方模型的功能，才会在调用前提示你先自行配置或联系管理员开通。
                         </p>
                     </div>
 
@@ -275,6 +282,38 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="aiAccessRequiredModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI 功能说明</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border mb-3" id="aiAccessRequiredMessage">
+                        宝爸/宝妈你好，你要使用的功能需要调用第三方付费大模型服务。你可以自行配置，或请管理员代为配置。
+                    </div>
+                    <div class="small text-muted mb-3">
+                        自行配置：按 GitHub 说明完成部署和模型配置。<br>
+                        请管理员配置：由管理员统一开通当前站点的 AI 服务。
+                    </div>
+                    <div class="d-grid gap-2">
+                        <a class="btn btn-dark" id="aiAccessDocsLink" href="https://github.com/jxbaoxiaodong/mumu#readme" target="_blank" rel="noopener">
+                            <i class="fab fa-github me-2"></i>查看 GitHub 说明
+                        </a>
+                        <div class="btn btn-outline-secondary disabled text-start" id="aiAccessPricingText">
+                            管理员代配参考：半年 50 元，一年 100 元
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <a href="/help" class="btn btn-outline-secondary">帮助中心</a>
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">我知道了</button>
                 </div>
             </div>
         </div>
@@ -308,6 +347,69 @@
     }
     </script>
 
+    <script>
+    (function() {
+        var lastShownAt = 0;
+
+        function isAIAccessRequiredPayload(payload) {
+            if (!payload || typeof payload !== 'object') {
+                return false;
+            }
+            if (payload.access_required === true) {
+                return true;
+            }
+            if (payload.error === 'AI_ACCESS_REQUIRED') {
+                return true;
+            }
+            var notice = payload.access_notice || {};
+            return notice.access_required === true || notice.error === 'AI_ACCESS_REQUIRED';
+        }
+
+        function showAIAccessRequiredModal(payload) {
+            var now = Date.now();
+            if (now - lastShownAt < 1500) {
+                return;
+            }
+            lastShownAt = now;
+
+            var notice = (payload && payload.access_notice) || payload || {};
+            var message = notice.message || '宝爸/宝妈你好，你要使用的功能需要调用第三方付费大模型服务。你可以自行配置，或请管理员代为配置。';
+            var docsUrl = notice.docs_url || 'https://github.com/jxbaoxiaodong/mumu#readme';
+            var pricing = notice.pricing || {};
+            var halfYearPrice = pricing.half_year_price || 50;
+            var yearPrice = pricing.year_price || 100;
+
+            document.getElementById('aiAccessRequiredMessage').textContent = message;
+            document.getElementById('aiAccessDocsLink').href = docsUrl;
+            document.getElementById('aiAccessPricingText').textContent =
+                '管理员代配参考：半年 ' + halfYearPrice + ' 元，一年 ' + yearPrice + ' 元';
+
+            var modal = new bootstrap.Modal(document.getElementById('aiAccessRequiredModal'));
+            modal.show();
+        }
+
+        var originalFetch = window.fetch.bind(window);
+        window.fetch = function() {
+            return originalFetch.apply(window, arguments).then(function(response) {
+                try {
+                    var contentType = response.headers.get('content-type') || '';
+                    if (contentType.indexOf('application/json') !== -1) {
+                        response.clone().json().then(function(payload) {
+                            if (isAIAccessRequiredPayload(payload)) {
+                                showAIAccessRequiredModal(payload);
+                            }
+                        }).catch(function() {});
+                    }
+                } catch (error) {}
+                return response;
+            });
+        };
+
+        window.isAIAccessRequiredPayload = isAIAccessRequiredPayload;
+        window.showAIAccessRequiredModal = showAIAccessRequiredModal;
+    })();
+    </script>
+
     <!-- 移动端优化脚本 -->
     <script>
     // 基础移动端优化 - 保持简单稳定
@@ -332,6 +434,52 @@
     {% endif %}
     
     {% block extra_js %}{% endblock %}
+
+    <script>
+    (function() {
+        window.isMumuStandalone = function() {
+            return false;
+        };
+
+        window.canUseAdvancedOpenPicker = function() {
+            return window.isSecureContext && typeof window.showOpenFilePicker === 'function';
+        };
+
+        window.canInstallMumuPwa = function() {
+            return false;
+        };
+
+        window.promptInstallMumuPwa = async function() {
+            return false;
+        };
+
+        // 不再把 PWA 作为网页端主方案。为了规避部分 ROM 浏览器反复刷新，
+        // 页面加载时主动清理旧的 service worker，且不再重新注册。
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                registrations.forEach(function(registration) {
+                    registration.unregister().catch(function(error) {
+                        console.warn('Service Worker 注销失败:', error);
+                    });
+                });
+            }).catch(function(error) {
+                console.warn('获取 Service Worker 失败:', error);
+            });
+
+            if ('caches' in window) {
+                caches.keys().then(function(cacheNames) {
+                    cacheNames.forEach(function(cacheName) {
+                        caches.delete(cacheName).catch(function(error) {
+                            console.warn('清理缓存失败:', error);
+                        });
+                    });
+                }).catch(function(error) {
+                    console.warn('读取缓存列表失败:', error);
+                });
+            }
+        }
+    })();
+    </script>
     
     <!-- 初始化脚本 -->
     <script>
@@ -414,6 +562,33 @@
                 window.addEventListener('load', function() {
                     window.setTimeout(window.loadDeferredAvatars, 6000);
                 }, { once: true });
+            }
+
+            try {
+                var params = new URLSearchParams(window.location.search);
+                if (params.get('share_import') === '1' && typeof showNotification === 'function') {
+                    if (params.get('share_error')) {
+                        showNotification('系统分享导入失败：' + params.get('share_error'), 'error', 5000);
+                    } else {
+                        var saved = Number(params.get('share_saved') || 0);
+                        var skipped = Number(params.get('share_skipped') || 0);
+                        var message = '系统分享已导入 ' + saved + ' 个文件';
+                        if (skipped > 0) {
+                            message += '，跳过 ' + skipped + ' 个已存在文件';
+                        }
+                        showNotification(message, 'success', 4500);
+                    }
+
+                    params.delete('share_import');
+                    params.delete('share_saved');
+                    params.delete('share_skipped');
+                    params.delete('share_error');
+                    var nextQuery = params.toString();
+                    var nextUrl = window.location.pathname + (nextQuery ? '?' + nextQuery : '') + window.location.hash;
+                    window.history.replaceState({}, '', nextUrl);
+                }
+            } catch (error) {
+                console.warn('分享导入提示处理失败:', error);
             }
         });
     </script>

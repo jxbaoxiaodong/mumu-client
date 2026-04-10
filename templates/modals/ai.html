@@ -212,9 +212,9 @@ function hideGeneratingToast() {
 
 function isQuotaBoundaryMessage(message) {
     var text = String(message || '').toLowerCase();
-    return text.indexOf('共享 ai 额度') !== -1
-        || text.indexOf('共享ai额度') !== -1
-        || text.indexOf('quota_exceeded') !== -1;
+    return text.indexOf('ai_access_required') !== -1
+        || text.indexOf('第三方付费大模型') !== -1
+        || text.indexOf('管理员代为配置') !== -1;
 }
 
 function buildGenerateErrorMessage(message) {
@@ -270,6 +270,9 @@ function generateAILogAsync() {
             }
             setTimeout(function() { location.reload(); }, 500);
         } else {
+            if (typeof window.isAIAccessRequiredPayload === 'function' && window.isAIAccessRequiredPayload(data)) {
+                window.showAIAccessRequiredModal(data);
+            }
             if (typeof showNotification === 'function') {
                 showNotification(
                     buildGenerateErrorMessage(data.message),

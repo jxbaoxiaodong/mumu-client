@@ -136,8 +136,8 @@
                         <th>ID</th>
                         <th>宝宝名字</th>
                         <th>状态</th>
-                        <th>档位</th>
-                        <th>AI额度</th>
+                        <th>AI服务</th>
+                        <th>累计Token</th>
                         <th>图片生成</th>
                         <th>公网地址</th>
                         <th>IP:端口</th>
@@ -162,16 +162,13 @@
                         </td>
                         <td>
                             {% if client.is_paid %}
-                            <span class="badge badge-paid">扩</span>
+                            <span class="badge badge-paid">开通</span>
                             {% else %}
-                            <span class="badge badge-free">默</span>
+                            <span class="badge badge-free">未开通</span>
                             {% endif %}
                         </td>
                         <td>
-                            <span class="quota-info">{{ "{:,}".format(client.token_used) }}/{{ "{:,}".format(client.token_limit) }}</span>
-                            {% if client.custom_token_limit %}
-                            <span class="badge bg-info ms-1" title="自定义限额">自</span>
-                            {% endif %}
+                            <span class="quota-info">{{ "{:,}".format(client.token_used) }}</span>
                         </td>
                         <td>
                             <span class="quota-info">{{ "{:,}".format(client.generated_image_count or 0) }} 张</span>
@@ -199,17 +196,12 @@
                             </button>
                             <button class="btn btn-sm btn-outline-primary action-btn" 
                                     onclick="togglePaid('{{ client.id }}', {{ 'true' if client.is_paid else 'false' }})">
-                                {% if client.is_paid %}设为默认{% else %}设为扩展{% endif %}
+                                {% if client.is_paid %}关闭AI{% else %}开通AI{% endif %}
                             </button>
                             <button class="btn btn-sm btn-outline-info action-btn" 
                                     onclick="reassignTunnel('{{ client.id }}')"
                                     title="重新分配独立的 Cloudflare Tunnel">
                                 重分Tunnel
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary action-btn" 
-                                    onclick="setQuota('{{ client.id }}', {{ client.custom_token_limit or 'null' }})"
-                                    title="设置自定义 AI 额度">
-                                调节限额
                             </button>
                             {% if client.enabled != false %}
                             <button class="btn btn-sm btn-outline-danger action-btn" 
@@ -237,7 +229,7 @@
         <div class="alert alert-info mt-4">
             <h6><i class="bi bi-info-circle"></i> 使用说明</h6>
             <ul class="mb-0">
-                <li><strong>AI 共享额度</strong>: 默认档 {{ "{:,}".format(admin_config.quota_settings.free_token_quota|default(50000)) }} tokens，扩展档 {{ "{:,}".format(admin_config.quota_settings.paid_token_quota|default(500000)) }} tokens</li>
+                <li><strong>累计Token</strong>: 这里只做技术统计和成本核算，不再做额度限制</li>
                 <li><strong>禁用/启用</strong>: 禁用的客户端无法获取凭证和使用AI服务</li>
                 <li><strong>隧道状态</strong>: 显示客户端的Cloudflare Tunnel是否活跃</li>
                 <li>表格每30秒自动刷新一次</li>

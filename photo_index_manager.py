@@ -676,3 +676,33 @@ class PhotoIndexManager:
                 return True
 
         return False
+
+    def remove_from_index_by_path(self, file_path: str) -> bool:
+        """
+        按完整路径从索引中移除文件（不删除实际文件）
+
+        Args:
+            file_path: 文件完整路径
+
+        Returns:
+            是否成功移除
+        """
+        target_path = str(file_path or "")
+        if not target_path:
+            return False
+
+        removed = False
+        for key in ["photos", "videos"]:
+            to_remove = [
+                file_hash
+                for file_hash, entry in self.index[key].items()
+                if entry.get("path") == target_path
+            ]
+            for file_hash in to_remove:
+                del self.index[key][file_hash]
+                removed = True
+
+        if removed:
+            self._save_index()
+            print(f"🗑️ 已从索引按路径移除: {target_path}")
+        return removed

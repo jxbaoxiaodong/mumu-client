@@ -32,38 +32,6 @@
                                 </div>
                             </div>
                             
-                            <!-- AI共享额度 -->
-                            <div class="d-flex align-items-center mb-3">
-                                <div class="me-3">
-                                    <i class="fas fa-robot fa-2x text-success"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1 text-muted small">AI 共享额度</h6>
-                                    <div class="d-flex align-items-center">
-                                        <span class="me-2" style="font-size: 0.95rem;">剩余 {{ "{:,}".format(quota_remaining) }} / {{ "{:,}".format(quota_total or 50000) }}</span>
-                                        <div class="flex-grow-1" style="max-width: 120px;">
-                                            <div class="progress" style="height: 6px;">
-                                                {% set quota_pct = quota_percent or 0 %}
-                                                <div class="progress-bar {% if quota_pct > 80 %}bg-danger{% elif quota_pct > 50 %}bg-warning{% else %}bg-success{% endif %}" 
-                                                     role="progressbar" 
-                                                     style="width: {{ quota_pct }}%">
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <a href="/usage" class="btn btn-sm btn-outline-secondary ms-2" title="查看明细">
-                                            <i class="fas fa-list"></i>
-                                        </a>
-                                    </div>
-                                    <small class="text-muted d-block mt-1" style="font-size: 0.7rem;">
-                                        {% if quota_remaining <= 0 %}
-                                        当前共享 AI 额度已暂停；照片浏览、上传、分享、留言和手动整理内容不受影响。
-                                        {% else %}
-                                        这里只统计会用到 AI 的操作；看照片和分享给家人不算在内。
-                                        {% endif %}
-                                    </small>
-                                </div>
-                            </div>
-                            
                             <!-- Token用量统计 -->
                             <div class="d-flex align-items-center mb-3">
                                 <div class="me-3">
@@ -101,7 +69,7 @@
                                 <strong>边界说明：</strong><br>
                                 不用 AI：照片浏览、上传、远程分享、家庭码访问、留言、手动写日记、索引管理。<br>
                                 会用到 AI：AI 日记润色、成长画像刷新、AI 问答、图片解读、视频语音识别、漫画或角色图生成。<br>
-                                上面的 AI 功能会占用共享 AI 额度；如果当前额度暂停，基础功能仍然可以照常使用。
+                                AI 调用技术明细只做记录，不会影响基础功能的浏览、上传和分享。
                             </div>
                             <div class="mb-3">
                                 <a href="/help" class="btn btn-sm btn-outline-dark">
@@ -138,6 +106,9 @@
                                 </div>
                                 <div class="mt-2 p-2 bg-light rounded" style="font-size: 0.7rem;">
                                     <strong>分享给亲朋：</strong>推荐使用下方“复制分享文案”按钮，自动包含访问链接和家庭码。
+                                </div>
+                                <div class="mt-2 p-2 bg-light rounded" style="font-size: 0.7rem;">
+                                    <strong>安卓伴侣填地址：</strong>先用手机浏览器访问本站，再把这里的“局域网 / 公网”链接分别复制进去。
                                 </div>
                                 <div class="mt-2 d-grid">
                                     <button class="btn btn-sm btn-outline-primary" type="button" onclick="copyFamilyShareText()">
@@ -279,6 +250,72 @@
                                 <i class="fas fa-info-circle me-1"></i>
                                 请输入完整的文件夹路径，按 Enter 确认<br>
                                 支持多个文件夹，系统会自动扫描所有文件夹中的照片和视频
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-compress-alt me-2"></i>媒体文件夹瘦身</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                先按目标大小生成图片/视频样例，确认满意后再批量原地压缩。图片会优先处理，最长边低于 1440 的图片不会被压缩。
+                            </p>
+                            <div class="p-3 bg-light rounded mb-3">
+                                <div class="d-flex justify-content-between small mb-2">
+                                    <span>当前媒体总大小</span>
+                                    <strong id="settingsMediaShrinkTotalText">读取中...</strong>
+                                </div>
+                                <div class="d-flex justify-content-between small mb-2">
+                                    <span>可压缩图片</span>
+                                    <span id="settingsMediaShrinkImagesText">-</span>
+                                </div>
+                                <div class="d-flex justify-content-between small mb-2">
+                                    <span>可压缩视频</span>
+                                    <span id="settingsMediaShrinkVideosText">-</span>
+                                </div>
+                                <div class="d-flex justify-content-between small">
+                                    <span>暂不压缩部分</span>
+                                    <span id="settingsMediaShrinkImmutableText">-</span>
+                                </div>
+                            </div>
+                            <div class="d-grid">
+                                <button type="button" class="btn btn-outline-primary" onclick="openMediaShrinkModal()">
+                                    <i class="fas fa-sliders-h me-2"></i>压缩媒体文件夹大小
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-clone me-2"></i>同名重复照片清理</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                扫描文件名相同但位于不同目录的重复照片。每组保留一份，其余副本由你手动确认后再删除。
+                            </p>
+                            <div class="d-grid">
+                                <button type="button" class="btn btn-outline-danger" onclick="openDuplicateCleanupModal()">
+                                    <i class="fas fa-search me-2"></i>扫描同名重复照片
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i class="fas fa-magic me-2"></i>AI 深度去除重复及模糊照片</h6>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-3">
+                                调用商业图像识别模型，按日期分批处理全部照片，识别模糊照片和内容相似的重复照片，并把解释按画像刷新同样的方式写回服务端。
+                            </p>
+                            <div class="d-grid">
+                                <button type="button" class="btn btn-outline-danger" onclick="openAiDeepCleanupModal()">
+                                    <i class="fas fa-search me-2"></i>启动 AI 深度去除
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -467,6 +504,537 @@
     </div>
 </div>
 
+<div class="modal fade" id="mediaShrinkModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-compress-alt me-2"></i>压缩媒体文件夹大小</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small mb-3">
+                    会先压图片，图片最长边不会低于 1440；只有图片压到下限还不够时，才会继续压视频。低于 1440 的图片会直接归入“暂不压缩”部分。
+                </div>
+                <div class="alert alert-secondary small mb-3">
+                    压缩任务会按单线程顺序慢慢处理，并周期性回收内存、短暂让出 CPU。看到速度偏慢属于正常现象，目的是避免把机器压死。
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <div class="p-3 border rounded h-100">
+                            <div class="text-muted small mb-1">当前总大小</div>
+                            <div class="fw-semibold" id="mediaShrinkCurrentSize">-</div>
+                            <div class="small text-muted mt-1" id="mediaShrinkCurrentCount">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 border rounded h-100">
+                            <div class="text-muted small mb-1">可压缩图片</div>
+                            <div class="fw-semibold" id="mediaShrinkImageSize">-</div>
+                            <div class="small text-muted mt-1" id="mediaShrinkImageCount">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 border rounded h-100">
+                            <div class="text-muted small mb-1">可压缩视频</div>
+                            <div class="fw-semibold" id="mediaShrinkVideoSize">-</div>
+                            <div class="small text-muted mt-1" id="mediaShrinkVideoCount">-</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="p-3 border rounded h-100">
+                            <div class="text-muted small mb-1">暂不压缩部分</div>
+                            <div class="fw-semibold" id="mediaShrinkImmutableSize">-</div>
+                            <div class="small text-muted mt-1" id="mediaShrinkImmutableCount">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="mediaShrinkUnavailable" class="alert alert-warning d-none mb-3"></div>
+
+                <div id="mediaShrinkControls">
+                    <label class="form-label">目标总大小</label>
+                    <input type="range" class="form-range" id="mediaShrinkTargetRange">
+                    <div class="row g-2 align-items-center mb-2">
+                        <div class="col-sm-6">
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="mediaShrinkTargetInput" min="0" step="0.1">
+                                <span class="input-group-text">GB</span>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="small text-muted" id="mediaShrinkRangeHint">-</div>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-light rounded small mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>目标总大小</span>
+                            <strong id="mediaShrinkTargetSummary">-</strong>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>换算后的图片目标</span>
+                            <span id="mediaShrinkImageTargetSummary">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>换算后的视频目标</span>
+                            <span id="mediaShrinkVideoTargetSummary">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>建议样例图</span>
+                            <span id="mediaShrinkSampleHint">-</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>建议样例视频</span>
+                            <span id="mediaShrinkVideoSampleHint">-</span>
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-primary" id="mediaShrinkPreviewBtn" onclick="generateMediaShrinkPreview()">
+                            <i class="fas fa-images me-2"></i>先看压缩样例
+                        </button>
+                    </div>
+                </div>
+
+                <div id="mediaShrinkTaskPanel" class="mt-4 d-none">
+                    <label class="form-label">批量压缩进度</label>
+                    <div class="progress mb-2" style="height: 10px;">
+                        <div class="progress-bar" id="mediaShrinkTaskProgressBar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="small text-muted mb-1" id="mediaShrinkTaskMessage">-</div>
+                    <div class="small text-muted" id="mediaShrinkTaskSummary">-</div>
+                    <div class="small text-muted" id="mediaShrinkTaskHint">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="mediaShrinkPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-images me-2"></i>压缩样例对比</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div id="mediaShrinkImagePreviewSection" class="mb-4 d-none">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div class="small text-muted">图片样例对比</div>
+                        <div class="small text-muted media-shrink-zoom-hint">点击图片可全屏查看细节</div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="border rounded p-2 h-100">
+                                <div class="text-muted small mb-2">原图</div>
+                                <img id="mediaShrinkOriginalPreview" class="img-fluid rounded media-shrink-preview-image" alt="原图预览" onclick="openMediaShrinkImageFullscreen('original')">
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="border rounded p-2 h-100">
+                                <div class="text-muted small mb-2">压缩后样例</div>
+                                <img id="mediaShrinkCompressedPreview" class="img-fluid rounded media-shrink-preview-image" alt="压缩预览" onclick="openMediaShrinkImageFullscreen('compressed')">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="mediaShrinkVideoPreviewSection" class="mb-4 d-none">
+                    <div class="small text-muted mb-2">视频样例对比</div>
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="border rounded p-2 h-100">
+                                <div class="text-muted small mb-2">原视频</div>
+                                <video id="mediaShrinkOriginalVideoPreview" class="w-100 rounded" controls preload="metadata" style="max-height: 52vh; background:#f8f9fa;"></video>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="border rounded p-2 h-100">
+                                <div class="text-muted small mb-2">压缩后样例</div>
+                                <video id="mediaShrinkCompressedVideoPreview" class="w-100 rounded" controls preload="metadata" style="max-height: 52vh; background:#f8f9fa;"></video>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <div class="p-3 bg-light rounded small h-100">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>图片样例</span>
+                                <strong id="mediaShrinkPreviewFilename">-</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>图片大小</span>
+                                <span id="mediaShrinkPreviewSizeCompare">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>图片参数</span>
+                                <span id="mediaShrinkPreviewParams">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span>图片最低限制</span>
+                                <span>至少 1440px</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="p-3 bg-light rounded small h-100">
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>视频样例</span>
+                                <strong id="mediaShrinkVideoPreviewFilename">-</strong>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>视频大小</span>
+                                <span id="mediaShrinkVideoPreviewSizeCompare">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>视频参数</span>
+                                <span id="mediaShrinkVideoPreviewParams">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span>视频处理说明</span>
+                                <span>视频会慢很多</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-3 bg-light rounded small mt-3">
+                    <div class="d-flex justify-content-between">
+                        <span>估算压缩后总大小</span>
+                        <span id="mediaShrinkPreviewEstimatedTotal">-</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="retryMediaShrinkPreview()">回退重新选择</button>
+                <button type="button" class="btn btn-primary" onclick="openMediaShrinkConfirmModal()">接受并继续压缩</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="mediaShrinkImageFullscreenModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content bg-dark">
+            <div class="modal-header border-0 text-white">
+                <h5 class="modal-title" id="mediaShrinkImageFullscreenTitle">样例大图</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body d-flex align-items-center justify-content-center pt-0">
+                <img id="mediaShrinkFullscreenImage" class="media-shrink-fullscreen-image rounded" alt="样例大图预览">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="mediaShrinkConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle text-warning me-2"></i>不可逆操作确认</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    继续后会直接修改媒体文件夹中的原始图片和视频文件，操作不可撤销。
+                </div>
+                <div class="p-3 bg-light rounded small mb-3" id="mediaShrinkConfirmSummary">
+                    目标总大小：-
+                </div>
+                <ul class="small text-muted mb-0 ps-3">
+                    <li>图片会优先压缩，但最长边不会低于 1440</li>
+                    <li>如果目标更小，会继续压视频，视频处理时间会明显更长</li>
+                    <li>原文件会被直接替换，不会额外保留备份</li>
+                    <li>刚才的样例文件只用于预览，确认前并没有改动原文件</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">再想想</button>
+                <button type="button" class="btn btn-danger" id="mediaShrinkStartBtn" onclick="startMediaShrinkCompression()">
+                    <i class="fas fa-compress-alt me-2"></i>确认并开始压缩
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="blurryCleanupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-eye-slash me-2"></i>清理模糊图片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small mb-3">
+                    这里只列出“明显模糊”的本地候选图。最终删不删由你决定，点击缩略图可以看大图。
+                </div>
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label small text-muted mb-1">扫描灵敏度</label>
+                        <select class="form-select form-select-sm" id="blurryCleanupSensitivity">
+                            <option value="strict">严格，只看明显糊片</option>
+                            <option value="standard" selected>标准，推荐日常使用</option>
+                            <option value="loose">宽松，连轻微模糊也列出来</option>
+                        </select>
+                    </div>
+                    <div class="col-md-8">
+                        <div class="small text-muted" id="blurryCleanupSensitivityHint">
+                            标准模式会比严格模式多扫出一些轻度模糊图，但仍以“需要人工复核”为前提。
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                    <div class="small text-muted" id="blurryCleanupSummary">正在扫描...</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="scanBlurryPhotos()">
+                            <i class="fas fa-sync-alt me-1"></i>重新扫描
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllBlurryPhotos()">
+                            全选
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="invertBlurryPhotoSelection()">
+                            反选
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearBlurryPhotoSelection()">
+                            清空
+                        </button>
+                    </div>
+                </div>
+                <div id="blurryCleanupProgressPanel" class="p-3 bg-light rounded mb-3 d-none">
+                    <div class="progress mb-2" style="height: 10px;">
+                        <div class="progress-bar" id="blurryCleanupProgressBar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="small text-muted mb-1" id="blurryCleanupProgressText">-</div>
+                    <div class="small text-muted" id="blurryCleanupProgressHint">-</div>
+                </div>
+                <div id="blurryCleanupLoading" class="text-center py-5 text-muted">
+                    <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+                    正在本地扫描模糊图片...
+                </div>
+                <div id="blurryCleanupEmpty" class="alert alert-success d-none mb-0">
+                    没有扫到明显模糊的图片候选。
+                </div>
+                <div id="blurryCleanupGrid" class="blurry-cleanup-grid d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-danger" id="blurryCleanupDeleteBtn" onclick="confirmDeleteBlurryPhotos()" disabled>
+                    删除选中图片
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="blurryPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-image me-2"></i>文件预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <img id="blurryPreviewImage" class="img-fluid rounded media-shrink-preview-image d-none" alt="文件大图预览">
+                    <video id="blurryPreviewVideo" class="w-100 rounded d-none" controls preload="metadata" style="max-height: 60vh; background:#f8f9fa;"></video>
+                </div>
+                <div class="p-3 bg-light rounded small">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>文件名</span>
+                        <strong id="blurryPreviewFilename">-</strong>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>位置</span>
+                        <span id="blurryPreviewPath">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>模糊分数</span>
+                        <span id="blurryPreviewScore">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="blurryDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-trash-alt text-danger me-2"></i>确认删除模糊图片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    这一步会直接删除选中的原始图片文件，删除后无法恢复。
+                </div>
+                <div class="small text-muted" id="blurryDeleteConfirmSummary">-</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="blurryDeleteConfirmBtn" onclick="deleteSelectedBlurryPhotos()">
+                    确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="duplicateCleanupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-clone me-2"></i>清理同名重复照片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small mb-3">
+                    这里只清理“文件名相同”的重复照片。每组会保留一份，其余副本默认勾选删除，你可以手动取消。
+                </div>
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                    <div class="small text-muted" id="duplicateCleanupSummary">正在扫描...</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="scanDuplicateFiles()">
+                            <i class="fas fa-sync-alt me-1"></i>重新扫描
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAllDuplicateFiles()">
+                            全选副本
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearDuplicateSelection()">
+                            清空选择
+                        </button>
+                    </div>
+                </div>
+                <div id="duplicateCleanupLoading" class="text-center py-5 text-muted">
+                    <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+                    正在扫描同名重复照片...
+                </div>
+                <div id="duplicateCleanupEmpty" class="alert alert-success d-none mb-0">
+                    没有扫到同名重复照片。
+                </div>
+                <div id="duplicateCleanupList" class="d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-danger" id="duplicateCleanupDeleteBtn" onclick="confirmDeleteDuplicateFiles()" disabled>
+                    删除选中副本
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="duplicateDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-trash text-danger me-2"></i>确认删除重复副本</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    选中的重复副本会被直接删除，只保留每组里标记为“保留”的那一份。
+                </div>
+                <div class="small text-muted" id="duplicateDeleteConfirmSummary">-</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="duplicateDeleteConfirmBtn" onclick="deleteSelectedDuplicateFiles()">
+                    确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="aiDeepCleanupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-magic me-2"></i>AI 深度去除重复及模糊照片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info small mb-3">
+                    这一步会按日期分批调用商业图像识别模型，识别模糊照片和内容相似的重复照片，并把分析解释写回服务端数据库。
+                </div>
+                <div class="p-3 bg-light rounded mb-3">
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span>待处理照片数</span>
+                        <strong id="aiDeepCleanupTotalImages">-</strong>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span>覆盖日期数</span>
+                        <span id="aiDeepCleanupDateCount">-</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-2">
+                        <span>照片总大小</span>
+                        <span id="aiDeepCleanupTotalBytes">-</span>
+                    </div>
+                </div>
+                <div class="small text-muted mb-3" id="aiDeepCleanupEstimateHint">正在读取待处理照片规模...</div>
+                <div id="aiDeepCleanupProgressPanel" class="p-3 bg-light rounded mb-3 d-none">
+                    <div class="progress mb-2" style="height: 10px;">
+                        <div class="progress-bar" id="aiDeepCleanupProgressBar" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="small text-muted mb-1" id="aiDeepCleanupProgressText">-</div>
+                    <div class="small text-muted" id="aiDeepCleanupProgressHint">-</div>
+                </div>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button type="button" class="btn btn-primary" id="aiDeepCleanupStartBtn" onclick="startAiDeepCleanup()">
+                        <i class="fas fa-play me-2"></i>开始 AI 深度分析
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="selectAllAiDeepCleanupItems()">
+                        全选建议删除
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="clearAiDeepCleanupSelection()">
+                        清空选择
+                    </button>
+                </div>
+                <div class="small text-muted mb-3" id="aiDeepCleanupResultSummary">还没有结果。</div>
+                <div id="aiDeepCleanupEmpty" class="alert alert-success d-none mb-3">
+                    AI 已处理完成，但没有识别到需要你处理的模糊照片或重复照片。
+                </div>
+                <div id="aiDeepCleanupBlurrySection" class="d-none mb-4">
+                    <h6 class="mb-3">AI 判定的模糊照片</h6>
+                    <div id="aiDeepCleanupBlurryGrid" class="blurry-cleanup-grid"></div>
+                </div>
+                <div id="aiDeepCleanupDuplicateSection" class="d-none">
+                    <h6 class="mb-3">AI 判定的相似重复照片</h6>
+                    <div id="aiDeepCleanupDuplicateList"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-danger" id="aiDeepCleanupDeleteBtn" onclick="confirmDeleteAiDeepCleanupSelection()" disabled>
+                    删除选中照片
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="aiDeepCleanupDeleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-trash text-danger me-2"></i>确认删除 AI 识别结果</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning mb-3">
+                    选中的原始照片会被直接删除，删除后无法恢复。
+                </div>
+                <div class="small text-muted" id="aiDeepCleanupDeleteConfirmSummary">-</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="aiDeepCleanupDeleteConfirmBtn" onclick="deleteSelectedAiDeepCleanupItems()">
+                    确认删除
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 /* 设置模态框头像样式 */
 .avatar-upload-settings {
@@ -500,6 +1068,86 @@
 }
 .avatar-upload-settings:hover .avatar-overlay-settings {
     opacity: 1;
+}
+.media-shrink-preview-image {
+    width: 100%;
+    max-height: 60vh;
+    object-fit: contain;
+    background: #f8f9fa;
+    cursor: zoom-in;
+}
+.media-shrink-zoom-hint {
+    text-align: right;
+}
+.media-shrink-fullscreen-image {
+    width: 100%;
+    max-height: calc(100vh - 140px);
+    object-fit: contain;
+    background: #111;
+}
+.blurry-cleanup-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 14px;
+}
+.blurry-cleanup-card {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+}
+.blurry-cleanup-thumb {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    background: #f2f4f5;
+    cursor: pointer;
+}
+.blurry-cleanup-body {
+    padding: 12px;
+}
+.blurry-cleanup-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    word-break: break-word;
+}
+.blurry-cleanup-meta {
+    font-size: 0.75rem;
+    color: #6c757d;
+    line-height: 1.5;
+}
+.duplicate-group-card {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 14px;
+    padding: 14px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+    margin-bottom: 14px;
+}
+.duplicate-file-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 10px 0;
+    border-top: 1px solid rgba(0,0,0,0.06);
+}
+.duplicate-file-row:first-of-type {
+    border-top: 0;
+}
+.duplicate-preview-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #f2f4f5;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+.duplicate-file-meta {
+    font-size: 0.78rem;
+    color: #6c757d;
+    line-height: 1.45;
 }
 </style>
 
@@ -974,8 +1622,1392 @@ function saveLogStyleFromSettings() {
     .catch(function(e) { console.error('保存日志风格失败:', e); });
 }
 
+var mediaShrinkState = {
+    stats: null,
+    previewToken: null,
+    previewData: null,
+    statsLoading: false,
+    pollTimer: null
+};
+
+function formatBytes(bytes) {
+    var value = Number(bytes || 0);
+    if (!isFinite(value) || value <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    var size = value / Math.pow(1024, index);
+    return size.toFixed(size >= 10 || index === 0 ? 0 : 1) + ' ' + units[index];
+}
+
+function bytesToGb(bytes) {
+    return (Number(bytes || 0) / 1024 / 1024 / 1024).toFixed(2);
+}
+
+function gbToBytes(gbValue) {
+    var numeric = parseFloat(gbValue);
+    if (!isFinite(numeric) || numeric < 0) return 0;
+    return Math.round(numeric * 1024 * 1024 * 1024);
+}
+
+function getModalInstance(id) {
+    return bootstrap.Modal.getOrCreateInstance(document.getElementById(id));
+}
+
+function withCacheBuster(url) {
+    if (!url) return '';
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now();
+}
+
+function resetVideoElement(id) {
+    var video = document.getElementById(id);
+    if (!video) return;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+}
+
+function resetMediaShrinkPreviewContent() {
+    document.getElementById('mediaShrinkImagePreviewSection').classList.add('d-none');
+    document.getElementById('mediaShrinkVideoPreviewSection').classList.add('d-none');
+    document.getElementById('mediaShrinkOriginalPreview').removeAttribute('src');
+    document.getElementById('mediaShrinkCompressedPreview').removeAttribute('src');
+    resetVideoElement('mediaShrinkOriginalVideoPreview');
+    resetVideoElement('mediaShrinkCompressedVideoPreview');
+    document.getElementById('mediaShrinkPreviewFilename').textContent = '-';
+    document.getElementById('mediaShrinkPreviewSizeCompare').textContent = '-';
+    document.getElementById('mediaShrinkPreviewParams').textContent = '-';
+    document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '-';
+    document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent = '-';
+    document.getElementById('mediaShrinkVideoPreviewParams').textContent = '-';
+    document.getElementById('mediaShrinkPreviewEstimatedTotal').textContent = '-';
+}
+
+function setMediaShrinkStatsLoading() {
+    var loadingText = '读取中...';
+    mediaShrinkState.statsLoading = true;
+    document.getElementById('settingsMediaShrinkTotalText').textContent = loadingText;
+    document.getElementById('settingsMediaShrinkImagesText').textContent = loadingText;
+    document.getElementById('settingsMediaShrinkVideosText').textContent = loadingText;
+    document.getElementById('settingsMediaShrinkImmutableText').textContent = loadingText;
+    document.getElementById('mediaShrinkCurrentSize').textContent = loadingText;
+    document.getElementById('mediaShrinkImageSize').textContent = loadingText;
+    document.getElementById('mediaShrinkVideoSize').textContent = loadingText;
+    document.getElementById('mediaShrinkImmutableSize').textContent = loadingText;
+    document.getElementById('mediaShrinkCurrentCount').textContent = loadingText;
+    document.getElementById('mediaShrinkImageCount').textContent = loadingText;
+    document.getElementById('mediaShrinkVideoCount').textContent = loadingText;
+    document.getElementById('mediaShrinkImmutableCount').textContent = loadingText;
+    document.getElementById('mediaShrinkTargetSummary').textContent = loadingText;
+    document.getElementById('mediaShrinkImageTargetSummary').textContent = loadingText;
+    document.getElementById('mediaShrinkVideoTargetSummary').textContent = loadingText;
+    document.getElementById('mediaShrinkSampleHint').textContent = loadingText;
+    document.getElementById('mediaShrinkVideoSampleHint').textContent = loadingText;
+    document.getElementById('mediaShrinkRangeHint').textContent = '正在读取媒体目录统计，请稍候...';
+
+    var controls = document.getElementById('mediaShrinkControls');
+    var unavailable = document.getElementById('mediaShrinkUnavailable');
+    var previewBtn = document.getElementById('mediaShrinkPreviewBtn');
+    var range = document.getElementById('mediaShrinkTargetRange');
+    var targetInput = document.getElementById('mediaShrinkTargetInput');
+
+    controls.classList.remove('d-none');
+    unavailable.classList.add('d-none');
+    previewBtn.disabled = true;
+    range.disabled = true;
+    targetInput.disabled = true;
+    targetInput.value = '';
+}
+
+function clearMediaShrinkPollTimer() {
+    if (mediaShrinkState.pollTimer) {
+        clearTimeout(mediaShrinkState.pollTimer);
+        mediaShrinkState.pollTimer = null;
+    }
+}
+
+function refreshMediaShrinkSettingsSummary(stats) {
+    document.getElementById('settingsMediaShrinkTotalText').textContent = formatBytes(stats.total_bytes);
+    document.getElementById('settingsMediaShrinkImagesText').textContent = formatBytes(stats.image_bytes) + ' / ' + (stats.image_count || 0) + ' 张';
+    document.getElementById('settingsMediaShrinkVideosText').textContent = formatBytes(stats.compressible_video_bytes || 0) + ' / ' + (stats.compressible_video_count || 0) + ' 个';
+    var immutableText = formatBytes(stats.immutable_bytes);
+    var immutableCount = (stats.noncompressible_image_count || 0) + ((stats.video_count || 0) - (stats.compressible_video_count || 0)) + (stats.other_count || 0);
+    if (stats.noncompressible_image_count) {
+        immutableText += '（含 ' + stats.noncompressible_image_count + ' 张低于 1440 的图片）';
+    }
+    document.getElementById('settingsMediaShrinkImmutableText').textContent = immutableText;
+    document.getElementById('mediaShrinkCurrentSize').textContent = formatBytes(stats.total_bytes);
+    document.getElementById('mediaShrinkImageSize').textContent = formatBytes(stats.image_bytes);
+    document.getElementById('mediaShrinkVideoSize').textContent = formatBytes(stats.compressible_video_bytes || 0);
+    document.getElementById('mediaShrinkImmutableSize').textContent = formatBytes(stats.immutable_bytes);
+    document.getElementById('mediaShrinkCurrentCount').textContent = ((stats.image_count || 0) + (stats.video_count || 0) + (stats.other_count || 0)) + ' 个文件';
+    document.getElementById('mediaShrinkImageCount').textContent = (stats.image_count || 0) + ' 张图片';
+    document.getElementById('mediaShrinkVideoCount').textContent = (stats.compressible_video_count || 0) + ' 个视频';
+    document.getElementById('mediaShrinkImmutableCount').textContent = immutableCount + ' 个文件';
+    document.getElementById('mediaShrinkSampleHint').textContent = stats.sample_filename || '未找到样例图';
+    document.getElementById('mediaShrinkVideoSampleHint').textContent = stats.sample_video_filename || '未找到样例视频';
+}
+
+function updateMediaShrinkTargetSummary() {
+    var stats = mediaShrinkState.stats;
+    if (!stats) return;
+
+    var targetBytes = getMediaShrinkTargetBytes();
+    var afterImmutable = Math.max(0, targetBytes - Number(stats.immutable_bytes || 0));
+    var preferredImageTarget = Math.max(0, afterImmutable - Number(stats.compressible_video_bytes || 0));
+    var imageFloor = Math.round(Number(stats.image_bytes || 0) * 0.22);
+    var imageTarget = Math.min(Number(stats.image_bytes || 0), Math.max(imageFloor, preferredImageTarget));
+    var videoTarget = Math.max(0, afterImmutable - imageTarget);
+
+    document.getElementById('mediaShrinkTargetSummary').textContent = formatBytes(targetBytes);
+    document.getElementById('mediaShrinkImageTargetSummary').textContent = formatBytes(imageTarget);
+    document.getElementById('mediaShrinkVideoTargetSummary').textContent = formatBytes(videoTarget);
+}
+
+function getMediaShrinkTargetBytes() {
+    var range = document.getElementById('mediaShrinkTargetRange');
+    return Number(range.value || 0);
+}
+
+function syncMediaShrinkRangeToInput() {
+    var range = document.getElementById('mediaShrinkTargetRange');
+    document.getElementById('mediaShrinkTargetInput').value = bytesToGb(range.value);
+    updateMediaShrinkTargetSummary();
+}
+
+function syncMediaShrinkInputToRange() {
+    var stats = mediaShrinkState.stats;
+    if (!stats) return;
+
+    var range = document.getElementById('mediaShrinkTargetRange');
+    var min = Number(range.min || 0);
+    var max = Number(range.max || 0);
+    var bytes = gbToBytes(document.getElementById('mediaShrinkTargetInput').value);
+    bytes = Math.min(max, Math.max(min, bytes));
+    range.value = bytes;
+    document.getElementById('mediaShrinkTargetInput').value = bytesToGb(bytes);
+    updateMediaShrinkTargetSummary();
+}
+
+function applyMediaShrinkStats(stats) {
+    mediaShrinkState.stats = stats;
+    mediaShrinkState.statsLoading = false;
+    refreshMediaShrinkSettingsSummary(stats);
+
+    var controls = document.getElementById('mediaShrinkControls');
+    var unavailable = document.getElementById('mediaShrinkUnavailable');
+    var previewBtn = document.getElementById('mediaShrinkPreviewBtn');
+    var range = document.getElementById('mediaShrinkTargetRange');
+    var targetInput = document.getElementById('mediaShrinkTargetInput');
+
+    if ((!stats.image_count || !stats.image_bytes) && (!stats.compressible_video_count || !stats.compressible_video_bytes)) {
+        controls.classList.add('d-none');
+        unavailable.classList.remove('d-none');
+        unavailable.textContent = '当前媒体文件夹里没有可压缩的图片或视频。';
+        previewBtn.disabled = true;
+        range.disabled = true;
+        targetInput.disabled = true;
+        return;
+    }
+
+    controls.classList.remove('d-none');
+    unavailable.classList.add('d-none');
+    previewBtn.disabled = false;
+    range.disabled = false;
+    targetInput.disabled = false;
+
+    range.min = String(stats.min_total_bytes || 0);
+    range.max = String(stats.max_total_bytes || 0);
+    range.step = String(Math.max(10 * 1024 * 1024, Math.round((stats.max_total_bytes - stats.min_total_bytes) / 120) || 1));
+    range.value = String(stats.default_total_bytes || stats.max_total_bytes || 0);
+    targetInput.value = bytesToGb(range.value);
+    document.getElementById('mediaShrinkRangeHint').textContent =
+        '可调整范围：' + formatBytes(stats.min_total_bytes) + ' 到 ' + formatBytes(stats.max_total_bytes) + '。图片最长边最低 1440，之后才会继续压视频。';
+    updateMediaShrinkTargetSummary();
+}
+
+function loadMediaShrinkStats() {
+    return fetch('/api/media-folder-shrink/stats')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '读取媒体体积失败');
+            }
+            applyMediaShrinkStats(data.data);
+            return data.data;
+        })
+        .catch(function(error) {
+            mediaShrinkState.statsLoading = false;
+            document.getElementById('settingsMediaShrinkTotalText').textContent = '读取失败';
+            document.getElementById('settingsMediaShrinkImagesText').textContent = '-';
+            document.getElementById('settingsMediaShrinkVideosText').textContent = '-';
+            document.getElementById('settingsMediaShrinkImmutableText').textContent = '-';
+            showNotification(error.message || '读取媒体体积失败', 'error');
+            throw error;
+        });
+}
+
+function openMediaShrinkModal() {
+    getModalInstance('mediaShrinkModal').show();
+    if (mediaShrinkState.stats) {
+        applyMediaShrinkStats(mediaShrinkState.stats);
+    } else {
+        setMediaShrinkStatsLoading();
+    }
+    loadMediaShrinkStats().catch(function() {});
+    loadMediaShrinkTaskStatus();
+}
+
+function openMediaShrinkImageFullscreen(kind) {
+    var imageElement = kind === 'compressed'
+        ? document.getElementById('mediaShrinkCompressedPreview')
+        : document.getElementById('mediaShrinkOriginalPreview');
+    var source = imageElement.getAttribute('src');
+    if (!source) {
+        return;
+    }
+    document.getElementById('mediaShrinkFullscreenImage').src = source;
+    document.getElementById('mediaShrinkImageFullscreenTitle').textContent =
+        kind === 'compressed' ? '压缩后样例大图' : '原图样例大图';
+    getModalInstance('mediaShrinkImageFullscreenModal').show();
+}
+
+function cleanupMediaShrinkPreview(token) {
+    var previewToken = token || mediaShrinkState.previewToken;
+    if (!previewToken) {
+        return Promise.resolve();
+    }
+
+    mediaShrinkState.previewToken = null;
+    mediaShrinkState.previewData = null;
+    return fetch('/api/media-folder-shrink/preview/' + encodeURIComponent(previewToken), {
+        method: 'DELETE'
+    }).catch(function() {});
+}
+
+function generateMediaShrinkPreview() {
+    var stats = mediaShrinkState.stats;
+    if (!stats) {
+        showNotification('请先读取媒体目录大小', 'error');
+        return;
+    }
+
+    var button = document.getElementById('mediaShrinkPreviewBtn');
+    var targetBytes = getMediaShrinkTargetBytes();
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在生成样例...';
+
+    cleanupMediaShrinkPreview()
+        .then(function() {
+            resetMediaShrinkPreviewContent();
+            return fetch('/api/media-folder-shrink/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ target_total_bytes: targetBytes })
+            });
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '生成预览失败');
+            }
+
+            mediaShrinkState.previewToken = data.data.token;
+            mediaShrinkState.previewData = data.data;
+            var imageSection = document.getElementById('mediaShrinkImagePreviewSection');
+            var videoSection = document.getElementById('mediaShrinkVideoPreviewSection');
+            imageSection.classList.add('d-none');
+            videoSection.classList.add('d-none');
+
+            if (data.data.image_preview) {
+                imageSection.classList.remove('d-none');
+                document.getElementById('mediaShrinkOriginalPreview').src = withCacheBuster(data.data.image_source_url);
+                document.getElementById('mediaShrinkCompressedPreview').src = withCacheBuster(data.data.image_preview_url);
+                document.getElementById('mediaShrinkPreviewFilename').textContent = data.data.image_sample_filename || '-';
+                document.getElementById('mediaShrinkPreviewSizeCompare').textContent =
+                    formatBytes(data.data.image_preview.original_size) + ' → ' + formatBytes(data.data.image_preview.compressed_size);
+                document.getElementById('mediaShrinkPreviewParams').textContent =
+                    '最长边 ' + data.data.plan.image.max_side + 'px / JPG质量 ' + data.data.plan.image.jpeg_quality;
+            } else {
+                document.getElementById('mediaShrinkPreviewFilename').textContent = '本轮不压图片';
+                document.getElementById('mediaShrinkPreviewSizeCompare').textContent = '-';
+                document.getElementById('mediaShrinkPreviewParams').textContent = '-';
+            }
+
+            if (data.data.video_preview) {
+                videoSection.classList.remove('d-none');
+                document.getElementById('mediaShrinkOriginalVideoPreview').src = withCacheBuster(data.data.video_source_url);
+                document.getElementById('mediaShrinkCompressedVideoPreview').src = withCacheBuster(data.data.video_preview_url);
+                document.getElementById('mediaShrinkVideoPreviewFilename').textContent = data.data.video_sample_filename || '-';
+                document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent =
+                    formatBytes(data.data.video_preview.original_size) + ' → ' + formatBytes(data.data.video_preview.compressed_size);
+                document.getElementById('mediaShrinkVideoPreviewParams').textContent =
+                    '最长边 ' + data.data.plan.video.max_side + 'px / 码率 ' + data.data.plan.video.video_bitrate;
+            } else {
+                document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '本轮不建议压视频';
+                document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent = '-';
+                document.getElementById('mediaShrinkVideoPreviewParams').textContent = data.data.video_skip_reason || '-';
+            }
+
+            document.getElementById('mediaShrinkPreviewEstimatedTotal').textContent =
+                formatBytes(data.data.estimated_total_bytes);
+            getModalInstance('mediaShrinkPreviewModal').show();
+        })
+        .catch(function(error) {
+            showNotification(error.message || '生成预览失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-images me-2"></i>先看压缩样例';
+        });
+}
+
+function retryMediaShrinkPreview() {
+    cleanupMediaShrinkPreview().finally(function() {
+        getModalInstance('mediaShrinkPreviewModal').hide();
+        getModalInstance('mediaShrinkConfirmModal').hide();
+    });
+}
+
+function openMediaShrinkConfirmModal() {
+    if (!mediaShrinkState.previewData) {
+        showNotification('样例图已失效，请重新生成', 'error');
+        return;
+    }
+    var plan = mediaShrinkState.previewData.plan || {};
+    document.getElementById('mediaShrinkConfirmSummary').textContent =
+        '目标总大小：' + formatBytes(plan.target_total_bytes || 0) +
+        '，估算压缩后：' + formatBytes(mediaShrinkState.previewData.estimated_total_bytes) +
+        '。图片目标 ' + formatBytes((plan.image && plan.image.target_bytes) || 0) +
+        '，视频目标 ' + formatBytes((plan.video && plan.video.target_bytes) || 0) + '。';
+    getModalInstance('mediaShrinkConfirmModal').show();
+}
+
+function renderMediaShrinkTaskStatus(status) {
+    var panel = document.getElementById('mediaShrinkTaskPanel');
+    var bar = document.getElementById('mediaShrinkTaskProgressBar');
+    var message = document.getElementById('mediaShrinkTaskMessage');
+    var summary = document.getElementById('mediaShrinkTaskSummary');
+    var hint = document.getElementById('mediaShrinkTaskHint');
+
+    if (!status || (!status.running && status.phase === 'idle' && !status.summary && !status.error)) {
+        panel.classList.add('d-none');
+        return;
+    }
+
+    panel.classList.remove('d-none');
+    var percent = Number(status.percent || 0);
+    bar.className = 'progress-bar';
+    if (status.running) {
+        bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+    } else if (status.phase === 'done') {
+        bar.classList.add('bg-success');
+    } else if (status.phase === 'failed') {
+        bar.classList.add('bg-danger');
+    }
+    bar.style.width = percent + '%';
+    bar.textContent = percent > 12 ? percent + '%' : '';
+    message.textContent = status.message || '处理中...';
+    hint.textContent = status.resource_hint || '任务会单线程顺序处理，周期性回收内存并短暂让出 CPU。';
+
+    if (status.running) {
+        summary.textContent = '已处理 ' + (status.current || 0) + ' / ' + (status.total || 0) +
+            (status.current_file ? '，当前：' + status.current_file : '');
+    } else if (status.phase === 'done' && status.summary) {
+        summary.textContent = '完成图片 ' + (status.summary.processed_images || 0) + ' 项，视频 ' +
+            (status.summary.processed_videos || 0) + ' 项，跳过 ' +
+            status.summary.skipped + ' 项，失败 ' + status.summary.failed +
+            ' 项，累计减少 ' + formatBytes(status.summary.saved_bytes || 0);
+    } else if (status.phase === 'failed') {
+        summary.textContent = status.error || '压缩失败';
+    } else {
+        summary.textContent = status.current_file || '-';
+    }
+}
+
+function loadMediaShrinkTaskStatus() {
+    clearMediaShrinkPollTimer();
+    fetch('/api/media-folder-shrink/status')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '读取任务状态失败');
+            }
+            renderMediaShrinkTaskStatus(data.data);
+            if (data.data.running) {
+                mediaShrinkState.pollTimer = setTimeout(loadMediaShrinkTaskStatus, 1500);
+            } else if (data.data.phase === 'done') {
+                loadMediaShrinkStats().catch(function() {});
+            }
+        })
+        .catch(function(error) {
+            console.error('读取媒体压缩状态失败:', error);
+        });
+}
+
+function startMediaShrinkCompression() {
+    if (!mediaShrinkState.previewToken) {
+        showNotification('样例图已失效，请重新生成', 'error');
+        return;
+    }
+
+    var button = document.getElementById('mediaShrinkStartBtn');
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在启动...';
+
+    fetch('/api/media-folder-shrink/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: mediaShrinkState.previewToken })
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '启动压缩失败');
+            }
+            showNotification('已启动批量压缩，请稍候', 'success');
+            getModalInstance('mediaShrinkConfirmModal').hide();
+            getModalInstance('mediaShrinkPreviewModal').hide();
+            getModalInstance('mediaShrinkModal').show();
+            loadMediaShrinkTaskStatus();
+            cleanupMediaShrinkPreview();
+        })
+        .catch(function(error) {
+            showNotification(error.message || '启动压缩失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-compress-alt me-2"></i>确认并开始压缩';
+        });
+}
+
+var blurryCleanupState = {
+    items: [],
+    selectedPaths: new Set(),
+    previewItem: null,
+    pollTimer: null
+};
+
+function clearBlurryCleanupPollTimer() {
+    if (blurryCleanupState.pollTimer) {
+        clearTimeout(blurryCleanupState.pollTimer);
+        blurryCleanupState.pollTimer = null;
+    }
+}
+
+function getBlurryCleanupSensitivity() {
+    return (document.getElementById('blurryCleanupSensitivity').value || 'standard').trim();
+}
+
+function updateBlurrySensitivityHint() {
+    var hints = {
+        strict: '严格模式只保留最明显的糊片，误判最少，但可能漏掉轻度模糊图。',
+        standard: '标准模式会比严格模式多扫出一些轻度模糊图，但仍以“需要人工复核”为前提。',
+        loose: '宽松模式会把轻微模糊也列出来，候选会明显变多，适合集中清理。'
+    };
+    document.getElementById('blurryCleanupSensitivityHint').textContent =
+        hints[getBlurryCleanupSensitivity()] || hints.standard;
+}
+
+function renderBlurryScanProgress(status) {
+    var panel = document.getElementById('blurryCleanupProgressPanel');
+    var bar = document.getElementById('blurryCleanupProgressBar');
+    var text = document.getElementById('blurryCleanupProgressText');
+    var hint = document.getElementById('blurryCleanupProgressHint');
+
+    if (!status || (!status.running && status.phase === 'idle' && !status.result && !status.error)) {
+        panel.classList.add('d-none');
+        return;
+    }
+
+    panel.classList.remove('d-none');
+    var percent = Number(status.percent || 0);
+    bar.className = 'progress-bar';
+    if (status.running) {
+        bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+    } else if (status.phase === 'done') {
+        bar.classList.add('bg-success');
+    } else if (status.phase === 'failed') {
+        bar.classList.add('bg-danger');
+    }
+    bar.style.width = percent + '%';
+    bar.textContent = percent > 10 ? percent + '%' : '';
+    text.textContent = status.message || '正在扫描模糊图片...';
+    hint.textContent = status.resource_hint || '扫描时会逐张读取图片并主动回收内存。';
+}
+
+function getSelectedBlurryPhotoPaths() {
+    return Array.from(blurryCleanupState.selectedPaths);
+}
+
+function updateBlurryCleanupDeleteButton() {
+    var button = document.getElementById('blurryCleanupDeleteBtn');
+    var count = blurryCleanupState.selectedPaths.size;
+    button.disabled = count === 0;
+    button.textContent = count > 0 ? '删除选中图片（' + count + '）' : '删除选中图片';
+}
+
+function renderBlurryCleanupList() {
+    var grid = document.getElementById('blurryCleanupGrid');
+    var empty = document.getElementById('blurryCleanupEmpty');
+    var items = blurryCleanupState.items;
+
+    grid.innerHTML = '';
+    if (!items.length) {
+        grid.classList.add('d-none');
+        empty.classList.remove('d-none');
+        updateBlurryCleanupDeleteButton();
+        return;
+    }
+
+    empty.classList.add('d-none');
+    grid.classList.remove('d-none');
+
+    items.forEach(function(item) {
+        var card = document.createElement('div');
+        card.className = 'blurry-cleanup-card';
+
+        var thumb = document.createElement('img');
+        thumb.className = 'blurry-cleanup-thumb';
+        thumb.src = item.thumb_url;
+        thumb.alt = item.filename;
+        thumb.addEventListener('click', function() {
+            openBlurryPreview(item);
+        });
+        card.appendChild(thumb);
+
+        var body = document.createElement('div');
+        body.className = 'blurry-cleanup-body';
+
+        var checkboxWrap = document.createElement('div');
+        checkboxWrap.className = 'form-check mb-2';
+        var checkbox = document.createElement('input');
+        checkbox.className = 'form-check-input';
+        checkbox.type = 'checkbox';
+        checkbox.checked = blurryCleanupState.selectedPaths.has(item.path);
+        checkbox.addEventListener('change', function() {
+            if (checkbox.checked) {
+                blurryCleanupState.selectedPaths.add(item.path);
+            } else {
+                blurryCleanupState.selectedPaths.delete(item.path);
+            }
+            updateBlurryCleanupDeleteButton();
+        });
+        var label = document.createElement('label');
+        label.className = 'form-check-label small fw-semibold';
+        label.textContent = '加入删除列表';
+        checkboxWrap.appendChild(checkbox);
+        checkboxWrap.appendChild(label);
+        body.appendChild(checkboxWrap);
+
+        var name = document.createElement('div');
+        name.className = 'blurry-cleanup-name mb-1';
+        name.textContent = item.filename;
+        body.appendChild(name);
+
+        var meta = document.createElement('div');
+        meta.className = 'blurry-cleanup-meta';
+        meta.innerHTML =
+            '模糊分数：' + item.blur_score +
+            '<br>大小：' + formatBytes(item.size_bytes) +
+            '<br>位置：' + (item.relative_path || item.filename);
+        body.appendChild(meta);
+
+        var previewBtn = document.createElement('button');
+        previewBtn.type = 'button';
+        previewBtn.className = 'btn btn-sm btn-outline-secondary mt-2';
+        previewBtn.textContent = '看大图';
+        previewBtn.addEventListener('click', function() {
+            openBlurryPreview(item);
+        });
+        body.appendChild(previewBtn);
+
+        card.appendChild(body);
+        grid.appendChild(card);
+    });
+
+    updateBlurryCleanupDeleteButton();
+}
+
+function scanBlurryPhotos() {
+    clearBlurryCleanupPollTimer();
+    var loading = document.getElementById('blurryCleanupLoading');
+    var empty = document.getElementById('blurryCleanupEmpty');
+    var grid = document.getElementById('blurryCleanupGrid');
+    var summary = document.getElementById('blurryCleanupSummary');
+    var sensitivity = getBlurryCleanupSensitivity();
+
+    loading.classList.remove('d-none');
+    empty.className = 'alert alert-success d-none mb-0';
+    empty.classList.add('d-none');
+    grid.classList.add('d-none');
+    grid.innerHTML = '';
+    summary.textContent = '正在启动模糊图片扫描...';
+    blurryCleanupState.items = [];
+    blurryCleanupState.selectedPaths = new Set();
+    updateBlurryCleanupDeleteButton();
+    renderBlurryScanProgress({
+        running: true,
+        phase: 'starting',
+        percent: 0,
+        message: '正在准备扫描任务...',
+        resource_hint: '扫描会单线程顺序执行，避免卡顿。'
+    });
+
+    fetch('/api/media-quality/blurry/scan/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sensitivity: sensitivity })
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                if ((data.message || '').indexOf('已有模糊扫描任务正在运行中') >= 0) {
+                    loadBlurryScanStatus();
+                    return;
+                }
+                throw new Error(data.message || '扫描失败');
+            }
+            loadBlurryScanStatus();
+        })
+        .catch(function(error) {
+            renderBlurryScanProgress({
+                running: false,
+                phase: 'failed',
+                percent: 100,
+                error: error.message || '扫描失败',
+                message: '模糊扫描失败'
+            });
+            loading.classList.add('d-none');
+            summary.textContent = '扫描失败';
+            empty.classList.remove('d-none');
+            empty.className = 'alert alert-danger mb-0';
+            empty.textContent = error.message || '扫描失败';
+            showNotification(error.message || '扫描失败', 'error');
+        });
+}
+
+function loadBlurryScanStatus() {
+    clearBlurryCleanupPollTimer();
+    var loading = document.getElementById('blurryCleanupLoading');
+    var empty = document.getElementById('blurryCleanupEmpty');
+    var grid = document.getElementById('blurryCleanupGrid');
+    var summary = document.getElementById('blurryCleanupSummary');
+
+    fetch('/api/media-quality/blurry/scan/status')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '读取扫描状态失败');
+            }
+
+            var status = data.data || {};
+            renderBlurryScanProgress(status);
+
+            if (status.running) {
+                loading.classList.remove('d-none');
+                summary.textContent =
+                    '正在按' + (
+                        status.sensitivity === 'strict' ? '严格' :
+                        status.sensitivity === 'loose' ? '宽松' : '标准'
+                    ) + '模式扫描模糊图片...';
+                blurryCleanupState.pollTimer = setTimeout(loadBlurryScanStatus, 1200);
+                return;
+            }
+
+            loading.classList.add('d-none');
+            if (status.phase === 'failed') {
+                summary.textContent = '扫描失败';
+                empty.classList.remove('d-none');
+                empty.className = 'alert alert-danger mb-0';
+                empty.textContent = status.error || '扫描失败';
+                return;
+            }
+
+            var payload = status.result || {};
+            blurryCleanupState.items = payload.items || [];
+            blurryCleanupState.selectedPaths = new Set();
+            blurryCleanupState.items.forEach(function(item) {
+                blurryCleanupState.selectedPaths.add(item.path);
+            });
+
+            if (blurryCleanupState.items.length > 0) {
+                summary.textContent =
+                    '已按' + (payload.sensitivity_label || '标准') + '模式扫描 ' +
+                    (payload.scanned_count || 0) + ' 张图片，筛出 ' +
+                    (payload.candidate_count || 0) + ' 张候选。';
+            } else {
+                summary.textContent =
+                    '已按' + (payload.sensitivity_label || '标准') + '模式扫描 ' +
+                    (payload.scanned_count || 0) + ' 张图片，没有找到候选。';
+            }
+
+            if (payload.sensitivity_hint) {
+                document.getElementById('blurryCleanupProgressHint').textContent =
+                    payload.sensitivity_hint;
+            }
+            renderBlurryCleanupList();
+        })
+        .catch(function(error) {
+            loading.classList.add('d-none');
+            renderBlurryScanProgress({
+                running: false,
+                phase: 'failed',
+                percent: 100,
+                error: error.message || '读取扫描状态失败',
+                message: '模糊扫描失败'
+            });
+            summary.textContent = '扫描失败';
+            empty.classList.remove('d-none');
+            empty.className = 'alert alert-danger mb-0';
+            empty.textContent = error.message || '读取扫描状态失败';
+        });
+}
+
+function openBlurryCleanupModal() {
+    getModalInstance('blurryCleanupModal').show();
+    updateBlurrySensitivityHint();
+    scanBlurryPhotos();
+}
+
+function selectAllBlurryPhotos() {
+    blurryCleanupState.selectedPaths = new Set(
+        blurryCleanupState.items.map(function(item) { return item.path; })
+    );
+    renderBlurryCleanupList();
+}
+
+function clearBlurryPhotoSelection() {
+    blurryCleanupState.selectedPaths = new Set();
+    renderBlurryCleanupList();
+}
+
+function invertBlurryPhotoSelection() {
+    var nextSet = new Set();
+    blurryCleanupState.items.forEach(function(item) {
+        if (!blurryCleanupState.selectedPaths.has(item.path)) {
+            nextSet.add(item.path);
+        }
+    });
+    blurryCleanupState.selectedPaths = nextSet;
+    renderBlurryCleanupList();
+}
+
+function openBlurryPreview(item) {
+    openMediaFilePreview(item, {
+        scoreText: item.blur_score + '（越低越模糊）'
+    });
+}
+
+function openMediaFilePreview(item, options) {
+    options = options || {};
+    var isVideo = item.file_type === 'video' || (item.path || '').match(/\.(mp4|mov|mkv|webm|m4v|3gp)$/i);
+    var imageEl = document.getElementById('blurryPreviewImage');
+    var videoEl = document.getElementById('blurryPreviewVideo');
+
+    if (isVideo) {
+        imageEl.classList.add('d-none');
+        imageEl.removeAttribute('src');
+        videoEl.classList.remove('d-none');
+        videoEl.src = withCacheBuster(item.full_url || item.image_url || item.preview_url);
+    } else {
+        videoEl.pause();
+        videoEl.classList.add('d-none');
+        videoEl.removeAttribute('src');
+        imageEl.classList.remove('d-none');
+        imageEl.src = withCacheBuster(item.image_url || item.full_url || item.preview_url);
+    }
+
+    document.getElementById('blurryPreviewFilename').textContent = item.filename;
+    document.getElementById('blurryPreviewPath').textContent = item.relative_path || item.path;
+    document.getElementById('blurryPreviewScore').textContent = options.scoreText || options.detailText || '-';
+    getModalInstance('blurryPreviewModal').show();
+}
+
+function confirmDeleteBlurryPhotos() {
+    var selected = getSelectedBlurryPhotoPaths();
+    if (!selected.length) {
+        showNotification('请先勾选要删除的图片', 'error');
+        return;
+    }
+    document.getElementById('blurryDeleteConfirmSummary').textContent =
+        '即将删除 ' + selected.length + ' 张原始图片文件。删除后会同步移除索引，并清理本地缩略图缓存。';
+    getModalInstance('blurryDeleteConfirmModal').show();
+}
+
+function deleteSelectedBlurryPhotos() {
+    var selected = getSelectedBlurryPhotoPaths();
+    if (!selected.length) {
+        showNotification('请先勾选要删除的图片', 'error');
+        return;
+    }
+
+    var button = document.getElementById('blurryDeleteConfirmBtn');
+    button.disabled = true;
+    button.textContent = '正在删除...';
+
+    fetch('/api/media-quality/blurry/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: selected })
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '删除失败');
+            }
+            showNotification(data.message || '删除成功', 'success');
+            getModalInstance('blurryDeleteConfirmModal').hide();
+            scanBlurryPhotos();
+            loadMediaShrinkStats().catch(function() {});
+        })
+        .catch(function(error) {
+            showNotification(error.message || '删除失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.textContent = '确认删除';
+        });
+}
+
+var duplicateCleanupState = {
+    groups: [],
+    selectedPaths: new Set()
+};
+
+function updateDuplicateCleanupDeleteButton() {
+    var button = document.getElementById('duplicateCleanupDeleteBtn');
+    var count = duplicateCleanupState.selectedPaths.size;
+    button.disabled = count === 0;
+    button.textContent = count > 0 ? '删除选中同名照片（' + count + '）' : '删除选中同名照片';
+}
+
+function getSelectedDuplicatePaths() {
+    return Array.from(duplicateCleanupState.selectedPaths);
+}
+
+function renderDuplicateCleanupList() {
+    var list = document.getElementById('duplicateCleanupList');
+    var empty = document.getElementById('duplicateCleanupEmpty');
+    list.innerHTML = '';
+
+    if (!duplicateCleanupState.groups.length) {
+        list.classList.add('d-none');
+        empty.classList.remove('d-none');
+        updateDuplicateCleanupDeleteButton();
+        return;
+    }
+
+    empty.classList.add('d-none');
+    list.classList.remove('d-none');
+
+    duplicateCleanupState.groups.forEach(function(group) {
+        var card = document.createElement('div');
+        card.className = 'duplicate-group-card';
+
+        var header = document.createElement('div');
+        header.className = 'd-flex justify-content-between align-items-start flex-wrap gap-2 mb-2';
+        header.innerHTML =
+            '<div><div class="fw-semibold">重复组 ' + group.group_id + '</div>' +
+            '<div class="small text-muted">可回收 ' + formatBytes(group.wasted_bytes) + '，重复副本 ' + group.duplicate_count + ' 个</div></div>' +
+            '<span class="badge text-bg-light">同名重复</span>';
+        card.appendChild(header);
+
+        var keepRow = document.createElement('div');
+        keepRow.className = 'duplicate-file-row';
+        keepRow.innerHTML =
+            '<img class="duplicate-preview-thumb" src="' + (group.keep.preview_url || '') + '" alt="保留文件">' +
+            '<div class="flex-grow-1">' +
+            '<div class="d-flex justify-content-between gap-2"><strong>' + group.keep.filename + '</strong><span class="badge text-bg-success">保留</span></div>' +
+            '<div class="duplicate-file-meta">' + (group.keep.relative_path || group.keep.path) + '<br>' + formatBytes(group.keep.size_bytes) + '</div>' +
+            '</div>';
+        keepRow.querySelector('img').addEventListener('click', function() {
+            openMediaFilePreview(group.keep, { detailText: '这份会被保留' });
+        });
+        card.appendChild(keepRow);
+
+        group.duplicates.forEach(function(item) {
+            var row = document.createElement('div');
+            row.className = 'duplicate-file-row';
+
+            var checked = duplicateCleanupState.selectedPaths.has(item.path);
+            row.innerHTML =
+                '<img class="duplicate-preview-thumb" src="' + (item.preview_url || '') + '" alt="重复照片">' +
+                '<div class="flex-grow-1">' +
+                '<div class="d-flex justify-content-between gap-2 flex-wrap">' +
+                '<strong>' + item.filename + '</strong>' +
+                '<label class="form-check m-0"><input class="form-check-input duplicate-select-box" type="checkbox" ' + (checked ? 'checked' : '') + '> <span class="small">删除这个副本</span></label>' +
+                '</div>' +
+                '<div class="duplicate-file-meta">' + (item.relative_path || item.path) + '<br>' + formatBytes(item.size_bytes) + '</div>' +
+                '</div>';
+
+            row.querySelector('img').addEventListener('click', function() {
+                openMediaFilePreview(item, { detailText: '这份是重复副本' });
+            });
+            row.querySelector('.duplicate-select-box').addEventListener('change', function(e) {
+                if (e.target.checked) {
+                    duplicateCleanupState.selectedPaths.add(item.path);
+                } else {
+                    duplicateCleanupState.selectedPaths.delete(item.path);
+                }
+                updateDuplicateCleanupDeleteButton();
+            });
+            card.appendChild(row);
+        });
+
+        list.appendChild(card);
+    });
+
+    updateDuplicateCleanupDeleteButton();
+}
+
+function scanDuplicateFiles() {
+    var loading = document.getElementById('duplicateCleanupLoading');
+    var empty = document.getElementById('duplicateCleanupEmpty');
+    var list = document.getElementById('duplicateCleanupList');
+    var summary = document.getElementById('duplicateCleanupSummary');
+
+    loading.classList.remove('d-none');
+    empty.className = 'alert alert-success d-none mb-0';
+    empty.classList.add('d-none');
+    list.classList.add('d-none');
+    list.innerHTML = '';
+    summary.textContent = '正在扫描同名重复照片...';
+    duplicateCleanupState.groups = [];
+    duplicateCleanupState.selectedPaths = new Set();
+    updateDuplicateCleanupDeleteButton();
+
+    fetch('/api/media-quality/duplicates/scan')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '扫描失败');
+            }
+            duplicateCleanupState.groups = data.data.groups || [];
+            duplicateCleanupState.groups.forEach(function(group) {
+                (group.duplicates || []).forEach(function(item) {
+                    duplicateCleanupState.selectedPaths.add(item.path);
+                });
+            });
+            loading.classList.add('d-none');
+            summary.textContent =
+                '共扫描 ' + (data.data.scanned_count || 0) + ' 个文件，发现 ' +
+                (data.data.group_count || 0) + ' 组同名重复，可回收 ' + formatBytes(data.data.duplicate_bytes || 0) + '。';
+            renderDuplicateCleanupList();
+        })
+        .catch(function(error) {
+            loading.classList.add('d-none');
+            summary.textContent = '扫描失败';
+            empty.classList.remove('d-none');
+            empty.className = 'alert alert-danger mb-0';
+            empty.textContent = error.message || '扫描失败';
+            showNotification(error.message || '扫描失败', 'error');
+        });
+}
+
+function openDuplicateCleanupModal() {
+    getModalInstance('duplicateCleanupModal').show();
+    scanDuplicateFiles();
+}
+
+function selectAllDuplicateFiles() {
+    duplicateCleanupState.selectedPaths = new Set();
+    duplicateCleanupState.groups.forEach(function(group) {
+        (group.duplicates || []).forEach(function(item) {
+            duplicateCleanupState.selectedPaths.add(item.path);
+        });
+    });
+    renderDuplicateCleanupList();
+}
+
+function clearDuplicateSelection() {
+    duplicateCleanupState.selectedPaths = new Set();
+    renderDuplicateCleanupList();
+}
+
+function confirmDeleteDuplicateFiles() {
+    var selected = getSelectedDuplicatePaths();
+    if (!selected.length) {
+        showNotification('请先勾选要删除的重复副本', 'error');
+        return;
+    }
+    document.getElementById('duplicateDeleteConfirmSummary').textContent =
+        '即将删除 ' + selected.length + ' 张同名重复照片，保留每组的第一份文件。';
+    getModalInstance('duplicateDeleteConfirmModal').show();
+}
+
+function deleteSelectedDuplicateFiles() {
+    var selected = getSelectedDuplicatePaths();
+    if (!selected.length) {
+        showNotification('请先勾选要删除的重复副本', 'error');
+        return;
+    }
+
+    var button = document.getElementById('duplicateDeleteConfirmBtn');
+    button.disabled = true;
+    button.textContent = '正在删除...';
+
+    fetch('/api/media-quality/duplicates/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: selected })
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '删除失败');
+            }
+            showNotification(data.message || '删除成功', 'success');
+            getModalInstance('duplicateDeleteConfirmModal').hide();
+            scanDuplicateFiles();
+            loadMediaShrinkStats().catch(function() {});
+        })
+        .catch(function(error) {
+            showNotification(error.message || '删除失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.textContent = '确认删除';
+        });
+}
+
+var aiDeepCleanupState = {
+    estimate: null,
+    result: null,
+    selectedPaths: new Set(),
+    pollTimer: null
+};
+
+function clearAiDeepCleanupPollTimer() {
+    if (aiDeepCleanupState.pollTimer) {
+        clearTimeout(aiDeepCleanupState.pollTimer);
+        aiDeepCleanupState.pollTimer = null;
+    }
+}
+
+function updateAiDeepCleanupDeleteButton() {
+    var button = document.getElementById('aiDeepCleanupDeleteBtn');
+    var count = aiDeepCleanupState.selectedPaths.size;
+    button.disabled = count === 0;
+    button.textContent = count > 0 ? '删除选中照片（' + count + '）' : '删除选中照片';
+}
+
+function renderAiDeepCleanupProgress(status) {
+    var panel = document.getElementById('aiDeepCleanupProgressPanel');
+    var bar = document.getElementById('aiDeepCleanupProgressBar');
+    var text = document.getElementById('aiDeepCleanupProgressText');
+    var hint = document.getElementById('aiDeepCleanupProgressHint');
+
+    if (!status || (!status.running && status.phase === 'idle' && !status.result && !status.error)) {
+        panel.classList.add('d-none');
+        return;
+    }
+
+    panel.classList.remove('d-none');
+    var percent = Number(status.percent || 0);
+    bar.className = 'progress-bar';
+    if (status.running) {
+        bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+    } else if (status.phase === 'done') {
+        bar.classList.add('bg-success');
+    } else if (status.phase === 'failed') {
+        bar.classList.add('bg-danger');
+    }
+    bar.style.width = percent + '%';
+    bar.textContent = percent > 10 ? percent + '%' : '';
+    text.textContent = status.message || 'AI 深度分析中...';
+    hint.textContent = status.resource_hint || '会按日期分批调用模型并主动释放内存。';
+}
+
+function renderAiDeepCleanupEstimate(estimate) {
+    aiDeepCleanupState.estimate = estimate || null;
+    document.getElementById('aiDeepCleanupTotalImages').textContent = (estimate && estimate.total_images) || 0;
+    document.getElementById('aiDeepCleanupDateCount').textContent = (estimate && estimate.date_count) || 0;
+    document.getElementById('aiDeepCleanupTotalBytes').textContent = formatBytes((estimate && estimate.total_bytes) || 0);
+    document.getElementById('aiDeepCleanupEstimateHint').textContent =
+        (estimate && estimate.vision_model_hint ? estimate.vision_model_hint + ' ' : '') +
+        '';
+    document.getElementById('aiDeepCleanupStartBtn').disabled = !estimate || !estimate.total_images;
+}
+
+function renderAiDeepCleanupResult(result) {
+    var previousResult = aiDeepCleanupState.result;
+    var previousSelectedPaths = new Set(aiDeepCleanupState.selectedPaths);
+    aiDeepCleanupState.result = result || null;
+    aiDeepCleanupState.selectedPaths = new Set();
+
+    var blurrySection = document.getElementById('aiDeepCleanupBlurrySection');
+    var blurryGrid = document.getElementById('aiDeepCleanupBlurryGrid');
+    var duplicateSection = document.getElementById('aiDeepCleanupDuplicateSection');
+    var duplicateList = document.getElementById('aiDeepCleanupDuplicateList');
+    var empty = document.getElementById('aiDeepCleanupEmpty');
+    var summary = document.getElementById('aiDeepCleanupResultSummary');
+
+    blurryGrid.innerHTML = '';
+    duplicateList.innerHTML = '';
+    blurrySection.classList.add('d-none');
+    duplicateSection.classList.add('d-none');
+    empty.classList.add('d-none');
+
+    if (!result) {
+        summary.textContent = '还没有结果。';
+        updateAiDeepCleanupDeleteButton();
+        return;
+    }
+
+    var blurryItems = (result && result.blurry_items) || [];
+    var duplicateGroups = (result && result.duplicate_groups) || [];
+    var resultSummary = (result && result.summary) || {};
+    var preserveSelection = !!previousResult;
+
+    if (!blurryItems.length && !duplicateGroups.length) {
+        empty.classList.remove('d-none');
+        summary.textContent = 'AI 已处理 ' + ((resultSummary.analyzed_images || 0)) + ' 张照片，没有识别到需要处理的模糊或重复照片。';
+        updateAiDeepCleanupDeleteButton();
+        return;
+    }
+
+    summary.textContent =
+        'AI 已处理 ' + (resultSummary.analyzed_images || 0) + ' 张照片，识别出模糊照片 ' +
+        (resultSummary.blurry_count || 0) + ' 张，相似重复照片 ' +
+        (resultSummary.duplicate_file_count || 0) + ' 张。';
+
+    if (blurryItems.length) {
+        blurrySection.classList.remove('d-none');
+        blurryItems.forEach(function(item) {
+            var checked = preserveSelection ? previousSelectedPaths.has(item.path) : true;
+            if (checked) {
+                aiDeepCleanupState.selectedPaths.add(item.path);
+            }
+            var card = document.createElement('div');
+            card.className = 'blurry-cleanup-card';
+            card.innerHTML =
+                '<img class="blurry-cleanup-thumb" src="' + (item.thumb_url || '') + '" alt="' + item.filename + '">' +
+                '<div class="blurry-cleanup-body">' +
+                '<div class="form-check mb-2"><input class="form-check-input ai-deep-select-box" type="checkbox" ' + (checked ? 'checked' : '') + '> <label class="form-check-label small fw-semibold">加入删除列表</label></div>' +
+                '<div class="blurry-cleanup-name mb-1">' + item.filename + '</div>' +
+                '<div class="blurry-cleanup-meta">日期：' + (item.date || '-') + '<br>大小：' + formatBytes(item.size_bytes || 0) + '<br>说明：' + (item.reason || 'AI 判定为模糊照片') + '</div>' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary mt-2">看大图</button>' +
+                '</div>';
+            card.querySelector('img').addEventListener('click', function() {
+                openMediaFilePreview(item, { detailText: item.reason || 'AI 判定为模糊照片' });
+            });
+            card.querySelector('button').addEventListener('click', function() {
+                openMediaFilePreview(item, { detailText: item.reason || 'AI 判定为模糊照片' });
+            });
+            card.querySelector('.ai-deep-select-box').addEventListener('change', function(e) {
+                if (e.target.checked) {
+                    aiDeepCleanupState.selectedPaths.add(item.path);
+                } else {
+                    aiDeepCleanupState.selectedPaths.delete(item.path);
+                }
+                updateAiDeepCleanupDeleteButton();
+            });
+            blurryGrid.appendChild(card);
+        });
+    }
+
+    if (duplicateGroups.length) {
+        duplicateSection.classList.remove('d-none');
+        duplicateGroups.forEach(function(group) {
+            var card = document.createElement('div');
+            card.className = 'duplicate-group-card';
+            card.innerHTML =
+                '<div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">' +
+                '<div><div class="fw-semibold">相似组 ' + group.group_id + '</div><div class="small text-muted">日期：' + (group.date || '-') + '，可回收 ' + formatBytes(group.wasted_bytes || 0) + '</div></div>' +
+                '<span class="badge text-bg-light">AI 相似重复</span></div>';
+
+            var keepRow = document.createElement('div');
+            keepRow.className = 'duplicate-file-row';
+            keepRow.innerHTML =
+                '<img class="duplicate-preview-thumb" src="' + (group.keep.preview_url || '') + '" alt="保留文件">' +
+                '<div class="flex-grow-1"><div class="d-flex justify-content-between gap-2"><strong>' + group.keep.filename + '</strong><span class="badge text-bg-success">保留</span></div>' +
+                '<div class="duplicate-file-meta">' + (group.keep.relative_path || group.keep.path) + '<br>' + formatBytes(group.keep.size_bytes || 0) + '</div></div>';
+            keepRow.querySelector('img').addEventListener('click', function() {
+                openMediaFilePreview(group.keep, { detailText: group.keep.reason || '这张会保留' });
+            });
+            card.appendChild(keepRow);
+
+            (group.duplicates || []).forEach(function(item) {
+                var checked = preserveSelection ? previousSelectedPaths.has(item.path) : true;
+                if (checked) {
+                    aiDeepCleanupState.selectedPaths.add(item.path);
+                }
+                var row = document.createElement('div');
+                row.className = 'duplicate-file-row';
+                row.innerHTML =
+                    '<img class="duplicate-preview-thumb" src="' + (item.preview_url || '') + '" alt="重复照片">' +
+                    '<div class="flex-grow-1"><div class="d-flex justify-content-between gap-2 flex-wrap"><strong>' + item.filename + '</strong>' +
+                    '<label class="form-check m-0"><input class="form-check-input ai-deep-dup-box" type="checkbox" ' + (checked ? 'checked' : '') + '> <span class="small">删除这张</span></label></div>' +
+                    '<div class="duplicate-file-meta">' + (item.relative_path || item.path) + '<br>' + formatBytes(item.size_bytes || 0) + '<br>' + (item.reason || 'AI 判定为相似重复照片') + '</div></div>';
+                row.querySelector('img').addEventListener('click', function() {
+                    openMediaFilePreview(item, { detailText: item.reason || 'AI 判定为相似重复照片' });
+                });
+                row.querySelector('.ai-deep-dup-box').addEventListener('change', function(e) {
+                    if (e.target.checked) {
+                        aiDeepCleanupState.selectedPaths.add(item.path);
+                    } else {
+                        aiDeepCleanupState.selectedPaths.delete(item.path);
+                    }
+                    updateAiDeepCleanupDeleteButton();
+                });
+                card.appendChild(row);
+            });
+
+            duplicateList.appendChild(card);
+        });
+    }
+
+    updateAiDeepCleanupDeleteButton();
+}
+
+function loadAiDeepCleanupEstimate() {
+    fetch('/api/media-quality/ai-deep/estimate')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success && !data.data) {
+                throw new Error(data.message || '读取 AI 估算失败');
+            }
+            renderAiDeepCleanupEstimate(data.data || {});
+        })
+        .catch(function(error) {
+            showNotification(error.message || '读取 AI 估算失败', 'error');
+        });
+}
+
+function loadAiDeepCleanupStatus() {
+    clearAiDeepCleanupPollTimer();
+    fetch('/api/media-quality/ai-deep/status')
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '读取 AI 深度清理状态失败');
+            }
+            var status = data.data || {};
+            if (status.estimate) {
+                renderAiDeepCleanupEstimate(status.estimate);
+            }
+            renderAiDeepCleanupProgress(status);
+            if (status.running) {
+                aiDeepCleanupState.pollTimer = setTimeout(loadAiDeepCleanupStatus, 1500);
+                return;
+            }
+            if (status.result) {
+                renderAiDeepCleanupResult(status.result);
+            }
+            if (status.phase === 'failed') {
+                showNotification(status.error || 'AI 深度清理失败', 'error');
+            }
+        })
+        .catch(function(error) {
+            showNotification(error.message || '读取 AI 深度清理状态失败', 'error');
+        });
+}
+
+function openAiDeepCleanupModal() {
+    getModalInstance('aiDeepCleanupModal').show();
+    renderAiDeepCleanupProgress(null);
+    renderAiDeepCleanupResult(null);
+    loadAiDeepCleanupEstimate();
+    loadAiDeepCleanupStatus();
+}
+
+function startAiDeepCleanup() {
+    var button = document.getElementById('aiDeepCleanupStartBtn');
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在启动...';
+
+    fetch('/api/media-quality/ai-deep/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '启动失败');
+            }
+            renderAiDeepCleanupResult(null);
+            loadAiDeepCleanupStatus();
+        })
+        .catch(function(error) {
+            showNotification(error.message || '启动失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-play me-2"></i>开始 AI 深度分析';
+        });
+}
+
+function selectAllAiDeepCleanupItems() {
+    aiDeepCleanupState.selectedPaths = new Set();
+    var result = aiDeepCleanupState.result || {};
+    (result.blurry_items || []).forEach(function(item) { aiDeepCleanupState.selectedPaths.add(item.path); });
+    (result.duplicate_groups || []).forEach(function(group) {
+        (group.duplicates || []).forEach(function(item) { aiDeepCleanupState.selectedPaths.add(item.path); });
+    });
+    renderAiDeepCleanupResult(result);
+}
+
+function clearAiDeepCleanupSelection() {
+    aiDeepCleanupState.selectedPaths = new Set();
+    var modal = document.getElementById('aiDeepCleanupModal');
+    modal.querySelectorAll('.ai-deep-select-box, .ai-deep-dup-box').forEach(function(box) {
+        box.checked = false;
+    });
+    updateAiDeepCleanupDeleteButton();
+}
+
+function confirmDeleteAiDeepCleanupSelection() {
+    var selected = Array.from(aiDeepCleanupState.selectedPaths);
+    if (!selected.length) {
+        showNotification('请先勾选要删除的照片', 'error');
+        return;
+    }
+    document.getElementById('aiDeepCleanupDeleteConfirmSummary').textContent =
+        '即将删除 ' + selected.length + ' 张 AI 判定的问题照片。';
+    getModalInstance('aiDeepCleanupDeleteConfirmModal').show();
+}
+
+function deleteSelectedAiDeepCleanupItems() {
+    var selected = Array.from(aiDeepCleanupState.selectedPaths);
+    if (!selected.length) {
+        showNotification('请先勾选要删除的照片', 'error');
+        return;
+    }
+
+    var button = document.getElementById('aiDeepCleanupDeleteConfirmBtn');
+    button.disabled = true;
+    button.textContent = '正在删除...';
+
+    fetch('/api/media-quality/ai-deep/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: selected })
+    })
+        .then(function(response) { return response.json(); })
+        .then(function(data) {
+            if (!data.success) {
+                throw new Error(data.message || '删除失败');
+            }
+            showNotification(data.message || '删除成功', 'success');
+            getModalInstance('aiDeepCleanupDeleteConfirmModal').hide();
+            loadAiDeepCleanupEstimate();
+            loadAiDeepCleanupStatus();
+            loadMediaShrinkStats().catch(function() {});
+        })
+        .catch(function(error) {
+            showNotification(error.message || '删除失败', 'error');
+        })
+        .finally(function() {
+            button.disabled = false;
+            button.textContent = '确认删除';
+        });
+}
+
 // 重置模态框状态
 document.getElementById('settingsModal').addEventListener('hidden.bs.modal', function () {
+    clearMediaShrinkPollTimer();
+    cleanupMediaShrinkPreview();
     document.getElementById('enterModifySection').classList.remove('d-none');
     document.getElementById('settingsContentSection').classList.add('d-none');
     document.getElementById('modalFamilyCode').value = '';
@@ -1102,11 +3134,42 @@ function regenerateCompression() {
 document.getElementById('settingsModal').addEventListener('shown.bs.modal', function () {
      checkFFmpegStatus();
      loadCompressionStatus();
+     if (!mediaShrinkState.statsLoading) {
+         loadMediaShrinkStats().catch(function() {});
+     }
      // 初始化索引起始日期输入框
      var indexAfterDate = '{{ index_after_date|default("") }}';
      if (indexAfterDate) {
          document.getElementById('rebuildIndexStartDate').value = indexAfterDate;
      }
+});
+
+document.getElementById('mediaShrinkTargetRange').addEventListener('input', syncMediaShrinkRangeToInput);
+document.getElementById('mediaShrinkTargetInput').addEventListener('change', syncMediaShrinkInputToRange);
+document.getElementById('blurryCleanupSensitivity').addEventListener('change', updateBlurrySensitivityHint);
+
+document.getElementById('mediaShrinkPreviewModal').addEventListener('hidden.bs.modal', function () {
+    resetMediaShrinkPreviewContent();
+    if (!document.getElementById('mediaShrinkConfirmModal').classList.contains('show')) {
+        cleanupMediaShrinkPreview();
+    }
+});
+
+document.getElementById('mediaShrinkImageFullscreenModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('mediaShrinkFullscreenImage').removeAttribute('src');
+});
+
+document.getElementById('blurryPreviewModal').addEventListener('hidden.bs.modal', function () {
+    document.getElementById('blurryPreviewImage').removeAttribute('src');
+    resetVideoElement('blurryPreviewVideo');
+});
+
+document.getElementById('blurryCleanupModal').addEventListener('hidden.bs.modal', function () {
+    clearBlurryCleanupPollTimer();
+});
+
+document.getElementById('aiDeepCleanupModal').addEventListener('hidden.bs.modal', function () {
+    clearAiDeepCleanupPollTimer();
 });
 
 // 重建素材索引

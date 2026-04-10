@@ -680,7 +680,7 @@ def describe_photo_batch(paths, child_id=None):
         if not res.get("success"):
             error = res.get("error", "未知错误")
             message = res.get("message", error)
-            if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED"}:
+            if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED", "AI_ACCESS_REQUIRED"}:
                 raise Exception(f"ALL_MODELS_EXHAUSTED:{message}")
             raise Exception(message)
 
@@ -753,7 +753,7 @@ def _call_text_proxy(prompt, operation="text_call", max_tokens=500, client_id=No
     if not res.get("success"):
         error = res.get("error", "未知错误")
         message = res.get("message", error)
-        if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED"}:
+        if error in {"QUOTA_EXCEEDED", "QUOTA_EXHAUSTED", "AI_ACCESS_REQUIRED"}:
             raise Exception(f"ALL_MODELS_EXHAUSTED:{message}")
         raise Exception(message)
 

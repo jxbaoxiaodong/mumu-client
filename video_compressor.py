@@ -114,6 +114,12 @@ class CompressionManager:
         """获取当前压缩设置"""
         return self.settings.copy()
 
+    def update_source_folders(self, source_folders: List[Path] = None):
+        """更新媒体源文件夹列表。"""
+        self.source_folders = [
+            Path(folder) for folder in (source_folders or []) if Path(folder).exists()
+        ]
+
     def save_settings(self, settings: Dict):
         """保存压缩设置"""
         self.settings.update(settings)
@@ -234,7 +240,12 @@ class CompressionManager:
 
         compressed_path = self.get_compressed_path(source_path, file_type)
         if compressed_path.exists():
-            return compressed_path
+            try:
+                if compressed_path.stat().st_mtime >= source_path.stat().st_mtime:
+                    return compressed_path
+                return None
+            except OSError:
+                return None
         return None
 
     def compress_video(self, input_path: Path, output_path: Path) -> bool:
@@ -268,6 +279,8 @@ class CompressionManager:
                 f"scale='min({video_config['max_width']},iw)':-2",
                 "-c:v",
                 "libx264",
+                "-threads",
+                "1",
                 "-preset",
                 "medium",
                 "-b:v",
@@ -599,7 +612,10 @@ def init_compression_manager(
         CompressionManager 实例
     """
     global compression_manager
-    compression_manager = CompressionManager(data_dir, source_folders)
+    if compression_manager is None:
+        compression_manager = CompressionManager(data_dir, source_folders)
+    else:
+        compression_manager.update_source_folders(source_folders)
     return compression_manager
 
 
