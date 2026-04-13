@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 from flask import (
     Flask,
+    abort,
     render_template,
     request,
     jsonify,
@@ -3201,7 +3202,7 @@ def inject_android_companion_info():
     return {
         "android_companion_apk_available": bool(apk_path),
         "android_companion_apk_name": apk_path.name if apk_path else "",
-        "android_companion_apk_url": "/android-companion/apk" if apk_path else "",
+        "android_companion_apk_url": get_android_companion_apk_url(apk_path),
         "android_companion_page_url": "/android-companion",
         "is_companion_app": is_companion_app,
     }
@@ -4330,12 +4331,24 @@ def get_android_companion_apk_path():
         USER_DATA_DIR / "android_companion",
         USER_DATA_DIR / "downloads",
     ]
+    preferred_names = [
+        "mumu成长助手-android-latest.apk",
+        "mumu-android-latest.apk",
+    ]
     patterns = [
         "mumu成长助手*.apk",
         "mumu-android*.apk",
         "mumu-companion*.apk",
         "mumu*.apk",
     ]
+
+    for folder in candidate_dirs:
+        if not folder.exists():
+            continue
+        for preferred_name in preferred_names:
+            preferred_path = folder / preferred_name
+            if preferred_path.exists() and preferred_path.is_file():
+                return preferred_path
 
     candidates = []
     for folder in candidate_dirs:
@@ -4349,6 +4362,23 @@ def get_android_companion_apk_path():
         return None
     candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
     return candidates[0]
+
+
+def get_android_companion_apk_url(apk_path: Path | None) -> str:
+    """优先返回固定 latest 下载口，避免页面提示命中旧中转链接。"""
+    if not apk_path:
+        return ""
+
+    download_dir = Path(__file__).resolve().parent / "landing_page" / "download"
+    try:
+        if apk_path.parent.resolve() == download_dir.resolve():
+            return (
+                "https://mumu.ftir.fun"
+                f"/download/{quote(apk_path.name)}?v={int(apk_path.stat().st_mtime)}"
+            )
+    except Exception:
+        pass
+    return "/android-companion/apk"
 
 
 def get_or_create_thumbnail(
@@ -5189,7 +5219,7 @@ def android_companion_page():
     """安卓伴侣入口：直接跳下载或首页，不再单独保留说明页。"""
     apk_path = get_android_companion_apk_path()
     if apk_path:
-        return redirect("/android-companion/apk")
+        return redirect(get_android_companion_apk_url(apk_path))
     return redirect("/")
 
 
@@ -5204,6 +5234,26 @@ def download_android_companion_apk():
         mimetype="application/vnd.android.package-archive",
         as_attachment=True,
         download_name=apk_path.name,
+        max_age=3600,
+    )
+
+
+@app.route("/download/<path:filename>")
+def download_public_file(filename):
+    """兼容客户端页脚与提示中的下载链接。"""
+    requested = Path(filename)
+    if requested.name != filename or any(part in {"..", ""} for part in requested.parts):
+        abort(404)
+
+    download_dir = Path(__file__).resolve().parent / "landing_page" / "download"
+    file_path = download_dir / filename
+    if not file_path.exists() or not file_path.is_file():
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=file_path.name,
         max_age=3600,
     )
 

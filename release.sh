@@ -4,7 +4,7 @@
 # 示例: ./release.sh v32 "fix: 修复xxx问题"
 # 需要设置环境变量: GITEE_TOKEN (Gitee 私人令牌)
 
-set -e
+set -euo pipefail
 
 # 加载环境变量（如果存在 .env 文件）
 if [ -f "/home/bob/projects/mumu/.env" ]; then
@@ -154,9 +154,13 @@ if start_marker not in text or end_marker not in text:
 before, remainder = text.split(start_marker, 1)
 _, after = remainder.split(end_marker, 1)
 updated = before + start_marker + "\n" + local_buttons + "\n                    " + end_marker + after
+def replace_version_label(match):
+    suffix = match.group(2) or ""
+    return f"<span>当前版本: {tag}{suffix}</span>"
+
 updated, count = re.subn(
-    r"<span>当前版本:\s*[^<]+</span>",
-    f"<span>当前版本: {tag}</span>",
+    r"<span>当前版本:\s*([^<]*?)(\s*/\s*Android 伴侣\s*[^<]+)?</span>",
+    replace_version_label,
     updated,
     count=1,
 )
@@ -168,6 +172,17 @@ if updated != text:
 PY
 
     rm -f "$local_buttons_file"
+}
+
+cleanup_download_dir() {
+    mkdir -p "$DOWNLOAD_DIR"
+    rm -f \
+        "$DOWNLOAD_DIR/mumu-windows.exe" \
+        "$DOWNLOAD_DIR/mumu-linux" \
+        "$DOWNLOAD_DIR/mumu-macos" \
+        "$DOWNLOAD_DIR"/mumu-windows-v*.exe \
+        "$DOWNLOAD_DIR"/mumu-linux-v* \
+        "$DOWNLOAD_DIR"/mumu-macos-v*
 }
 
 # 检查必需的 Token
@@ -197,6 +212,7 @@ git commit -m "$COMMIT_MSG
 Co-authored-by: Qwen-Coder <qwen-coder@alibabacloud.com>" || echo "无新代码可提交"
 git tag -d $TAG 2>/dev/null || true
 git tag $TAG
+git push origin main
 git push origin $TAG
 
 echo ""
@@ -234,8 +250,8 @@ mkdir -p $DOWNLOAD_DIR
 
 cd $DOWNLOAD_DIR
 
-# 清理旧文件
-rm -f mumu-*
+# 只清理桌面端旧产物，不碰 Android APK 与兼容链接
+cleanup_download_dir
 
 # 下载 Windows
 echo "📥 下载 Windows..."
