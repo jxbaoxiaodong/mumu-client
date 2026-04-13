@@ -242,7 +242,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h5 class="mb-1">AI 支付订单</h5>
-                    <div class="text-muted small">前台用户提交付款截图后，会在这里审核；审核通过即自动开通对应客户端的 AI 服务。</div>
+                    <div class="text-muted small">前台用户付款后会提交待审核订单；请按“宝宝名 + 短码”人工核对，审核通过即自动开通对应客户端的 AI 服务。</div>
                 </div>
                 <button class="btn btn-outline-primary" type="button" onclick="loadPaymentOrders()">
                     <i class="bi bi-arrow-clockwise"></i> 刷新订单
@@ -312,9 +312,7 @@
         }
 
         function paymentOrderCardHtml(order) {
-            const proofHtml = order.proofImageUrl
-                ? `<img class="payment-order-proof" src="${escapeHtml(order.proofImageUrl)}" alt="付款截图">`
-                : '<div class="payment-order-proof-empty">暂无截图</div>';
+            const proofHtml = '<div class="payment-order-proof-empty">本流程不要求上传截图，按宝宝名加短码人工核对。</div>';
 
             return `
                 <div class="payment-order-card" data-order-id="${escapeHtml(order.orderId)}">
@@ -328,17 +326,15 @@
                     <div class="payment-order-meta text-muted small mt-2">
                         <span>${escapeHtml(order.planTitle || '-')}</span>
                         <span>${escapeHtml(order.paymentChannelLabel || '-')}</span>
-                        <span>用户填报 ${escapeHtml(order.amountText || '-')}</span>
-                        <span>应付 ${escapeHtml(order.expectedAmountText || '-')}</span>
-                        <span>留言码 ${escapeHtml(order.proofCode || '-')}</span>
+                        <span>应付 ${escapeHtml(order.expectedAmountText || order.amountText || '-')}</span>
                         <span>${escapeHtml(order.createdAt || '-')}</span>
                     </div>
                     <div class="payment-order-body">
                         <div>${proofHtml}</div>
                         <div class="payment-order-info">
-                            <p><strong>付款人称呼：</strong>${escapeHtml(order.buyerName || '-')}</p>
-                            <p><strong>联系方式：</strong>${escapeHtml(order.contact || '-')}</p>
-                            <p><strong>备注：</strong>${escapeHtml(order.note || '无')}</p>
+                            <p><strong>核对宝宝：</strong>${escapeHtml(order.clientLabel || '-')}</p>
+                            <p><strong>付款备注要求：</strong>${escapeHtml(order.remarkText || order.note || '请按宝宝名加短码备注')}</p>
+                            <p><strong>短码：</strong>${escapeHtml(order.remarkCode || '未生成')}</p>
                             <p><strong>审核备注：</strong>${escapeHtml(order.reviewNote || '未填写')}</p>
                             <textarea class="form-control payment-review-note mt-2" data-review-note placeholder="补充审核备注">${escapeHtml(order.reviewNote || '')}</textarea>
                             <div class="payment-order-actions mt-3">

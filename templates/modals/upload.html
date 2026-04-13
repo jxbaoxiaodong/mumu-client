@@ -20,11 +20,10 @@
                             <i class="fas fa-images me-2"></i>选择照片/视频
                         </button>
                         <div class="small text-muted mt-2" id="uploadCapabilityHint">如相册没直接进入多选，先长按一张。</div>
-                        {% if android_companion_apk_available %}
+                        {% if android_companion_apk_available and not is_companion_app %}
                         <div class="small mt-2" id="uploadApkHint">
-                            <span class="text-muted">vivo、OPPO、部分华为可直接安装 </span>
-                            <a href="{{ android_companion_apk_url }}" class="fw-semibold">mumu成长助手 APK</a>
-                            <span class="text-muted"> 批量上传。</span>
+                            <a href="{{ android_companion_apk_url }}" class="fw-semibold">下载专用app</a>
+                            <span class="text-muted"> 浏览更顺畅，还可以压缩手机照片，释放空间。</span>
                         </div>
                         {% endif %}
                         <div id="mobileUploadAssist" class="d-none mt-3">

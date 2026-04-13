@@ -3097,9 +3097,7 @@ def apply_mobile_browser_compat_headers(response):
         if _is_problematic_mobile_browser():
             response.headers["Alt-Svc"] = "clear"
 
-        if path == "/sw.js":
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        elif path == "/family-access":
+        if path == "/family-access":
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     except Exception as e:
         logger.warning(f"兼容响应头写入失败: {e}")
@@ -3198,11 +3196,14 @@ def inject_help_info():
 @app.context_processor
 def inject_android_companion_info():
     apk_path = get_android_companion_apk_path()
+    user_agent = (request.headers.get("User-Agent") or "").lower()
+    is_companion_app = "mumucompanion" in user_agent
     return {
         "android_companion_apk_available": bool(apk_path),
         "android_companion_apk_name": apk_path.name if apk_path else "",
         "android_companion_apk_url": "/android-companion/apk" if apk_path else "",
         "android_companion_page_url": "/android-companion",
+        "is_companion_app": is_companion_app,
     }
 
 
@@ -4322,23 +4323,6 @@ def ensure_default_avatar() -> Path:
     return target
 
 
-def ensure_pwa_icon(size: int) -> Path:
-    """生成 PWA 图标，供桌面安装与系统分享入口复用。"""
-    clamped_size = max(64, min(int(size or 192), 512))
-    target = GENERATED_ASSETS_DIR / f"pwa-icon-{clamped_size}.png"
-    if target.exists():
-        return target
-
-    from PIL import Image
-
-    with Image.open(ensure_default_avatar()) as img:
-        icon = img.convert("RGBA").resize(
-            (clamped_size, clamped_size), Image.Resampling.LANCZOS
-        )
-        icon.save(target, "PNG")
-    return target
-
-
 def get_android_companion_apk_path():
     """返回安卓伴侣 APK 路径；没有现成包时返回 None。"""
     candidate_dirs = [
@@ -5198,105 +5182,6 @@ def upload_photos():
 
         traceback.print_exc()
         return jsonify({"success": False, "message": f"上传失败: {str(e)}"})
-
-
-@app.route("/share-target", methods=["POST"])
-def import_shared_files():
-    """PWA 系统分享导入入口。"""
-    source_ip = get_request_source_ip()
-    if not (_is_private_or_loopback_ip(source_ip) or is_family_code_verified()):
-        return redirect("/family-access?next=%2F", code=303)
-
-    try:
-        result = _save_uploaded_file_items(request.files.getlist("files"))
-        params = {
-            "share_import": "1",
-            "share_saved": len(result["saved_files"]),
-            "share_skipped": len(result["skipped_files"]),
-        }
-        return redirect(f"/?{urlencode(params)}", code=303)
-    except Exception as e:
-        params = {
-            "share_import": "1",
-            "share_error": str(e)[:160],
-        }
-        return redirect(f"/?{urlencode(params)}", code=303)
-
-
-@app.route("/manifest.webmanifest")
-def pwa_manifest():
-    """PWA 清单，支持安装后从系统相册直接分享导入。"""
-    baby_name = (public_client.baby_name or "沐沐").strip()
-    manifest = {
-        "id": "/",
-        "name": f"{baby_name}成长记录",
-        "short_name": f"{baby_name}记录",
-        "description": "安装到手机后，可从系统相册直接多选并分享导入照片和视频。",
-        "start_url": "/?source=pwa",
-        "scope": "/",
-        "display": "standalone",
-        "background_color": "#fff8f4",
-        "theme_color": "#FF9A8B",
-        "icons": [
-            {
-                "src": "/api/pwa-icon/192.png",
-                "sizes": "192x192",
-                "type": "image/png",
-            },
-            {
-                "src": "/api/pwa-icon/512.png",
-                "sizes": "512x512",
-                "type": "image/png",
-            },
-        ],
-        "share_target": {
-            "action": "/share-target",
-            "method": "POST",
-            "enctype": "multipart/form-data",
-            "params": {
-                "files": [
-                    {"name": "files", "accept": ["image/*", "video/*"]},
-                ]
-            },
-        },
-    }
-    return app.response_class(
-        json.dumps(manifest, ensure_ascii=False),
-        mimetype="application/manifest+json",
-    )
-
-
-@app.route("/sw.js")
-def pwa_service_worker():
-    """清理旧 PWA 残留的 Service Worker。"""
-    script = """
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    try {
-      const cacheNames = await caches.keys();
-      await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
-    } catch (error) {}
-
-    try {
-      await self.registration.unregister();
-    } catch (error) {}
-  })());
-});
-"""
-    response = app.response_class(script.strip() + "\n", mimetype="application/javascript")
-    response.headers["Cache-Control"] = "no-cache"
-    response.headers["Service-Worker-Allowed"] = "/"
-    return response
-
-
-@app.route("/api/pwa-icon/<int:size>.png")
-def get_pwa_icon(size: int):
-    icon_path = ensure_pwa_icon(size)
-    return send_file(icon_path, mimetype="image/png", max_age=86400)
 
 
 @app.route("/android-companion")
@@ -7152,6 +7037,106 @@ def ai_feedback():
 
     except Exception as e:
         return jsonify({"success": False, "message": f"提交失败: {str(e)}"})
+
+
+@app.route("/api/ai-access/payment/session", methods=["POST"])
+def ai_access_create_payment_session():
+    """前台代理：创建 AI 支付会话。"""
+    try:
+        server_url = USER_CONFIG.get("server_url", "")
+        if not server_url:
+            return jsonify({"success": False, "message": "未配置服务端地址"}), 500
+
+        payload = request.get_json(silent=True) or {}
+        response = public_client.signed_request(
+            "POST",
+            f"{server_url}/api/ai-access/payment/session",
+            json=payload,
+            timeout=30,
+        )
+
+        data = response.json()
+        return jsonify(data), response.status_code
+    except Exception as e:
+        logger.warning(f"[AI支付] 创建支付会话失败: {e}")
+        return jsonify({"success": False, "message": f"支付会话创建失败: {str(e)}"}), 500
+
+
+@app.route("/api/ai-access/notice", methods=["GET"])
+def ai_access_get_notice():
+    """前台代理：读取 AI 开通说明，用于重开进度弹窗。"""
+    try:
+        server_url = USER_CONFIG.get("server_url", "")
+        if not server_url:
+            return jsonify({"success": False, "message": "未配置服务端地址"}), 500
+
+        params = {
+            "clientId": (request.args.get("clientId") or public_client.client_id or "").strip(),
+            "operation": (request.args.get("operation") or "text").strip(),
+        }
+
+        response = public_client.signed_request(
+            "GET",
+            f"{server_url}/api/ai-access/notice",
+            params=params,
+            timeout=30,
+        )
+
+        data = response.json()
+        return jsonify(data), response.status_code
+    except Exception as e:
+        logger.warning(f"[AI支付] 读取 AI 开通说明失败: {e}")
+        return jsonify({"success": False, "message": f"AI 开通说明读取失败: {str(e)}"}), 500
+
+
+@app.route("/api/ai-access/payment/orders", methods=["POST"])
+def ai_access_create_payment_order():
+    """前台代理：提交 AI 支付订单。"""
+    try:
+        server_url = USER_CONFIG.get("server_url", "")
+        if not server_url:
+            return jsonify({"success": False, "message": "未配置服务端地址"}), 500
+
+        payload = request.get_json(silent=True) or {}
+        response = public_client.signed_request(
+            "POST",
+            f"{server_url}/api/ai-access/payment/orders",
+            json=payload,
+            timeout=60,
+        )
+
+        data = response.json()
+        return jsonify(data), response.status_code
+    except Exception as e:
+        logger.warning(f"[AI支付] 提交支付订单失败: {e}")
+        return jsonify({"success": False, "message": f"支付订单提交失败: {str(e)}"}), 500
+
+
+@app.route("/api/ai-access/payment/orders/<order_id>", methods=["GET"])
+def ai_access_get_payment_order(order_id):
+    """前台代理：查询 AI 支付订单状态。"""
+    try:
+        server_url = USER_CONFIG.get("server_url", "")
+        if not server_url:
+            return jsonify({"success": False, "message": "未配置服务端地址"}), 500
+
+        params = {}
+        lookup_token = (request.args.get("lookupToken") or "").strip()
+        if lookup_token:
+            params["lookupToken"] = lookup_token
+
+        response = public_client.signed_request(
+            "GET",
+            f"{server_url}/api/ai-access/payment/orders/{quote(order_id, safe='')}",
+            params=params,
+            timeout=30,
+        )
+
+        data = response.json()
+        return jsonify(data), response.status_code
+    except Exception as e:
+        logger.warning(f"[AI支付] 查询支付订单失败: {e}")
+        return jsonify({"success": False, "message": f"支付订单状态读取失败: {str(e)}"}), 500
 
 
 @app.route("/api/ai/profile", methods=["GET"])

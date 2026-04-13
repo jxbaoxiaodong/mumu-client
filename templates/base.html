@@ -4,12 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
     <meta name="theme-color" content="#FF9A8B">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="format-detection" content="telephone=no">
     <title>{% block title %}成长记录 - {{ baby_name }}的成长点滴{% endblock %}</title>
-    <link rel="apple-touch-icon" href="/api/pwa-icon/192.png">
     
     <!-- Bootstrap 5 CSS (本地) -->
     {% if inline_bootstrap_css %}
@@ -108,11 +105,38 @@
         }
     }
 
+    body.companion-app .navbar {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    body.companion-app .navbar .container {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    body.companion-app .navbar-brand {
+        max-width: calc(100vw - 84px);
+    }
+
+    body.companion-app .brand-text {
+        font-size: 0.98rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    body.companion-app #uploadApkHint,
+    body.companion-app #androidCompanionAssist,
+    body.companion-app #mobileUploadAssist,
+    body.companion-app [data-companion-hide="true"] {
+        display: none !important;
+    }
+
     </style>
     
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body class="{% if is_companion_app %}companion-app{% endif %}">
     <!-- 本地模式提示横幅 -->
     {% if local_mode %}
     <div class="local-mode-banner" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 10px 20px; text-align: center; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
@@ -200,10 +224,10 @@
                     <div class="mb-2" style="font-size: 1.5rem;">💕</div>
                     <h5 class="mb-1">{{ baby_name }}的成长记录</h5>
                     <p class="mb-2 text-muted">记录宝宝的点点滴滴，留住那些温暖的小时光</p>
-                    {% if android_companion_apk_available %}
+                    {% if android_companion_apk_available and not is_companion_app %}
                     <p class="mb-2 small">
-                        <span class="text-muted">安卓手机如果受系统选图器 / ROM 限制无法批量上传，可直接安装安卓伴侣：</span>
-                        <a href="{{ android_companion_apk_url }}" class="fw-semibold">下载 APK</a>
+                        <a href="{{ android_companion_apk_url }}" class="fw-semibold">下载专用app</a>
+                        <span class="text-muted">浏览更顺畅，还可以压缩手机照片，释放空间。</span>
                     </p>
                     {% endif %}
                     <small class="text-muted">mumu成长日志系统 &copy; mumu.ftir.fun</small>
@@ -293,6 +317,39 @@
     .ai-access-qr-card img { width: 100%; max-width: 220px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); display: block; margin: 0 auto; }
     .ai-access-qr-placeholder { min-height: 220px; display: flex; align-items: center; justify-content: center; text-align: center; border: 1px dashed rgba(0,0,0,0.15); border-radius: 12px; color: #6c757d; padding: 16px; }
     .ai-access-proof-preview { max-width: 180px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); }
+    .ai-progress-entry {
+        position: fixed;
+        right: 18px;
+        bottom: 92px;
+        z-index: 1040;
+        display: none;
+        align-items: center;
+        gap: 8px;
+        max-width: min(320px, calc(100vw - 24px));
+        padding: 12px 16px;
+        border: none;
+        border-radius: 999px;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14);
+        font-weight: 700;
+    }
+    .ai-progress-entry.show { display: inline-flex; }
+    .ai-progress-entry .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.75;
+        flex: 0 0 auto;
+    }
+    @media (max-width: 768px) {
+        .ai-progress-entry {
+            right: 12px;
+            left: 12px;
+            bottom: 84px;
+            justify-content: center;
+            max-width: none;
+        }
+    }
     </style>
 
     <div class="modal fade" id="aiAccessRequiredModal" tabindex="-1" aria-hidden="true">
@@ -314,23 +371,24 @@
                         <a class="btn btn-dark" id="aiAccessDocsLink" href="https://github.com/jxbaoxiaodong/mumu#readme" target="_blank" rel="noopener">
                             <i class="fab fa-github me-2"></i>查看 GitHub 说明
                         </a>
-                        <div class="btn btn-outline-secondary disabled text-start" id="aiAccessPricingText">
-                            管理员代配参考：半年 50 元，一年 100 元
-                        </div>
+                        <button type="button" class="btn btn-outline-primary text-start" id="aiAccessPricingBtn">
+                            请管理员代开通 AI
+                        </button>
                     </div>
 
                     <div class="border rounded-4 p-3 mt-3 ai-access-payment-section d-none" id="aiAccessPaymentSection">
                         <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
                             <div>
-                                <h6 class="fw-bold mb-1">在线支付开通</h6>
+                                <h6 class="fw-bold mb-1">请扫码支付后提交</h6>
                                 <div class="small text-muted">
-                                    付款后提交截图，管理员审核通过后会直接开通当前站点的 AI 服务。
+                                    管理员会人工核对付款备注。确认完成后，会自动开通当前站点的 AI 服务。
                                 </div>
                             </div>
-                            <div class="d-flex gap-2">
-                                <select class="form-select form-select-sm" id="aiAccessPlanSelect" style="min-width: 180px;"></select>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" id="aiAccessRefreshSessionBtn">刷新金额</button>
-                            </div>
+                        </div>
+
+                        <div class="alert alert-danger mb-3">
+                            <div class="fw-bold mb-1">支付备注务必填写“宝宝名 + 短码”</div>
+                            <div class="small mb-0">下方会自动生成可直接复制的备注。如果只写“宝宝”，同名家庭在接近时间付款时就容易混淆。</div>
                         </div>
 
                         <div class="row g-3 mb-3">
@@ -357,46 +415,39 @@
                         </div>
 
                         <div class="alert alert-warning small mb-3" id="aiAccessPaymentSessionStatus">
-                            正在生成本次付款金额...
+                            请支付 100 元，并在支付备注里填写宝宝名称“{{ baby_name }}”。
                         </div>
 
                         <div class="row g-3 mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label">本次应付金额</label>
-                                <input type="text" class="form-control" id="aiAccessAmountInput" readonly placeholder="等待生成">
+                            <div class="col-md-3">
+                                <label class="form-label">支付金额</label>
+                                <input type="text" class="form-control" id="aiAccessAmountInput" readonly value="100 元">
                             </div>
-                            <div class="col-md-6">
-                                <label class="form-label">留言码</label>
-                                <input type="text" class="form-control" id="aiAccessProofCodeInput" readonly placeholder="等待生成">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">怎么称呼你</label>
-                                <input type="text" class="form-control" id="aiAccessBuyerNameInput" placeholder="比如：沐沐妈妈">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">联系方式</label>
-                                <input type="text" class="form-control" id="aiAccessContactInput" placeholder="微信号 / 手机号 / 邮箱">
-                            </div>
-                            <div class="col-md-6">
+                            <div class="col-md-3">
                                 <label class="form-label">付款渠道</label>
                                 <select class="form-select" id="aiAccessPaymentChannelSelect"></select>
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">付款截图</label>
-                                <input type="file" class="form-control" id="aiAccessProofInput" accept="image/*">
+                                <label class="form-label">支付备注</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="aiAccessRemarkNameInput" readonly value="{{ baby_name }}">
+                                    <button type="button" class="btn btn-outline-secondary" id="aiAccessCopyRemarkBtn">复制备注</button>
+                                </div>
+                                <div class="small text-muted mt-2" id="aiAccessRemarkHint">点击展开后会生成本次付款专用备注，可直接复制。</div>
                             </div>
                             <div class="col-12">
                                 <div class="small text-muted mb-2" id="aiAccessPaymentContact"></div>
-                                <img id="aiAccessProofPreview" class="ai-access-proof-preview d-none" alt="付款截图预览">
-                            </div>
-                            <div class="col-12">
-                                <label class="form-label">备注（选填）</label>
-                                <textarea class="form-control" id="aiAccessPaymentNoteInput" rows="3" placeholder="比如：付款人昵称、希望管理员注意的内容"></textarea>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input" type="checkbox" value="" id="aiAccessPaidConfirmCheck">
+                                    <label class="form-check-label" for="aiAccessPaidConfirmCheck" id="aiAccessPaidConfirmLabel">
+                                        我已完成付款，并且已经按要求填写支付备注
+                                    </label>
+                                </div>
                             </div>
                         </div>
 
                         <div class="d-flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-primary" id="aiAccessSubmitPaymentBtn">提交付款截图</button>
+                            <button type="button" class="btn btn-primary" id="aiAccessSubmitPaymentBtn">已付款，提交给管理员核实</button>
                             <button type="button" class="btn btn-outline-secondary" id="aiAccessRefreshOrderBtn">刷新审核状态</button>
                         </div>
 
@@ -412,6 +463,11 @@
             </div>
         </div>
     </div>
+
+    <button type="button" class="btn btn-warning ai-progress-entry" id="aiPaymentProgressEntry">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="aiPaymentProgressEntryText">AI 开通进度</span>
+    </button>
     
     <script>
     function submitFeedback(event) {
@@ -448,14 +504,41 @@
             notice: null,
             payment: null,
             clientId: '',
-            planKey: 'half_year',
+            planKey: 'one_time',
             session: null,
             orderId: '',
             lookupToken: '',
-            proofDataUrl: '',
             fingerprint: '',
             pollTimer: null
         };
+
+        function paymentEntryButton() {
+            return document.getElementById('aiPaymentProgressEntry');
+        }
+
+        function setPaymentProgressEntry(visible, message, tone) {
+            var entry = paymentEntryButton();
+            var textNode = document.getElementById('aiPaymentProgressEntryText');
+            if (!entry || !textNode) {
+                return;
+            }
+
+            entry.className = 'btn ai-progress-entry';
+            if (!visible) {
+                entry.classList.remove('show');
+                return;
+            }
+
+            entry.classList.add('show');
+            entry.classList.add(
+                tone === 'success'
+                    ? 'btn-success'
+                    : tone === 'danger'
+                    ? 'btn-danger'
+                    : 'btn-warning'
+            );
+            textNode.textContent = message || 'AI 开通进度';
+        }
 
         function paymentFingerprint() {
             if (paymentState.fingerprint) {
@@ -530,6 +613,17 @@
             try {
                 window.localStorage.removeItem(paymentStorageKey(paymentState.clientId));
             } catch (error) {}
+        }
+
+        function restoreStoredProgressEntry() {
+            var clientId = (window.currentClientId || window.currentChildId || '').trim();
+            if (!clientId) {
+                return;
+            }
+            paymentState.clientId = paymentState.clientId || clientId;
+            if (loadStoredOrder(clientId)) {
+                setPaymentProgressEntry(true, 'AI 开通进度', 'warning');
+            }
         }
 
         function text(value) {
@@ -607,23 +701,35 @@
             }
         }
 
-        function renderPaymentPlans(payment) {
-            var planSelect = document.getElementById('aiAccessPlanSelect');
-            var channelSelect = document.getElementById('aiAccessPaymentChannelSelect');
-            if (!planSelect || !channelSelect) {
-                return;
+        function jumpToPaymentSection() {
+            var section = document.getElementById('aiAccessPaymentSection');
+            if (!section || section.classList.contains('d-none')) {
+                if (!paymentState.payment || !paymentState.payment.enabled) {
+                    if (paymentState.payment && paymentState.payment.contact_value) {
+                        setOrderStatus(
+                            '当前站点暂未开启在线支付，请直接联系管理员：'
+                                + text(paymentState.payment.contact_label || '微信')
+                                + ' '
+                                + text(paymentState.payment.contact_value),
+                            'info'
+                        );
+                    } else {
+                        setOrderStatus('当前站点暂未开启在线支付，请联系管理员开通。', 'info');
+                    }
+                    return;
+                }
+                setPaymentSectionVisible(true);
+                refreshPaymentSession(false);
             }
 
-            var plans = payment && payment.plans ? payment.plans : {};
-            var planKeys = Object.keys(plans);
-            planSelect.innerHTML = planKeys.map(function(key) {
-                var plan = plans[key] || {};
-                return '<option value="' + key + '">' + text(plan.title || key) + ' · ' + text(plan.price_label || '') + ' 元</option>';
-            }).join('');
-            if (planKeys.indexOf(paymentState.planKey) === -1) {
-                paymentState.planKey = planKeys[0] || 'half_year';
+            section.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+
+        function renderPaymentPlans(payment) {
+            var channelSelect = document.getElementById('aiAccessPaymentChannelSelect');
+            if (!channelSelect) {
+                return;
             }
-            planSelect.value = paymentState.planKey;
 
             var channels = [];
             if (payment && payment.wechat_qr_image_url) {
@@ -641,17 +747,79 @@
 
         function updateAmountFields() {
             var amountInput = document.getElementById('aiAccessAmountInput');
-            var codeInput = document.getElementById('aiAccessProofCodeInput');
             if (amountInput) {
                 amountInput.value = paymentState.session && paymentState.session.expectedAmountText
                     ? paymentState.session.expectedAmountText
-                    : '';
+                    : '100.00';
             }
-            if (codeInput) {
-                codeInput.value = paymentState.session && paymentState.session.proofCode
-                    ? paymentState.session.proofCode
-                    : '';
+        }
+
+        function currentRemarkText() {
+            return text(paymentState.session && paymentState.session.remarkText);
+        }
+
+        function updateRemarkFields() {
+            var remarkInput = document.getElementById('aiAccessRemarkNameInput');
+            var remarkHint = document.getElementById('aiAccessRemarkHint');
+            var paidConfirmLabel = document.getElementById('aiAccessPaidConfirmLabel');
+            var remarkText = currentRemarkText();
+            var remarkCode = text(paymentState.session && paymentState.session.remarkCode);
+            var displayText = remarkText || '{{ baby_name }} + 短码';
+
+            if (remarkInput) {
+                remarkInput.value = displayText;
             }
+            if (remarkHint) {
+                remarkHint.textContent = remarkText
+                    ? ('请把“' + remarkText + '”原样填写到微信或支付宝备注里，可直接复制。')
+                    : '点击展开后会生成本次付款专用备注，可直接复制。';
+            }
+            if (paidConfirmLabel) {
+                paidConfirmLabel.textContent = remarkText
+                    ? ('我已完成付款，并且已经在支付备注里填写“' + remarkText + '”')
+                    : '我已完成付款，并且已经按要求填写支付备注';
+            }
+            var copyBtn = document.getElementById('aiAccessCopyRemarkBtn');
+            if (copyBtn) {
+                copyBtn.disabled = !remarkText;
+                copyBtn.setAttribute('data-remark-code', remarkCode || '');
+            }
+        }
+
+        function copyPaymentRemark() {
+            var remarkText = currentRemarkText();
+            var remarkInput = document.getElementById('aiAccessRemarkNameInput');
+            var copyButton = document.getElementById('aiAccessCopyRemarkBtn');
+            if (!remarkText || !remarkInput) {
+                return;
+            }
+
+            function markCopied() {
+                if (copyButton) {
+                    copyButton.textContent = '已复制';
+                    window.setTimeout(function() {
+                        copyButton.textContent = '复制备注';
+                    }, 1500);
+                }
+                if (typeof window.showNotification === 'function') {
+                    window.showNotification('支付备注已复制，直接粘贴到付款备注里即可。', 'success');
+                }
+            }
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(remarkText).then(markCopied).catch(function() {
+                    remarkInput.focus();
+                    remarkInput.select();
+                    document.execCommand('copy');
+                    markCopied();
+                });
+                return;
+            }
+
+            remarkInput.focus();
+            remarkInput.select();
+            document.execCommand('copy');
+            markCopied();
         }
 
         function clearPaymentPolling() {
@@ -678,14 +846,40 @@
             if (order.status === 'approved') {
                 setOrderStatus((order.reviewNote || '付款已核对，当前站点 AI 服务已开通。') + ' 关闭弹窗后重试刚才的功能即可。', 'success');
                 clearPaymentPolling();
-            } else if (order.status === 'rejected') {
-                setOrderStatus(order.reviewNote || '订单暂未通过，请检查截图后重新提交。', 'danger');
-                clearPaymentPolling();
                 clearStoredOrder();
+                setPaymentProgressEntry(false);
+            } else if (order.status === 'rejected') {
+                setOrderStatus(order.reviewNote || '订单暂未通过，请确认已按要求备注宝宝名加短码后再联系管理员。', 'danger');
+                clearPaymentPolling();
+                setPaymentProgressEntry(true, 'AI 开通未通过，点此查看', 'danger');
             } else {
                 setOrderStatus(order.reviewNote || '订单已提交，等待管理员核对付款。审核通过后会直接开通当前站点的 AI 服务。', 'info');
                 startPaymentPolling();
+                setPaymentProgressEntry(true, 'AI 开通审核中，点此查看', 'warning');
             }
+        }
+
+        function openStoredPaymentProgress() {
+            var clientId = (window.currentClientId || window.currentChildId || '').trim();
+            if (!clientId) {
+                return;
+            }
+            paymentState.clientId = clientId;
+            fetchJson('/api/ai-access/notice?clientId=' + encodeURIComponent(clientId) + '&operation=text')
+                .then(function(data) {
+                    var notice = data && data.success ? data.notice : null;
+                    if (!notice) {
+                        setOrderStatus('支付说明读取失败，请稍后重试。', 'danger');
+                        return;
+                    }
+                    showAIAccessRequiredModal({access_notice: notice});
+                    if (paymentState.orderId && paymentState.lookupToken) {
+                        refreshPaymentOrderStatus(false);
+                    }
+                })
+                .catch(function() {
+                    setOrderStatus('支付说明读取失败，请稍后重试。', 'danger');
+                });
         }
 
         function refreshPaymentOrderStatus(silent) {
@@ -720,8 +914,8 @@
                 return Promise.resolve(null);
             }
 
-            paymentState.planKey = document.getElementById('aiAccessPlanSelect').value || paymentState.planKey || 'half_year';
-            setPaymentSessionStatus('正在生成本次付款金额...', 'warning');
+            paymentState.planKey = paymentState.planKey || 'one_time';
+            setPaymentSessionStatus('正在生成本次付款专用备注，请稍候。', 'warning');
 
             return fetchJson('/api/ai-access/payment/session', {
                 method: 'POST',
@@ -729,12 +923,11 @@
                 body: JSON.stringify({
                     clientId: paymentState.clientId,
                     planKey: paymentState.planKey,
-                    browserFingerprint: paymentFingerprint(),
-                    forceRefresh: !!forceRefresh
+                    browserFingerprint: paymentFingerprint()
                 })
             }).then(function(data) {
                 if (!data.success) {
-                    setPaymentSessionStatus(data.message || '付款信息生成失败，请稍后重试。', 'danger');
+                    setPaymentSessionStatus(data.message || '付款信息初始化失败，请稍后重试。', 'danger');
                     return null;
                 }
                 if (data.already_paid) {
@@ -746,36 +939,19 @@
                 }
                 paymentState.session = data.session || null;
                 updateAmountFields();
+                updateRemarkFields();
                 setPaymentSessionStatus(
-                    '请按本次唯一金额付款：' + text(paymentState.session.expectedAmountText) + ' 元，留言码：' + text(paymentState.session.proofCode) + '。',
+                    '请支付 ' + text(paymentState.session.expectedAmountText || '100.00')
+                        + ' 元，并在支付备注里填写“'
+                        + text(paymentState.session.remarkText || '')
+                        + '”。可直接点“复制备注”。',
                     'warning'
                 );
                 return paymentState.session;
             }).catch(function(error) {
-                setPaymentSessionStatus('付款信息生成失败，请稍后重试。', 'danger');
+                setPaymentSessionStatus('付款信息初始化失败，请稍后重试。', 'danger');
                 return null;
             });
-        }
-
-        function handlePaymentProofSelected(event) {
-            var file = event && event.target && event.target.files ? event.target.files[0] : null;
-            var preview = document.getElementById('aiAccessProofPreview');
-            paymentState.proofDataUrl = '';
-            if (!file || !preview) {
-                if (preview) {
-                    preview.classList.add('d-none');
-                }
-                return;
-            }
-            var reader = new FileReader();
-            reader.onload = function(loadEvent) {
-                paymentState.proofDataUrl = text(loadEvent.target && loadEvent.target.result);
-                if (paymentState.proofDataUrl) {
-                    preview.src = paymentState.proofDataUrl;
-                    preview.classList.remove('d-none');
-                }
-            };
-            reader.readAsDataURL(file);
         }
 
         function submitPaymentOrder() {
@@ -784,46 +960,33 @@
                 return;
             }
             if (!paymentState.session || !paymentState.session.sessionId) {
-                setOrderStatus('请先生成本次付款金额。', 'danger');
-                return;
-            }
-            if (!paymentState.proofDataUrl) {
-                setOrderStatus('请先上传付款截图。', 'danger');
+                setOrderStatus('请先打开支付页面。', 'danger');
                 return;
             }
 
-            var buyerName = document.getElementById('aiAccessBuyerNameInput').value.trim();
-            var contact = document.getElementById('aiAccessContactInput').value.trim();
             var paymentChannel = document.getElementById('aiAccessPaymentChannelSelect').value;
-            var note = document.getElementById('aiAccessPaymentNoteInput').value.trim();
+            var paidConfirmed = document.getElementById('aiAccessPaidConfirmCheck').checked;
             var submitButton = document.getElementById('aiAccessSubmitPaymentBtn');
 
-            if (!buyerName) {
-                setOrderStatus('请先填写怎么称呼你。', 'danger');
-                return;
-            }
-            if (!contact) {
-                setOrderStatus('请先填写联系方式。', 'danger');
+            if (!paidConfirmed) {
+                setOrderStatus('请先确认你已经付款，并已按要求填写支付备注。', 'danger');
                 return;
             }
 
             if (submitButton) {
                 submitButton.disabled = true;
             }
-            setOrderStatus('正在提交付款订单，请稍候...', 'info');
+            setOrderStatus('正在提交，请稍候。管理员会人工核对付款备注后开通 AI。', 'info');
 
             fetchJson('/api/ai-access/payment/orders', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     clientId: paymentState.clientId,
-                    buyerName: buyerName,
-                    contact: contact,
                     paymentChannel: paymentChannel,
                     amountText: paymentState.session.expectedAmountText,
-                    note: note,
+                    note: '用户声明已付款，并已备注：' + text(paymentState.session.remarkText || ''),
                     planKey: paymentState.planKey,
-                    screenshotDataUrl: paymentState.proofDataUrl,
                     paymentSessionId: paymentState.session.sessionId,
                     browserFingerprint: paymentFingerprint()
                 })
@@ -851,26 +1014,36 @@
             var message = notice.message || '宝爸/宝妈你好，你要使用的功能需要调用第三方付费大模型服务。你可以自行配置，或请管理员代为配置。';
             var docsUrl = notice.docs_url || 'https://github.com/jxbaoxiaodong/mumu#readme';
             var pricing = notice.pricing || {};
-            var halfYearPrice = pricing.half_year_price || 50;
-            var yearPrice = pricing.year_price || 100;
+            var oneTimePrice = pricing.one_time_price || 100;
             var payment = notice.payment || {};
             var storedOrder;
+            var pricingBtn = document.getElementById('aiAccessPricingBtn');
 
             document.getElementById('aiAccessRequiredTitle').innerHTML = '<i class="fas fa-robot me-2"></i>' + text(notice.title || 'AI 功能说明');
             document.getElementById('aiAccessRequiredMessage').textContent = message;
             document.getElementById('aiAccessDocsLink').href = docsUrl;
-            document.getElementById('aiAccessPricingText').textContent =
-                '管理员代配参考：半年 ' + halfYearPrice + ' 元，一年 ' + yearPrice + ' 元';
+            if (pricingBtn) {
+                if (payment.enabled) {
+                    pricingBtn.innerHTML =
+                        '<i class="fas fa-user-check me-2"></i>请管理员代开通 AI';
+                    pricingBtn.className = 'btn btn-outline-primary text-start';
+                } else {
+                    pricingBtn.innerHTML =
+                        '<i class="fas fa-comment-dots me-2"></i>联系管理员代开通 AI';
+                    pricingBtn.className = 'btn btn-outline-secondary text-start';
+                }
+            }
 
             paymentState.notice = notice;
             paymentState.payment = payment;
             paymentState.clientId = text(notice.client_id || window.currentClientId || window.currentChildId || '');
             paymentState.session = null;
-            paymentState.planKey = paymentState.planKey || 'half_year';
+            paymentState.planKey = 'one_time';
 
             setQrImage('aiAccessWechatQrImage', 'aiAccessWechatQrPlaceholder', payment.wechat_qr_image_url || '');
             setQrImage('aiAccessAlipayQrImage', 'aiAccessAlipayQrPlaceholder', payment.alipay_qr_image_url || '');
             renderPaymentPlans(payment);
+            updateRemarkFields();
 
             var contactText = '';
             if (payment.contact_value) {
@@ -878,19 +1051,22 @@
             }
             document.getElementById('aiAccessPaymentContact').textContent = contactText;
 
-            setPaymentSectionVisible(!!(payment.enabled && paymentState.clientId));
+            setPaymentSectionVisible(false);
             updateAmountFields();
+            var paidConfirmCheck = document.getElementById('aiAccessPaidConfirmCheck');
+            if (paidConfirmCheck) {
+                paidConfirmCheck.checked = false;
+            }
 
             storedOrder = loadStoredOrder(paymentState.clientId);
             paymentState.orderId = storedOrder && storedOrder.orderId ? storedOrder.orderId : '';
             paymentState.lookupToken = storedOrder && storedOrder.lookupToken ? storedOrder.lookupToken : '';
 
             if (payment.enabled && paymentState.clientId) {
-                refreshPaymentSession(false);
                 if (paymentState.orderId && paymentState.lookupToken) {
                     refreshPaymentOrderStatus(true);
                 } else {
-                    setOrderStatus('提交订单后，这里会显示审核进度。审核通过后，当前站点会直接开通 AI 服务。');
+                    setOrderStatus('付款后请点击“已付款，提交给管理员核实”。管理员人工确认完成后，会自动开通当前站点的 AI 服务。');
                 }
             } else {
                 clearPaymentPolling();
@@ -911,18 +1087,22 @@
             modal.show();
         }
 
-        document.getElementById('aiAccessRefreshSessionBtn').addEventListener('click', function() {
-            refreshPaymentSession(true);
+        document.getElementById('aiAccessPricingBtn').addEventListener('click', function() {
+            jumpToPaymentSection();
         });
-        document.getElementById('aiAccessPlanSelect').addEventListener('change', function() {
-            paymentState.planKey = this.value || 'half_year';
-            refreshPaymentSession(true);
+        document.getElementById('aiAccessCopyRemarkBtn').addEventListener('click', function() {
+            copyPaymentRemark();
         });
-        document.getElementById('aiAccessProofInput').addEventListener('change', handlePaymentProofSelected);
         document.getElementById('aiAccessSubmitPaymentBtn').addEventListener('click', submitPaymentOrder);
         document.getElementById('aiAccessRefreshOrderBtn').addEventListener('click', function() {
             refreshPaymentOrderStatus(false);
         });
+        var paymentProgressEntry = paymentEntryButton();
+        if (paymentProgressEntry) {
+            paymentProgressEntry.addEventListener('click', function() {
+                openStoredPaymentProgress();
+            });
+        }
         document.getElementById('aiAccessRequiredModal').addEventListener('hidden.bs.modal', function() {
             clearPaymentPolling();
         });
@@ -946,6 +1126,8 @@
 
         window.isAIAccessRequiredPayload = isAIAccessRequiredPayload;
         window.showAIAccessRequiredModal = showAIAccessRequiredModal;
+        window.openStoredPaymentProgress = openStoredPaymentProgress;
+        restoreStoredProgressEntry();
     })();
     </script>
 
@@ -984,39 +1166,6 @@
             return window.isSecureContext && typeof window.showOpenFilePicker === 'function';
         };
 
-        window.canInstallMumuPwa = function() {
-            return false;
-        };
-
-        window.promptInstallMumuPwa = async function() {
-            return false;
-        };
-
-        // 不再把 PWA 作为网页端主方案。为了规避部分 ROM 浏览器反复刷新，
-        // 页面加载时主动清理旧的 service worker，且不再重新注册。
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                registrations.forEach(function(registration) {
-                    registration.unregister().catch(function(error) {
-                        console.warn('Service Worker 注销失败:', error);
-                    });
-                });
-            }).catch(function(error) {
-                console.warn('获取 Service Worker 失败:', error);
-            });
-
-            if ('caches' in window) {
-                caches.keys().then(function(cacheNames) {
-                    cacheNames.forEach(function(cacheName) {
-                        caches.delete(cacheName).catch(function(error) {
-                            console.warn('清理缓存失败:', error);
-                        });
-                    });
-                }).catch(function(error) {
-                    console.warn('读取缓存列表失败:', error);
-                });
-            }
-        }
     })();
     </script>
     
@@ -1103,32 +1252,6 @@
                 }, { once: true });
             }
 
-            try {
-                var params = new URLSearchParams(window.location.search);
-                if (params.get('share_import') === '1' && typeof showNotification === 'function') {
-                    if (params.get('share_error')) {
-                        showNotification('系统分享导入失败：' + params.get('share_error'), 'error', 5000);
-                    } else {
-                        var saved = Number(params.get('share_saved') || 0);
-                        var skipped = Number(params.get('share_skipped') || 0);
-                        var message = '系统分享已导入 ' + saved + ' 个文件';
-                        if (skipped > 0) {
-                            message += '，跳过 ' + skipped + ' 个已存在文件';
-                        }
-                        showNotification(message, 'success', 4500);
-                    }
-
-                    params.delete('share_import');
-                    params.delete('share_saved');
-                    params.delete('share_skipped');
-                    params.delete('share_error');
-                    var nextQuery = params.toString();
-                    var nextUrl = window.location.pathname + (nextQuery ? '?' + nextQuery : '') + window.location.hash;
-                    window.history.replaceState({}, '', nextUrl);
-                }
-            } catch (error) {
-                console.warn('分享导入提示处理失败:', error);
-            }
         });
     </script>
 </body>

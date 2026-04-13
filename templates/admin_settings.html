@@ -224,16 +224,9 @@
                         </div>
                         <div class="col-md-3">
                             <div class="form-group">
-                                <label class="form-label">半年价格</label>
-                                <input type="number" min="1" class="form-control" id="half_year_price"
-                                       value="{{ admin_config.ai_access_settings.half_year_price }}">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label class="form-label">一年价格</label>
-                                <input type="number" min="1" class="form-control" id="year_price"
-                                       value="{{ admin_config.ai_access_settings.year_price }}">
+                                <label class="form-label">充值金额</label>
+                                <input type="number" min="1" class="form-control" id="one_time_price"
+                                       value="{{ admin_config.ai_access_settings.one_time_price or admin_config.ai_access_settings.year_price or 100 }}">
                             </div>
                         </div>
                     </div>
@@ -291,7 +284,7 @@
 
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle"></i>
-                        当前支付链路是轻量人工审核模式：前台生成唯一金额并提交付款截图，后台审核通过后直接把当前客户端的 AI 服务开通。
+                        当前支付链路是轻量人工审核模式：前台固定金额扫码支付，并按宝宝名称备注；用户点击提交后，后台人工核对通过再开通当前客户端的 AI 服务。
                     </div>
 
                     <button type="submit" class="btn btn-save">
@@ -445,8 +438,7 @@
             const formData = new FormData();
             formData.append('notice_title', document.getElementById('notice_title').value);
             formData.append('docs_url', document.getElementById('docs_url').value);
-            formData.append('half_year_price', document.getElementById('half_year_price').value);
-            formData.append('year_price', document.getElementById('year_price').value);
+            formData.append('one_time_price', document.getElementById('one_time_price').value);
             formData.append('payment_enabled', document.getElementById('payment_enabled').checked ? 'true' : 'false');
             formData.append('wechat_qr_image_url', document.getElementById('wechat_qr_image_url').value);
             formData.append('alipay_qr_image_url', document.getElementById('alipay_qr_image_url').value);

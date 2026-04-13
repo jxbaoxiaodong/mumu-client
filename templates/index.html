@@ -2108,7 +2108,6 @@
     </div>
 </div>
 
-
 <!-- 移动端快速操作 -->
 <div class="quick-actions-uni">
     <div class="quick-actions-inner-uni">
@@ -4180,6 +4179,34 @@ document.head.appendChild(notificationStyle);
 function showNotification(message, type, duration = 3500) {
     NotificationManager.show(message, type, duration);
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    var isCompanionApp = /mumucompanion/i.test(navigator.userAgent || '');
+    var isAndroidWeb = /android/i.test(navigator.userAgent || '');
+    var apkUrl = {{ android_companion_apk_url|tojson }};
+    var promptKey = 'mumu_android_companion_prompt_v2';
+
+    if (isCompanionApp || !isAndroidWeb || !apkUrl) {
+        return;
+    }
+
+    try {
+        if (window.sessionStorage.getItem(promptKey) === '1') {
+            return;
+        }
+        window.sessionStorage.setItem(promptKey, '1');
+    } catch (error) {
+        console.warn('保存安卓伴侣提示状态失败:', error);
+    }
+
+    window.setTimeout(function() {
+        showNotification(
+            '下载 <a href="' + apkUrl + '" class="fw-semibold text-decoration-underline">专用app</a> 浏览更顺畅，还可以压缩手机照片，释放空间。',
+            'info',
+            5000
+        );
+    }, 900);
+});
 
 // 打开反馈模态框
 function openFeedbackModal() {
