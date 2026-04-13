@@ -103,6 +103,14 @@
             color: #6c757d;
             font-size: 0.8rem;
         }
+        .usage-cost-line {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(0,0,0,0.08);
+            color: #495057;
+            font-size: 0.82rem;
+            line-height: 1.6;
+        }
         .empty-state {
             text-align: center;
             padding: 60px 20px;
@@ -234,11 +242,32 @@
                             if (record.model_name) {
                                 metaParts.push(`<span><i class="fas fa-microchip me-1"></i>${record.model_name}</span>`);
                             }
+                            if (record.provider) {
+                                metaParts.push(`<span><i class="fas fa-cloud me-1"></i>${record.provider}</span>`);
+                            }
                             if ((record.images || 0) > 0) {
                                 metaParts.push(`<span><i class="fas fa-images me-1"></i>生成 ${(record.images || 0).toLocaleString()} 张</span>`);
                             }
+                            if ((record.duration_seconds || 0) > 0) {
+                                metaParts.push(`<span><i class="fas fa-wave-square me-1"></i>${(record.duration_seconds || 0).toFixed(2)} 秒</span>`);
+                            }
                             const metaHtml = metaParts.length
                                 ? `<div class="usage-meta">${metaParts.join('')}</div>`
+                                : '';
+                            const costParts = [];
+                            if (record.prompt_unit_price > 0 || record.completion_unit_price > 0) {
+                                costParts.push(`输入单价 ${record.prompt_unit_price} / 输出单价 ${record.completion_unit_price} ${record.unit_label || '元/百万Token'}`);
+                            } else if (record.unit_price > 0) {
+                                costParts.push(`单价 ${record.unit_price} ${record.unit_label || ''}`.trim());
+                            }
+                            if ((record.prompt_cost || 0) > 0 || (record.completion_cost || 0) > 0) {
+                                costParts.push(`本次输入费用 ${record.prompt_cost.toFixed(6)} 元，输出费用 ${record.completion_cost.toFixed(6)} 元`);
+                            }
+                            if ((record.estimated_cost || 0) > 0) {
+                                costParts.push(`本次费用 ${record.estimated_cost.toFixed(6)} 元`);
+                            }
+                            const costHtml = costParts.length
+                                ? `<div class="usage-cost-line">${costParts.join(' ｜ ')}</div>`
                                 : '';
                             html += `
                                 <div class="usage-item ${typeClass}">
@@ -249,6 +278,7 @@
                                                 ${statusBadge}
                                             </div>
                                             ${metaHtml}
+                                            ${costHtml}
                                             <span class="time-badge"><i class="fas fa-clock me-1"></i>${record.time}</span>
                                         </div>
                                         ${rightBadge}

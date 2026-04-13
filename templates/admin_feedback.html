@@ -184,28 +184,28 @@
         </div>
         
         <nav class="nav flex-column mt-4">
-            <a class="nav-link" href="/admin/dashboard">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/dashboard">
                 <i class="bi bi-speedometer2"></i> 仪表盘
             </a>
-            <a class="nav-link" href="/admin/clients">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/clients">
                 <i class="bi bi-device-ssd"></i> 设备管理
             </a>
-            <a class="nav-link" href="/admin/credentials">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/credentials">
                 <i class="bi bi-key"></i> 凭证管理
             </a>
-            <a class="nav-link" href="/admin/tunnel-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/tunnel-pool">
                 <i class="bi bi-hdd-network"></i> Tunnel池
             </a>
-            <a class="nav-link" href="/admin/news-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/news-pool">
                 <i class="bi bi-newspaper"></i> 新闻池
             </a>
-            <a class="nav-link active" href="/admin/feedback">
+            <a class="nav-link active" href="/mumu-gate-7k2p9x/feedback">
                 <i class="bi bi-chat-dots"></i> 用户反馈
                 {% if feedback_list | selectattr("status", "equalto", "unread") | list | length > 0 %}
                 <span class="badge bg-danger ms-2">{{ feedback_list | selectattr("status", "equalto", "unread") | list | length }}</span>
                 {% endif %}
             </a>
-            <a class="nav-link" href="/admin/settings">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/settings">
                 <i class="bi bi-gear"></i> 系统设置
             </a>
             <a class="nav-link" href="/czrz/health" target="_blank">
@@ -214,7 +214,7 @@
         </nav>
         
         <div class="logout-btn">
-            <a href="/admin" class="btn btn-outline-light w-100">
+            <a href="/mumu-gate-7k2p9x" class="btn btn-outline-light w-100">
                 <i class="bi bi-box-arrow-right"></i> 退出登录
             </a>
         </div>
@@ -299,7 +299,7 @@
             if (!confirm('确定将此反馈标记为已读吗？')) return;
             
             try {
-                const response = await fetch(`/admin/feedback/${feedbackId}/mark-read`, {
+                const response = await fetch(`/mumu-gate-7k2p9x/feedback/${feedbackId}/mark-read`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'}
                 });
@@ -322,7 +322,7 @@
             if (!confirm('确定要删除这条反馈吗？此操作不可恢复。')) return;
             
             try {
-                const response = await fetch(`/admin/feedback/${feedbackId}/delete`, {
+                const response = await fetch(`/mumu-gate-7k2p9x/feedback/${feedbackId}/delete`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'}
                 });

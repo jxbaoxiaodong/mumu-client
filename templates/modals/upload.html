@@ -146,6 +146,7 @@
 <script>
 var selectedFiles = [];
 var autoContinueMode = false;
+var uploadAbortController = null;
 var mobileUploadState = {
     isMobile: false,
     isLocalNetwork: false,
@@ -488,146 +489,367 @@ function previewFiles(files) {
     addFilesToSelection(files);
 }
 
-function uploadFiles() {
-    if (selectedFiles.length === 0) return;
-    
-    var formData = new FormData();
-    formData.append('caption', '');
-    
-    // 计算总大小
-    var totalSize = 0;
-    selectedFiles.forEach(function(file) {
-        formData.append('files', file);
-        totalSize += file.size;
+var DEFAULT_UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
+var MAX_UPLOAD_RETRIES = 3;
+
+function buildUploadMessageFromResponse(status, responseText) {
+    if (status === 413) {
+        return '上传分片仍被公网链路拒绝，请稍后重试。';
+    }
+    if (status === 502 || status === 504) {
+        return '公网上传通道超时，请稍后重试。';
+    }
+    if (!responseText) {
+        return '服务端返回为空，上传未完成。';
+    }
+    return '服务端返回了非 JSON 响应，上传未完成。';
+}
+
+function parseUploadJson(status, responseText) {
+    try {
+        return JSON.parse(responseText);
+    } catch (e) {
+        return {
+            success: false,
+            message: buildUploadMessageFromResponse(status, responseText)
+        };
+    }
+}
+
+function updateBatchUploadProgress(progressBar, statusText, sizeInfo, speedInfo, startTime, sentBytes, totalBytes, currentLabel) {
+    var safeTotalBytes = totalBytes > 0 ? totalBytes : 1;
+    var percent = Math.round((sentBytes / safeTotalBytes) * 100);
+    progressBar.style.width = percent + '%';
+    sizeInfo.textContent = formatSize(sentBytes) + ' / ' + formatSize(totalBytes);
+
+    var now = Date.now();
+    var elapsed = Math.max((now - startTime) / 1000, 0.001);
+    var speed = sentBytes / elapsed;
+    speedInfo.textContent = speed > 0 ? (formatSize(speed) + '/s') : '计算中...';
+
+    if (sentBytes >= totalBytes) {
+        statusText.textContent = currentLabel ? (currentLabel + ' · 正在收尾...') : '正在收尾...';
+        return;
+    }
+
+    var remaining = speed > 0 ? (totalBytes - sentBytes) / speed : 0;
+    if (remaining > 60) {
+        statusText.textContent = currentLabel + ' · ' + percent + '% · 预计剩余 ' + Math.round(remaining / 60) + ' 分钟';
+    } else if (remaining > 1) {
+        statusText.textContent = currentLabel + ' · ' + percent + '% · 预计剩余 ' + Math.round(remaining) + ' 秒';
+    } else {
+        statusText.textContent = currentLabel + ' · ' + percent + '%';
+    }
+}
+
+function resetUploadUi() {
+    document.getElementById('fileInput').value = '';
+    document.getElementById('previewArea').style.display = 'none';
+    document.getElementById('uploadProgress').style.display = 'none';
+    document.getElementById('uploadBtn').disabled = true;
+    hideQuickAddBar();
+}
+
+function completeSuccessfulUpload() {
+    var modalEl = document.getElementById('uploadModal');
+    var modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+        modal.hide();
+    }
+    selectedFiles = [];
+    resetUploadUi();
+
+    setTimeout(function() {
+        if (typeof loadDateData === 'function' && typeof window.currentCalendarDate !== 'undefined') {
+            loadDateData(formatDate(window.currentCalendarDate));
+        } else {
+            window.location.reload();
+        }
+    }, 500);
+}
+
+function postJson(url, payload) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    }).then(function(response) {
+        return response.text().then(function(text) {
+            return {
+                status: response.status,
+                data: parseUploadJson(response.status, text)
+            };
+        });
     });
-    
+}
+
+function uploadChunkRequest(uploadId, file, chunkBlob, chunkIndex, totalChunks, committedBytesBeforeChunk, totalBytes, uiState) {
+    return new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload/sessions/' + encodeURIComponent(uploadId) + '/chunk', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+
+        xhr.upload.onprogress = function(e) {
+            if (!e.lengthComputable) return;
+            updateBatchUploadProgress(
+                uiState.progressBar,
+                uiState.statusText,
+                uiState.sizeInfo,
+                uiState.speedInfo,
+                uiState.startTime,
+                committedBytesBeforeChunk + e.loaded,
+                totalBytes,
+                uiState.currentLabel
+            );
+        };
+
+        xhr.onload = function() {
+            var data = parseUploadJson(xhr.status, xhr.responseText || '');
+            if (xhr.status >= 200 && xhr.status < 300 && data && data.success) {
+                resolve(data);
+                return;
+            }
+            var error = new Error((data && data.message) || ('HTTP错误 ' + xhr.status));
+            error.status = xhr.status;
+            error.data = data;
+            reject(error);
+        };
+
+        xhr.onerror = function() {
+            reject(new Error('上传分片时网络异常'));
+        };
+
+        xhr.onabort = function() {
+            reject(new Error('上传已取消'));
+        };
+
+        var formData = new FormData();
+        formData.append('chunk_index', String(chunkIndex));
+        formData.append('total_chunks', String(totalChunks));
+        formData.append('chunk', chunkBlob, file.name + '.part' + chunkIndex);
+        xhr.send(formData);
+    });
+}
+
+async function retryUploadStep(label, action) {
+    var lastError = null;
+    for (var attempt = 1; attempt <= MAX_UPLOAD_RETRIES; attempt += 1) {
+        try {
+            return await action();
+        } catch (error) {
+            lastError = error;
+            if (error && error.status === 401 && error.data && error.data.require_family_code && error.data.redirect_url) {
+                window.location.href = error.data.redirect_url;
+                throw error;
+            }
+            if (error && error.status === 409 && error.data && typeof error.data.next_chunk_index === 'number') {
+                return error.data;
+            }
+            if (attempt >= MAX_UPLOAD_RETRIES) {
+                break;
+            }
+            await new Promise(function(resolve) { setTimeout(resolve, attempt * 400); });
+        }
+    }
+    throw lastError || new Error(label + '失败');
+}
+
+async function uploadSingleFileInChunks(file, fileIndex, totalFiles, totalBytes, sentBytes, uiState) {
+    var sessionResponse = await retryUploadStep('创建上传会话', function() {
+        return postJson('/api/upload/sessions', {
+            filename: file.name,
+            total_size: file.size,
+            mime_type: file.type || 'application/octet-stream',
+            caption: ''
+        }).then(function(result) {
+            if (result.status >= 200 && result.status < 300 && result.data) {
+                return result.data;
+            }
+            var error = new Error((result.data && result.data.message) || ('HTTP错误 ' + result.status));
+            error.status = result.status;
+            error.data = result.data;
+            throw error;
+        });
+    });
+
+    if (sessionResponse.require_family_code && sessionResponse.redirect_url) {
+        window.location.href = sessionResponse.redirect_url;
+        throw new Error(sessionResponse.message || '请先输入家庭码');
+    }
+
+    if (sessionResponse.already_exists) {
+        sentBytes += file.size;
+        updateBatchUploadProgress(
+            uiState.progressBar,
+            uiState.statusText,
+            uiState.sizeInfo,
+            uiState.speedInfo,
+            uiState.startTime,
+            sentBytes,
+            totalBytes,
+            '第 ' + fileIndex + '/' + totalFiles + ' 个：' + file.name + '（已跳过）'
+        );
+        return {
+            sentBytes: sentBytes,
+            uploadedCount: 0,
+            skippedCount: sessionResponse.skipped_count || 1
+        };
+    }
+
+    var uploadId = sessionResponse.upload_id;
+    var chunkSize = Math.max(sessionResponse.chunk_size || DEFAULT_UPLOAD_CHUNK_SIZE, 256 * 1024);
+    var totalChunks = Math.max(Math.ceil(file.size / chunkSize), 1);
+
+    for (var chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+        var start = chunkIndex * chunkSize;
+        var end = Math.min(start + chunkSize, file.size);
+        var chunkBlob = file.slice(start, end);
+        uiState.currentLabel = '第 ' + fileIndex + '/' + totalFiles + ' 个：' + file.name;
+
+        var chunkResponse = await retryUploadStep('上传分片', function() {
+            return uploadChunkRequest(uploadId, file, chunkBlob, chunkIndex, totalChunks, sentBytes, totalBytes, uiState);
+        });
+
+        if (chunkResponse && typeof chunkResponse.next_chunk_index === 'number' && chunkResponse.next_chunk_index > chunkIndex + 1) {
+            sentBytes += chunkBlob.size;
+        } else {
+            sentBytes += chunkBlob.size;
+        }
+
+        updateBatchUploadProgress(
+            uiState.progressBar,
+            uiState.statusText,
+            uiState.sizeInfo,
+            uiState.speedInfo,
+            uiState.startTime,
+            sentBytes,
+            totalBytes,
+            uiState.currentLabel
+        );
+    }
+
+    var completeResponse = await retryUploadStep('完成上传', function() {
+        return postJson('/api/upload/sessions/' + encodeURIComponent(uploadId) + '/complete', {
+            total_chunks: totalChunks
+        }).then(function(result) {
+            if (result.status >= 200 && result.status < 300 && result.data) {
+                return result.data;
+            }
+            var error = new Error((result.data && result.data.message) || ('HTTP错误 ' + result.status));
+            error.status = result.status;
+            error.data = result.data;
+            throw error;
+        });
+    });
+
+    return {
+        sentBytes: sentBytes,
+        uploadedCount: completeResponse.count || 0,
+        skippedCount: completeResponse.skipped_count || 0
+    };
+}
+
+async function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+
     var progressArea = document.getElementById('uploadProgress');
     var progressBar = progressArea.querySelector('.progress-bar');
     var statusText = document.getElementById('uploadStatus');
     var sizeInfo = document.getElementById('uploadSizeInfo');
     var speedInfo = document.getElementById('uploadSpeedInfo');
     var uploadBtn = document.getElementById('uploadBtn');
-    
+
     progressArea.style.display = 'block';
     uploadBtn.disabled = true;
-    
-    // 初始化进度信息
+
+    var totalSize = selectedFiles.reduce(function(sum, file) { return sum + file.size; }, 0);
     var startTime = Date.now();
-    var lastLoaded = 0;
-    var lastTime = startTime;
-    
+    var sentBytes = 0;
+    var uploadedCount = 0;
+    var skippedCount = 0;
+    var failedItems = [];
+
+    progressBar.style.width = '0%';
     sizeInfo.textContent = '0 KB / ' + formatSize(totalSize);
     speedInfo.textContent = '计算中...';
-    statusText.textContent = '正在上传 ' + selectedFiles.length + ' 个文件...';
-    
-    var xhr = new XMLHttpRequest();
-    
-    // 进度事件
-    xhr.upload.onprogress = function(e) {
-        if (e.lengthComputable) {
-            var percent = Math.round((e.loaded / e.total) * 100);
-            progressBar.style.width = percent + '%';
-            
-            // 计算上传速度
-            var now = Date.now();
-            var timeDiff = (now - lastTime) / 1000;
-            var bytesDiff = e.loaded - lastLoaded;
-            
-            if (timeDiff > 0.5) {
-                var speed = bytesDiff / timeDiff;
-                speedInfo.textContent = formatSize(speed) + '/s';
-                lastLoaded = e.loaded;
-                lastTime = now;
-            }
-            
-            // 更新已上传大小
-            sizeInfo.textContent = formatSize(e.loaded) + ' / ' + formatSize(e.total);
-            
-            // 计算预计剩余时间
-            var elapsed = (now - startTime) / 1000;
-            if (elapsed > 1 && e.loaded > 0) {
-                var avgSpeed = e.loaded / elapsed;
-                var remaining = (e.total - e.loaded) / avgSpeed;
-                if (remaining > 60) {
-                    statusText.textContent = '上传中 ' + percent + '% · 预计剩余 ' + Math.round(remaining / 60) + ' 分钟';
-                } else if (remaining > 1) {
-                    statusText.textContent = '上传中 ' + percent + '% · 预计剩余 ' + Math.round(remaining) + ' 秒';
-                } else {
-                    statusText.textContent = '上传中 ' + percent + '%';
-                }
-            } else {
-                statusText.textContent = '上传中 ' + percent + '%';
-            }
-        }
+    statusText.textContent = '正在准备上传 ' + selectedFiles.length + ' 个文件...';
+
+    var uiState = {
+        progressBar: progressBar,
+        statusText: statusText,
+        sizeInfo: sizeInfo,
+        speedInfo: speedInfo,
+        startTime: startTime,
+        currentLabel: ''
     };
-    
-    // 完成事件
-    xhr.onload = function() {
-        var data;
+
+    var filesToUpload = selectedFiles.slice();
+    for (var index = 0; index < filesToUpload.length; index += 1) {
+        var file = filesToUpload[index];
         try {
-            data = JSON.parse(xhr.responseText);
-        } catch (e) {
-            data = { success: false, message: '解析响应失败' };
+            var result = await uploadSingleFileInChunks(
+                file,
+                index + 1,
+                filesToUpload.length,
+                totalSize,
+                sentBytes,
+                uiState
+            );
+            sentBytes = result.sentBytes;
+            uploadedCount += result.uploadedCount;
+            skippedCount += result.skippedCount;
+        } catch (error) {
+            console.error('批量上传中的文件失败:', file.name, error);
+            failedItems.push({
+                file: file,
+                message: error && error.message ? error.message : '上传失败'
+            });
+            sentBytes += file.size;
+            updateBatchUploadProgress(
+                progressBar,
+                statusText,
+                sizeInfo,
+                speedInfo,
+                startTime,
+                Math.min(sentBytes, totalSize),
+                totalSize,
+                '第 ' + (index + 1) + '/' + filesToUpload.length + ' 个：' + file.name + '（失败）'
+            );
         }
+    }
 
-        if (xhr.status === 200 && data && data.success) {
-            progressBar.style.width = '100%';
-            sizeInfo.textContent = formatSize(totalSize) + ' / ' + formatSize(totalSize);
-            speedInfo.textContent = '完成';
-            statusText.textContent = '上传完成！';
-            showNotification(data.message || ('成功上传 ' + (data.count || 0) + ' 个文件'), 'success');
+    progressBar.style.width = '100%';
+    sizeInfo.textContent = formatSize(totalSize) + ' / ' + formatSize(totalSize);
+    speedInfo.textContent = '完成';
 
-            var modalEl = document.getElementById('uploadModal');
-            var modal = bootstrap.Modal.getInstance(modalEl);
-            if (modal) {
-                modal.hide();
-            }
+    if (failedItems.length === 0) {
+        statusText.textContent = '上传完成！';
+        showNotification('上传完成：成功 ' + uploadedCount + ' 个，跳过 ' + skippedCount + ' 个', 'success');
+        completeSuccessfulUpload();
+        return;
+    }
 
-            // 重置表单
-            document.getElementById('fileInput').value = '';
-            document.getElementById('previewArea').style.display = 'none';
-            document.getElementById('uploadProgress').style.display = 'none';
-            document.getElementById('uploadBtn').disabled = true;
-            selectedFiles = [];
-            hideQuickAddBar();
+    selectedFiles = failedItems.map(function(item) { return item.file; });
+    updatePreview();
+    uploadBtn.disabled = false;
 
-            // 刷新当前日期数据
-            setTimeout(function() {
-                if (typeof loadDateData === 'function' && typeof window.currentCalendarDate !== 'undefined') {
-                    loadDateData(formatDate(window.currentCalendarDate));
-                } else {
-                    window.location.reload();
-                }
-            }, 500);
-        } else {
-            showNotification('上传失败: ' + (data && data.message || ('HTTP错误 ' + xhr.status)), 'error');
-            uploadBtn.disabled = false;
-            progressArea.style.display = 'none';
-        }
-    };
-    
-    // 错误事件
-    xhr.onerror = function() {
-        console.error('上传错误');
-        showNotification('上传出错，请稍后重试', 'error');
-        uploadBtn.disabled = false;
-        progressArea.style.display = 'none';
-    };
-    
-    // 中止事件
-    xhr.onabort = function() {
-        showNotification('上传已取消', 'warning');
-        uploadBtn.disabled = false;
-        progressArea.style.display = 'none';
-    };
-    
-    xhr.open('POST', '/upload', true);
-    xhr.send(formData);
+    statusText.textContent = '批量上传完成，但有 ' + failedItems.length + ' 个文件失败';
+    var failedNames = failedItems.slice(0, 3).map(function(item) { return item.file.name; }).join('，');
+    var suffix = failedItems.length > 3 ? ' 等 ' + failedItems.length + ' 个文件' : '';
+    showNotification(
+        '批量上传部分失败：成功 ' + uploadedCount + ' 个，跳过 ' + skippedCount + ' 个，失败 ' + failedItems.length + ' 个。' + failedNames + suffix,
+        'warning',
+        6000
+    );
 }
 
 // 格式化文件大小
 function formatSize(bytes) {
     if (bytes === 0) return '0 B';
+    if (!bytes || bytes < 0) return '--';
     var k = 1024;
     var sizes = ['B', 'KB', 'MB', 'GB'];
     var i = Math.floor(Math.log(bytes) / Math.log(k));

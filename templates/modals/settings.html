@@ -32,23 +32,22 @@
                                 </div>
                             </div>
                             
-                            <!-- Token用量统计 -->
+                            {% if ai_balance_enabled %}
                             <div class="d-flex align-items-center mb-3">
                                 <div class="me-3">
-                                    <i class="fas fa-chart-line fa-2x text-info"></i>
+                                    <i class="fas fa-wallet fa-2x text-success"></i>
                                 </div>
                                 <div class="flex-grow-1">
-                                    <h6 class="mb-1 text-muted small">AI 调用技术明细</h6>
+                                    <h6 class="mb-1 text-muted small">账户余额</h6>
                                     <div class="d-flex align-items-center">
                                         <span class="me-2" style="font-size: 0.95rem;">
-                                            <span class="text-primary">{{ "{:,}".format(token_usage.total_tokens if token_usage else 0) }}</span>
+                                            <span class="text-primary">¥ {{ '%.4f'|format(ai_balance if ai_balance is not none else 0) }}</span>
                                         </span>
-                                        <small class="text-muted" style="font-size: 0.7rem;">
-                                            (输入: {{ "{:,}".format(token_usage.total_prompt if token_usage else 0) }} / 输出: {{ "{:,}".format(token_usage.total_completion if token_usage else 0) }})
-                                        </small>
+                                        <small class="text-muted" style="font-size: 0.7rem;">预付费余额，按实际 AI 调用逐次扣减</small>
                                     </div>
                                 </div>
                             </div>
+                            {% endif %}
 
                             <!-- 图片生成用量 -->
                             <div class="d-flex align-items-center mb-3">
@@ -69,11 +68,14 @@
                                 <strong>边界说明：</strong><br>
                                 不用 AI：照片浏览、上传、远程分享、家庭码访问、留言、手动写日记、索引管理。<br>
                                 会用到 AI：AI 日记润色、成长画像刷新、AI 问答、图片解读、视频语音识别、漫画或角色图生成。<br>
-                                AI 调用技术明细只做记录，不会影响基础功能的浏览、上传和分享。
+                                AI 调用明细会写清模型名称、单价和本次费用，不会影响基础功能的浏览、上传和分享。
                             </div>
                             <div class="mb-3">
                                 <a href="/help" class="btn btn-sm btn-outline-dark">
                                     <i class="fas fa-book-open me-1"></i>查看帮助中心
+                                </a>
+                                <a href="/usage" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="fas fa-list-ul me-1"></i>查看 AI 调用明细
                                 </a>
                             </div>
                             
@@ -238,6 +240,9 @@
                                 <div class="input-group mb-2">
                                     <input type="text" class="form-control media-folder"
                                            placeholder="例如：C:\Users\用户名\Pictures\宝宝照片（按 Enter 确认）">
+                                    <button class="btn btn-outline-primary choose-folder-btn" type="button" title="打开目录">
+                                        <i class="fas fa-folder-open"></i>
+                                    </button>
                                     <button class="btn btn-outline-danger remove-folder-btn" type="button" disabled>
                                         <i class="fas fa-trash"></i>
                                     </button>
@@ -248,9 +253,10 @@
                             </button>
                             <div class="form-text text-muted mt-2">
                                 <i class="fas fa-info-circle me-1"></i>
-                                请输入完整的文件夹路径，按 Enter 确认<br>
+                                可直接点“打开目录”选择，也可手动输入完整路径，按 Enter 确认<br>
                                 支持多个文件夹，系统会自动扫描所有文件夹中的照片和视频
                             </div>
+                            <div class="small text-muted mt-2" id="modalFolderSaveHint">这里的文件夹修改后会自动保存。</div>
                         </div>
                     </div>
 
@@ -513,7 +519,7 @@
             </div>
             <div class="modal-body">
                 <div class="alert alert-info small mb-3">
-                    会先压图片，图片最长边不会低于 1440；只有图片压到下限还不够时，才会继续压视频。低于 1440 的图片会直接归入“暂不压缩”部分。
+                    现在固定分两挡：`基本不伤画质` 和 `保底压缩`。你还可以单独勾选只压图片、只压视频，或把某一种完全排除。
                 </div>
                 <div class="alert alert-secondary small mb-3">
                     压缩任务会按单线程顺序慢慢处理，并周期性回收内存、短暂让出 CPU。看到速度偏慢属于正常现象，目的是避免把机器压死。
@@ -542,7 +548,7 @@
                     </div>
                     <div class="col-md-3">
                         <div class="p-3 border rounded h-100">
-                            <div class="text-muted small mb-1">暂不压缩部分</div>
+                            <div class="text-muted small mb-1">其他不处理部分</div>
                             <div class="fw-semibold" id="mediaShrinkImmutableSize">-</div>
                             <div class="small text-muted mt-1" id="mediaShrinkImmutableCount">-</div>
                         </div>
@@ -552,30 +558,56 @@
                 <div id="mediaShrinkUnavailable" class="alert alert-warning d-none mb-3"></div>
 
                 <div id="mediaShrinkControls">
-                    <label class="form-label">目标总大小</label>
-                    <input type="range" class="form-range" id="mediaShrinkTargetRange">
-                    <div class="row g-2 align-items-center mb-2">
-                        <div class="col-sm-6">
-                            <div class="input-group">
-                                <input type="number" class="form-control" id="mediaShrinkTargetInput" min="0" step="0.1">
-                                <span class="input-group-text">GB</span>
+                    <div class="mb-3">
+                        <label class="form-label mb-2">压缩挡位</label>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="border rounded p-3 h-100 w-100 media-shrink-preset-card" id="mediaShrinkPresetCardGentle">
+                                    <input class="form-check-input me-2" type="radio" name="mediaShrinkPreset" id="mediaShrinkPresetGentle" value="gentle" checked>
+                                    <span class="fw-semibold">基本不伤画质</span>
+                                    <div class="small text-muted mt-2" id="mediaShrinkPresetGentleHint">-</div>
+                                    <div class="small mt-2">
+                                        估算压后总大小：<strong id="mediaShrinkPresetGentleEstimate">-</strong>
+                                    </div>
+                                </label>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="border rounded p-3 h-100 w-100 media-shrink-preset-card" id="mediaShrinkPresetCardMinimum">
+                                    <input class="form-check-input me-2" type="radio" name="mediaShrinkPreset" id="mediaShrinkPresetMinimum" value="minimum">
+                                    <span class="fw-semibold">保底压缩</span>
+                                    <div class="small text-muted mt-2" id="mediaShrinkPresetMinimumHint">-</div>
+                                    <div class="small mt-2">
+                                        估算压后总大小：<strong id="mediaShrinkPresetMinimumEstimate">-</strong>
+                                    </div>
+                                </label>
                             </div>
                         </div>
-                        <div class="col-sm-6">
-                            <div class="small text-muted" id="mediaShrinkRangeHint">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label mb-2">压缩范围</label>
+                        <div class="d-flex flex-wrap gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="mediaShrinkIncludeImages" checked>
+                                <label class="form-check-label" for="mediaShrinkIncludeImages">压缩图片</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="mediaShrinkIncludeVideos" checked>
+                                <label class="form-check-label" for="mediaShrinkIncludeVideos">压缩视频</label>
+                            </div>
                         </div>
+                        <div class="small text-muted mt-2" id="mediaShrinkRangeHint">-</div>
                     </div>
                     <div class="p-3 bg-light rounded small mb-3">
                         <div class="d-flex justify-content-between mb-1">
-                            <span>目标总大小</span>
+                            <span>估算压缩后总大小</span>
                             <strong id="mediaShrinkTargetSummary">-</strong>
                         </div>
                         <div class="d-flex justify-content-between mb-1">
-                            <span>换算后的图片目标</span>
+                            <span>估算图片保留大小</span>
                             <span id="mediaShrinkImageTargetSummary">-</span>
                         </div>
                         <div class="d-flex justify-content-between mb-1">
-                            <span>换算后的视频目标</span>
+                            <span>估算视频保留大小</span>
                             <span id="mediaShrinkVideoTargetSummary">-</span>
                         </div>
                         <div class="d-flex justify-content-between mb-1">
@@ -669,8 +701,8 @@
                                 <span id="mediaShrinkPreviewParams">-</span>
                             </div>
                             <div class="d-flex justify-content-between">
-                                <span>图片最低限制</span>
-                                <span>至少 1440px</span>
+                                <span>图片策略</span>
+                                <span id="mediaShrinkPreviewImagePolicy">-</span>
                             </div>
                         </div>
                     </div>
@@ -689,8 +721,8 @@
                                 <span id="mediaShrinkVideoPreviewParams">-</span>
                             </div>
                             <div class="d-flex justify-content-between">
-                                <span>视频处理说明</span>
-                                <span>视频会慢很多</span>
+                                <span>视频策略</span>
+                                <span id="mediaShrinkPreviewVideoPolicy">-</span>
                             </div>
                         </div>
                     </div>
@@ -720,6 +752,11 @@
             <div class="modal-body d-flex align-items-center justify-content-center pt-0">
                 <img id="mediaShrinkFullscreenImage" class="media-shrink-fullscreen-image rounded" alt="样例大图预览">
             </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">
+                    <i class="fas fa-arrow-left me-2"></i>返回样例对比
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -736,11 +773,11 @@
                     继续后会直接修改媒体文件夹中的原始图片和视频文件，操作不可撤销。
                 </div>
                 <div class="p-3 bg-light rounded small mb-3" id="mediaShrinkConfirmSummary">
-                    目标总大小：-
+                    估算压缩后总大小：-
                 </div>
                 <ul class="small text-muted mb-0 ps-3">
-                    <li>图片会优先压缩，但最长边不会低于 1440</li>
-                    <li>如果目标更小，会继续压视频，视频处理时间会明显更长</li>
+                    <li>你勾选了什么类型，就只会处理什么类型</li>
+                    <li>基本不伤画质会保留原分辨率；保底压缩会把图片压到最低边 1440、视频压到 720p 保底</li>
                     <li>原文件会被直接替换，不会额外保留备份</li>
                     <li>刚才的样例文件只用于预览，确认前并没有改动原文件</li>
                 </ul>
@@ -1069,6 +1106,15 @@
 .avatar-upload-settings:hover .avatar-overlay-settings {
     opacity: 1;
 }
+.media-shrink-preset-card {
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.media-shrink-preset-card.is-active {
+    border-color: #0d6efd !important;
+    background: rgba(13, 110, 253, 0.04);
+    box-shadow: 0 0 0 1px rgba(13, 110, 253, 0.18);
+}
 .media-shrink-preview-image {
     width: 100%;
     max-height: 60vh;
@@ -1376,7 +1422,133 @@ function openSettingsEditor() {
     loadCurrentSettings();
 }
 
-function saveModalSettings() {
+var modalFolderAutosaveTimer = null;
+var modalFolderAutosaveInFlight = false;
+var modalFolderAutosaveQueued = false;
+var modalFolderAutosaveReady = false;
+
+function setModalFolderSaveHint(text, level) {
+    var hint = document.getElementById('modalFolderSaveHint');
+    if (!hint) return;
+    hint.className = 'small mt-2';
+    hint.classList.add(level === 'success' ? 'text-success' : level === 'danger' ? 'text-danger' : 'text-muted');
+    hint.textContent = text;
+}
+
+function updateModalFolderRemoveButtons() {
+    var buttons = document.querySelectorAll('#modalFolderList .remove-folder-btn');
+    buttons.forEach(function(btn) {
+        btn.disabled = buttons.length <= 1;
+    });
+}
+
+function chooseFolderForInput(input, sourceKind) {
+    if (!input) return Promise.resolve(null);
+
+    var trigger = input.parentElement ? input.parentElement.querySelector('.choose-folder-btn') : null;
+    var originalHtml = trigger ? trigger.innerHTML : '';
+    if (trigger) {
+        trigger.disabled = true;
+        trigger.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    return fetch('/api/settings/select-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_path: input.value || '' })
+    })
+        .then(function(response) {
+            return response.json().then(function(data) {
+                return { ok: response.ok, data: data || {} };
+            });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) {
+                if (result.data.cancelled) {
+                    return null;
+                }
+                throw new Error(result.data.message || '打开目录选择器失败');
+            }
+            input.value = result.data.path || '';
+            if (sourceKind === 'modal') {
+                scheduleModalFolderAutosave();
+            }
+            return result.data.path || '';
+        })
+        .catch(function(error) {
+            showNotification(error.message || '打开目录选择器失败', 'error');
+            return null;
+        })
+        .finally(function() {
+            if (trigger) {
+                trigger.disabled = false;
+                trigger.innerHTML = originalHtml || '<i class="fas fa-folder-open"></i>';
+            }
+        });
+}
+
+function createModalFolderRow(value) {
+    var row = document.createElement('div');
+    row.className = 'input-group mb-2';
+
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control media-folder';
+    input.placeholder = '例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）';
+    input.value = value || '';
+    input.addEventListener('change', scheduleModalFolderAutosave);
+    input.addEventListener('blur', scheduleModalFolderAutosave);
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!row.nextElementSibling) {
+                addModalFolder();
+            }
+            scheduleModalFolderAutosave();
+        }
+    });
+
+    var chooseBtn = document.createElement('button');
+    chooseBtn.className = 'btn btn-outline-primary choose-folder-btn';
+    chooseBtn.type = 'button';
+    chooseBtn.title = '打开目录';
+    chooseBtn.innerHTML = '<i class="fas fa-folder-open"></i>';
+    chooseBtn.addEventListener('click', function() {
+        chooseFolderForInput(input, 'modal');
+    });
+
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-outline-danger remove-folder-btn';
+    removeBtn.type = 'button';
+    removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+
+    row.appendChild(input);
+    row.appendChild(chooseBtn);
+    row.appendChild(removeBtn);
+    return row;
+}
+
+function scheduleModalFolderAutosave() {
+    if (!modalFolderAutosaveReady) {
+        return;
+    }
+    if (modalFolderAutosaveTimer) {
+        clearTimeout(modalFolderAutosaveTimer);
+    }
+    setModalFolderSaveHint('文件夹已变更，正在自动保存...', 'muted');
+    modalFolderAutosaveTimer = setTimeout(function() {
+        modalFolderAutosaveTimer = null;
+        saveModalSettings({ silent: true });
+    }, 500);
+}
+
+function saveModalSettings(options) {
+    options = options || {};
+    if (options.silent && modalFolderAutosaveInFlight) {
+        modalFolderAutosaveQueued = true;
+        return;
+    }
+
     var babyName = document.getElementById('modalBabyName').value;
     var babyGender = document.getElementById('modalGender').value;
     var babyBirthday = document.getElementById('modalBirthday').value;
@@ -1413,6 +1585,11 @@ function saveModalSettings() {
     if (familyCode) {
         requestData.family_code = familyCode;
     }
+
+    if (options.silent) {
+        modalFolderAutosaveInFlight = true;
+        setModalFolderSaveHint('正在自动保存文件夹...', 'muted');
+    }
     
     fetch('/api/setup', {
         method: 'POST',
@@ -1424,43 +1601,51 @@ function saveModalSettings() {
     .then(function(response) { return response.json(); })
     .then(function(data) {
         if (data.success) {
-            showNotification('设置已保存', 'success');
-            // 关闭模态框
-            var modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
-            modal.hide();
-            // 刷新页面
-            setTimeout(function() { location.reload(); }, 1500);
+            if (options.silent) {
+                setModalFolderSaveHint('文件夹已自动保存。', 'success');
+                loadMediaShrinkStats().catch(function() {});
+            } else {
+                showNotification('设置已保存', 'success');
+                var modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
+                modal.hide();
+                setTimeout(function() { location.reload(); }, 1500);
+            }
         } else {
-            showNotification('保存失败：' + data.message, 'error');
+            if (options.silent) {
+                setModalFolderSaveHint('自动保存失败：' + data.message, 'danger');
+            } else {
+                showNotification('保存失败：' + data.message, 'error');
+            }
         }
     })
     .catch(function(error) {
         console.error('Error:', error);
-        showNotification('保存失败，请稍后重试', 'error');
+        if (options.silent) {
+            setModalFolderSaveHint('自动保存失败，请稍后重试。', 'danger');
+        } else {
+            showNotification('保存失败，请稍后重试', 'error');
+        }
+    })
+    .finally(function() {
+        if (options.silent) {
+            modalFolderAutosaveInFlight = false;
+            if (modalFolderAutosaveQueued) {
+                modalFolderAutosaveQueued = false;
+                scheduleModalFolderAutosave();
+            }
+        }
     });
 }
 
 // 添加文件夹
 function addModalFolder() {
     var folderList = document.getElementById('modalFolderList');
-    var newRow = document.createElement('div');
-    newRow.className = 'input-group mb-2';
-    newRow.innerHTML = '<input type="text" class="form-control media-folder" placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）"><button class="btn btn-outline-danger remove-folder-btn" type="button"><i class="fas fa-trash"></i></button>';
-    
-    // 添加 Enter 键监听
-    var input = newRow.querySelector('input');
-    input.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            addModalFolder();
-        }
-    });
-    
+    var newRow = createModalFolderRow('');
     folderList.appendChild(newRow);
-    
-    // 启用所有删除按钮
-    document.querySelectorAll('#modalFolderList .remove-folder-btn').forEach(function(btn) {
-        btn.disabled = false;
-    });
+    updateModalFolderRemoveButtons();
+    if (modalFolderAutosaveReady) {
+        scheduleModalFolderAutosave();
+    }
 }
 
 // 删除文件夹
@@ -1470,6 +1655,8 @@ document.addEventListener('click', function(e) {
         var remaining = document.querySelectorAll('#modalFolderList .media-folder').length;
         if (remaining > 1) {
             row.remove();
+            updateModalFolderRemoveButtons();
+            scheduleModalFolderAutosave();
         }
     }
 });
@@ -1543,6 +1730,13 @@ function initModalCitySelector(savedCity) {
 
 // 加载当前设置
 function loadCurrentSettings() {
+    modalFolderAutosaveReady = false;
+    modalFolderAutosaveInFlight = false;
+    modalFolderAutosaveQueued = false;
+    if (modalFolderAutosaveTimer) {
+        clearTimeout(modalFolderAutosaveTimer);
+        modalFolderAutosaveTimer = null;
+    }
     fetch('/api/settings/current')
         .then(function(response) { return response.json(); })
         .then(function(data) {
@@ -1561,14 +1755,14 @@ function loadCurrentSettings() {
                 
                 if (data.media_folders && data.media_folders.length > 0) {
                     data.media_folders.forEach(function(folder) {
-                        var newRow = document.createElement('div');
-                        newRow.className = 'input-group mb-2';
-                        newRow.innerHTML = '<input type="text" class="form-control media-folder" value="' + folder + '" placeholder="例如：C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）"><button class="btn btn-outline-danger remove-folder-btn" type="button"><i class="fas fa-trash"></i></button>';
-                        folderList.appendChild(newRow);
+                        folderList.appendChild(createModalFolderRow(folder));
                     });
                 } else {
                     addModalFolder();
                 }
+                updateModalFolderRemoveButtons();
+                setModalFolderSaveHint('这里的文件夹修改后会自动保存。', 'muted');
+                modalFolderAutosaveReady = true;
 
                 if (typeof window.ensureChinaCitiesData === 'function') {
                     window.ensureChinaCitiesData()
@@ -1586,6 +1780,8 @@ function loadCurrentSettings() {
         .catch(function(error) {
             console.error('Error loading settings:', error);
             addModalFolder();
+            updateModalFolderRemoveButtons();
+            modalFolderAutosaveReady = true;
         });
 }
 
@@ -1626,6 +1822,7 @@ var mediaShrinkState = {
     stats: null,
     previewToken: null,
     previewData: null,
+    selectedPreset: 'gentle',
     statsLoading: false,
     pollTimer: null
 };
@@ -1676,10 +1873,90 @@ function resetMediaShrinkPreviewContent() {
     document.getElementById('mediaShrinkPreviewFilename').textContent = '-';
     document.getElementById('mediaShrinkPreviewSizeCompare').textContent = '-';
     document.getElementById('mediaShrinkPreviewParams').textContent = '-';
+    document.getElementById('mediaShrinkPreviewImagePolicy').textContent = '-';
     document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '-';
     document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent = '-';
     document.getElementById('mediaShrinkVideoPreviewParams').textContent = '-';
+    document.getElementById('mediaShrinkPreviewVideoPolicy').textContent = '-';
     document.getElementById('mediaShrinkPreviewEstimatedTotal').textContent = '-';
+}
+
+function getMediaShrinkSelectedPresetKey() {
+    var checked = document.querySelector('input[name="mediaShrinkPreset"]:checked');
+    return checked ? checked.value : 'gentle';
+}
+
+function getMediaShrinkSelection() {
+    return {
+        preset_key: getMediaShrinkSelectedPresetKey(),
+        include_images: document.getElementById('mediaShrinkIncludeImages').checked,
+        include_videos: document.getElementById('mediaShrinkIncludeVideos').checked
+    };
+}
+
+function getMediaShrinkCurrentPlan() {
+    var stats = mediaShrinkState.stats;
+    if (!stats || !stats.presets) {
+        return null;
+    }
+    var selection = getMediaShrinkSelection();
+    var presetStats = stats.presets[selection.preset_key] || {};
+    var plan = {
+        preset_key: presetStats.preset_key || selection.preset_key,
+        preset_label: presetStats.preset_label || (selection.preset_key === 'minimum' ? '保底压缩' : '基本不伤画质'),
+        preset_description: presetStats.preset_description || '',
+        include_images: selection.include_images,
+        include_videos: selection.include_videos,
+        image: Object.assign({}, presetStats.image || {}),
+        video: Object.assign({}, presetStats.video || {})
+    };
+
+    if (!selection.include_images) {
+        plan.image.enabled = false;
+        plan.image.selected = false;
+        plan.image.estimated_bytes = 0;
+        plan.image.skip_reason = '已设置为不压缩图片';
+    }
+    if (!selection.include_videos) {
+        plan.video.enabled = false;
+        plan.video.selected = false;
+        plan.video.estimated_bytes = 0;
+        plan.video.skipped_bytes = Number(stats.compressible_video_bytes || 0);
+        plan.video.skip_reason = '已设置为不压缩视频';
+    }
+
+    var imageSkippedBytes = Number(plan.image.skipped_bytes || 0);
+    if (!selection.include_images) {
+        imageSkippedBytes = Number(stats.image_bytes || 0);
+    }
+    var videoSkippedBytes = Number(plan.video.skipped_bytes || 0);
+    if (!selection.include_videos) {
+        videoSkippedBytes = Number(stats.compressible_video_bytes || 0);
+    }
+    plan.estimated_total_bytes =
+        Number(stats.unhandled_bytes || 0) +
+        imageSkippedBytes +
+        Number(plan.image.estimated_bytes || 0) +
+        videoSkippedBytes +
+        Number(plan.video.estimated_bytes || 0);
+    plan.can_start = !!(plan.image.enabled || plan.video.enabled);
+    return plan;
+}
+
+function renderMediaShrinkPresetCards(stats) {
+    ['gentle', 'minimum'].forEach(function(key) {
+        var info = (stats && stats.presets && stats.presets[key]) || {};
+        var isActive = getMediaShrinkSelectedPresetKey() === key;
+        var cardId = key === 'minimum' ? 'mediaShrinkPresetCardMinimum' : 'mediaShrinkPresetCardGentle';
+        var hintId = key === 'minimum' ? 'mediaShrinkPresetMinimumHint' : 'mediaShrinkPresetGentleHint';
+        var estimateId = key === 'minimum' ? 'mediaShrinkPresetMinimumEstimate' : 'mediaShrinkPresetGentleEstimate';
+        var card = document.getElementById(cardId);
+        if (card) {
+            card.classList.toggle('is-active', isActive);
+        }
+        document.getElementById(hintId).textContent = info.preset_description || '-';
+        document.getElementById(estimateId).textContent = formatBytes(info.estimated_total_bytes || 0);
+    });
 }
 
 function setMediaShrinkStatsLoading() {
@@ -1703,19 +1980,22 @@ function setMediaShrinkStatsLoading() {
     document.getElementById('mediaShrinkSampleHint').textContent = loadingText;
     document.getElementById('mediaShrinkVideoSampleHint').textContent = loadingText;
     document.getElementById('mediaShrinkRangeHint').textContent = '正在读取媒体目录统计，请稍候...';
+    document.getElementById('mediaShrinkPresetGentleHint').textContent = loadingText;
+    document.getElementById('mediaShrinkPresetMinimumHint').textContent = loadingText;
+    document.getElementById('mediaShrinkPresetGentleEstimate').textContent = loadingText;
+    document.getElementById('mediaShrinkPresetMinimumEstimate').textContent = loadingText;
 
     var controls = document.getElementById('mediaShrinkControls');
     var unavailable = document.getElementById('mediaShrinkUnavailable');
     var previewBtn = document.getElementById('mediaShrinkPreviewBtn');
-    var range = document.getElementById('mediaShrinkTargetRange');
-    var targetInput = document.getElementById('mediaShrinkTargetInput');
 
     controls.classList.remove('d-none');
     unavailable.classList.add('d-none');
     previewBtn.disabled = true;
-    range.disabled = true;
-    targetInput.disabled = true;
-    targetInput.value = '';
+    document.getElementById('mediaShrinkIncludeImages').disabled = true;
+    document.getElementById('mediaShrinkIncludeVideos').disabled = true;
+    document.getElementById('mediaShrinkPresetGentle').disabled = true;
+    document.getElementById('mediaShrinkPresetMinimum').disabled = true;
 }
 
 function clearMediaShrinkPollTimer() {
@@ -1729,20 +2009,15 @@ function refreshMediaShrinkSettingsSummary(stats) {
     document.getElementById('settingsMediaShrinkTotalText').textContent = formatBytes(stats.total_bytes);
     document.getElementById('settingsMediaShrinkImagesText').textContent = formatBytes(stats.image_bytes) + ' / ' + (stats.image_count || 0) + ' 张';
     document.getElementById('settingsMediaShrinkVideosText').textContent = formatBytes(stats.compressible_video_bytes || 0) + ' / ' + (stats.compressible_video_count || 0) + ' 个';
-    var immutableText = formatBytes(stats.immutable_bytes);
-    var immutableCount = (stats.noncompressible_image_count || 0) + ((stats.video_count || 0) - (stats.compressible_video_count || 0)) + (stats.other_count || 0);
-    if (stats.noncompressible_image_count) {
-        immutableText += '（含 ' + stats.noncompressible_image_count + ' 张低于 1440 的图片）';
-    }
-    document.getElementById('settingsMediaShrinkImmutableText').textContent = immutableText;
+    document.getElementById('settingsMediaShrinkImmutableText').textContent = formatBytes(stats.unhandled_bytes || 0);
     document.getElementById('mediaShrinkCurrentSize').textContent = formatBytes(stats.total_bytes);
     document.getElementById('mediaShrinkImageSize').textContent = formatBytes(stats.image_bytes);
     document.getElementById('mediaShrinkVideoSize').textContent = formatBytes(stats.compressible_video_bytes || 0);
-    document.getElementById('mediaShrinkImmutableSize').textContent = formatBytes(stats.immutable_bytes);
+    document.getElementById('mediaShrinkImmutableSize').textContent = formatBytes(stats.unhandled_bytes || 0);
     document.getElementById('mediaShrinkCurrentCount').textContent = ((stats.image_count || 0) + (stats.video_count || 0) + (stats.other_count || 0)) + ' 个文件';
     document.getElementById('mediaShrinkImageCount').textContent = (stats.image_count || 0) + ' 张图片';
     document.getElementById('mediaShrinkVideoCount').textContent = (stats.compressible_video_count || 0) + ' 个视频';
-    document.getElementById('mediaShrinkImmutableCount').textContent = immutableCount + ' 个文件';
+    document.getElementById('mediaShrinkImmutableCount').textContent = ((stats.unsupported_video_count || 0) + (stats.other_count || 0)) + ' 个文件';
     document.getElementById('mediaShrinkSampleHint').textContent = stats.sample_filename || '未找到样例图';
     document.getElementById('mediaShrinkVideoSampleHint').textContent = stats.sample_video_filename || '未找到样例视频';
 }
@@ -1750,42 +2025,33 @@ function refreshMediaShrinkSettingsSummary(stats) {
 function updateMediaShrinkTargetSummary() {
     var stats = mediaShrinkState.stats;
     if (!stats) return;
+    var selection = getMediaShrinkSelection();
+    var plan = getMediaShrinkCurrentPlan();
 
-    var targetBytes = getMediaShrinkTargetBytes();
-    var afterImmutable = Math.max(0, targetBytes - Number(stats.immutable_bytes || 0));
-    var preferredImageTarget = Math.max(0, afterImmutable - Number(stats.compressible_video_bytes || 0));
-    var imageFloor = Math.round(Number(stats.image_bytes || 0) * 0.22);
-    var imageTarget = Math.min(Number(stats.image_bytes || 0), Math.max(imageFloor, preferredImageTarget));
-    var videoTarget = Math.max(0, afterImmutable - imageTarget);
+    renderMediaShrinkPresetCards(stats);
+    document.getElementById('mediaShrinkRangeHint').textContent =
+        '当前方案：' +
+        (selection.include_images ? '压图片' : '不压图片') + ' / ' +
+        (selection.include_videos ? '压视频' : '不压视频') + '。' +
+        ((plan && plan.preset_description) ? ' ' + plan.preset_description : '');
 
-    document.getElementById('mediaShrinkTargetSummary').textContent = formatBytes(targetBytes);
-    document.getElementById('mediaShrinkImageTargetSummary').textContent = formatBytes(imageTarget);
-    document.getElementById('mediaShrinkVideoTargetSummary').textContent = formatBytes(videoTarget);
-}
+    if (!plan) {
+        document.getElementById('mediaShrinkTargetSummary').textContent = '-';
+        document.getElementById('mediaShrinkImageTargetSummary').textContent = '-';
+        document.getElementById('mediaShrinkVideoTargetSummary').textContent = '-';
+        return;
+    }
 
-function getMediaShrinkTargetBytes() {
-    var range = document.getElementById('mediaShrinkTargetRange');
-    return Number(range.value || 0);
-}
-
-function syncMediaShrinkRangeToInput() {
-    var range = document.getElementById('mediaShrinkTargetRange');
-    document.getElementById('mediaShrinkTargetInput').value = bytesToGb(range.value);
-    updateMediaShrinkTargetSummary();
-}
-
-function syncMediaShrinkInputToRange() {
-    var stats = mediaShrinkState.stats;
-    if (!stats) return;
-
-    var range = document.getElementById('mediaShrinkTargetRange');
-    var min = Number(range.min || 0);
-    var max = Number(range.max || 0);
-    var bytes = gbToBytes(document.getElementById('mediaShrinkTargetInput').value);
-    bytes = Math.min(max, Math.max(min, bytes));
-    range.value = bytes;
-    document.getElementById('mediaShrinkTargetInput').value = bytesToGb(bytes);
-    updateMediaShrinkTargetSummary();
+    document.getElementById('mediaShrinkTargetSummary').textContent = formatBytes(plan.estimated_total_bytes || 0);
+    document.getElementById('mediaShrinkImageTargetSummary').textContent =
+        selection.include_images
+            ? formatBytes(Number(plan.image.estimated_bytes || 0) + Number(plan.image.skipped_bytes || 0))
+            : '不压图片';
+    document.getElementById('mediaShrinkVideoTargetSummary').textContent =
+        selection.include_videos
+            ? formatBytes(Number(plan.video.estimated_bytes || 0) + Number(plan.video.skipped_bytes || 0))
+            : '不压视频';
+    document.getElementById('mediaShrinkPreviewBtn').disabled = !plan.can_start;
 }
 
 function applyMediaShrinkStats(stats) {
@@ -1796,37 +2062,35 @@ function applyMediaShrinkStats(stats) {
     var controls = document.getElementById('mediaShrinkControls');
     var unavailable = document.getElementById('mediaShrinkUnavailable');
     var previewBtn = document.getElementById('mediaShrinkPreviewBtn');
-    var range = document.getElementById('mediaShrinkTargetRange');
-    var targetInput = document.getElementById('mediaShrinkTargetInput');
 
     if ((!stats.image_count || !stats.image_bytes) && (!stats.compressible_video_count || !stats.compressible_video_bytes)) {
         controls.classList.add('d-none');
         unavailable.classList.remove('d-none');
         unavailable.textContent = '当前媒体文件夹里没有可压缩的图片或视频。';
         previewBtn.disabled = true;
-        range.disabled = true;
-        targetInput.disabled = true;
         return;
     }
 
     controls.classList.remove('d-none');
     unavailable.classList.add('d-none');
+    document.getElementById('mediaShrinkIncludeImages').disabled = false;
+    document.getElementById('mediaShrinkIncludeVideos').disabled = false;
+    document.getElementById('mediaShrinkPresetGentle').disabled = false;
+    document.getElementById('mediaShrinkPresetMinimum').disabled = false;
+    if (!stats.presets || !stats.presets[mediaShrinkState.selectedPreset]) {
+        mediaShrinkState.selectedPreset = stats.recommended_preset_key || 'gentle';
+    }
+    var presetRadio = document.querySelector('input[name="mediaShrinkPreset"][value="' + mediaShrinkState.selectedPreset + '"]');
+    if (presetRadio) {
+        presetRadio.checked = true;
+    }
     previewBtn.disabled = false;
-    range.disabled = false;
-    targetInput.disabled = false;
-
-    range.min = String(stats.min_total_bytes || 0);
-    range.max = String(stats.max_total_bytes || 0);
-    range.step = String(Math.max(10 * 1024 * 1024, Math.round((stats.max_total_bytes - stats.min_total_bytes) / 120) || 1));
-    range.value = String(stats.default_total_bytes || stats.max_total_bytes || 0);
-    targetInput.value = bytesToGb(range.value);
-    document.getElementById('mediaShrinkRangeHint').textContent =
-        '可调整范围：' + formatBytes(stats.min_total_bytes) + ' 到 ' + formatBytes(stats.max_total_bytes) + '。图片最长边最低 1440，之后才会继续压视频。';
     updateMediaShrinkTargetSummary();
 }
 
 function loadMediaShrinkStats() {
-    return fetch('/api/media-folder-shrink/stats')
+    var url = '/api/media-folder-shrink/stats?t=' + Date.now();
+    return fetch(url, { cache: 'no-store' })
         .then(function(response) { return response.json(); })
         .then(function(data) {
             if (!data.success) {
@@ -1890,9 +2154,18 @@ function generateMediaShrinkPreview() {
         showNotification('请先读取媒体目录大小', 'error');
         return;
     }
+    var selection = getMediaShrinkSelection();
+    if (!selection.include_images && !selection.include_videos) {
+        showNotification('请至少勾选图片或视频中的一种', 'error');
+        return;
+    }
+    var currentPlan = getMediaShrinkCurrentPlan();
+    if (!currentPlan || !currentPlan.can_start) {
+        showNotification('当前选择下没有需要压缩的内容', 'error');
+        return;
+    }
 
     var button = document.getElementById('mediaShrinkPreviewBtn');
-    var targetBytes = getMediaShrinkTargetBytes();
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>正在生成样例...';
 
@@ -1902,7 +2175,7 @@ function generateMediaShrinkPreview() {
             return fetch('/api/media-folder-shrink/preview', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_total_bytes: targetBytes })
+                body: JSON.stringify(selection)
             });
         })
         .then(function(response) { return response.json(); })
@@ -1926,11 +2199,16 @@ function generateMediaShrinkPreview() {
                 document.getElementById('mediaShrinkPreviewSizeCompare').textContent =
                     formatBytes(data.data.image_preview.original_size) + ' → ' + formatBytes(data.data.image_preview.compressed_size);
                 document.getElementById('mediaShrinkPreviewParams').textContent =
-                    '最长边 ' + data.data.plan.image.max_side + 'px / JPG质量 ' + data.data.plan.image.jpeg_quality;
+                    'JPG ' + data.data.plan.image.jpeg_quality + ' / WEBP ' + data.data.plan.image.webp_quality;
+                document.getElementById('mediaShrinkPreviewImagePolicy').textContent =
+                    data.data.plan.image.resize_mode === 'shortest_side'
+                        ? '最低边 1440px 保底'
+                        : '不改分辨率';
             } else {
                 document.getElementById('mediaShrinkPreviewFilename').textContent = '本轮不压图片';
                 document.getElementById('mediaShrinkPreviewSizeCompare').textContent = '-';
-                document.getElementById('mediaShrinkPreviewParams').textContent = '-';
+                document.getElementById('mediaShrinkPreviewParams').textContent = data.data.plan.image.skip_reason || '-';
+                document.getElementById('mediaShrinkPreviewImagePolicy').textContent = '-';
             }
 
             if (data.data.video_preview) {
@@ -1941,11 +2219,17 @@ function generateMediaShrinkPreview() {
                 document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent =
                     formatBytes(data.data.video_preview.original_size) + ' → ' + formatBytes(data.data.video_preview.compressed_size);
                 document.getElementById('mediaShrinkVideoPreviewParams').textContent =
-                    '最长边 ' + data.data.plan.video.max_side + 'px / 码率 ' + data.data.plan.video.video_bitrate;
+                    'CRF ' + data.data.plan.video.crf + ' / 音频 ' + data.data.plan.video.audio_bitrate;
+                document.getElementById('mediaShrinkPreviewVideoPolicy').textContent =
+                    data.data.plan.video.resize_mode === 'shortest_side'
+                        ? '720p 保底'
+                        : '尽量保留原分辨率';
             } else {
-                document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '本轮不建议压视频';
+                document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '本轮不压视频';
                 document.getElementById('mediaShrinkVideoPreviewSizeCompare').textContent = '-';
-                document.getElementById('mediaShrinkVideoPreviewParams').textContent = data.data.video_skip_reason || '-';
+                document.getElementById('mediaShrinkVideoPreviewParams').textContent =
+                    data.data.video_skip_reason || (data.data.plan.video && data.data.plan.video.skip_reason) || '-';
+                document.getElementById('mediaShrinkPreviewVideoPolicy').textContent = '-';
             }
 
             document.getElementById('mediaShrinkPreviewEstimatedTotal').textContent =
@@ -1974,11 +2258,13 @@ function openMediaShrinkConfirmModal() {
         return;
     }
     var plan = mediaShrinkState.previewData.plan || {};
+    var scopeText = [];
+    if (plan.include_images) scopeText.push('图片');
+    if (plan.include_videos) scopeText.push('视频');
     document.getElementById('mediaShrinkConfirmSummary').textContent =
-        '目标总大小：' + formatBytes(plan.target_total_bytes || 0) +
-        '，估算压缩后：' + formatBytes(mediaShrinkState.previewData.estimated_total_bytes) +
-        '。图片目标 ' + formatBytes((plan.image && plan.image.target_bytes) || 0) +
-        '，视频目标 ' + formatBytes((plan.video && plan.video.target_bytes) || 0) + '。';
+        '当前方案：' + (plan.preset_label || '-') +
+        '，处理范围：' + (scopeText.length ? scopeText.join(' + ') : '无') +
+        '，估算压缩后总大小：' + formatBytes(mediaShrinkState.previewData.estimated_total_bytes) + '。';
     getModalInstance('mediaShrinkConfirmModal').show();
 }
 
@@ -2013,7 +2299,7 @@ function renderMediaShrinkTaskStatus(status) {
         summary.textContent = '已处理 ' + (status.current || 0) + ' / ' + (status.total || 0) +
             (status.current_file ? '，当前：' + status.current_file : '');
     } else if (status.phase === 'done' && status.summary) {
-        summary.textContent = '完成图片 ' + (status.summary.processed_images || 0) + ' 项，视频 ' +
+        summary.textContent = (status.summary.preset_label || '压缩任务') + '：完成图片 ' + (status.summary.processed_images || 0) + ' 项，视频 ' +
             (status.summary.processed_videos || 0) + ' 项，跳过 ' +
             status.summary.skipped + ' 项，失败 ' + status.summary.failed +
             ' 项，累计减少 ' + formatBytes(status.summary.saved_bytes || 0);
@@ -3144,8 +3430,14 @@ document.getElementById('settingsModal').addEventListener('shown.bs.modal', func
      }
 });
 
-document.getElementById('mediaShrinkTargetRange').addEventListener('input', syncMediaShrinkRangeToInput);
-document.getElementById('mediaShrinkTargetInput').addEventListener('change', syncMediaShrinkInputToRange);
+document.querySelectorAll('input[name="mediaShrinkPreset"]').forEach(function(input) {
+    input.addEventListener('change', function() {
+        mediaShrinkState.selectedPreset = getMediaShrinkSelectedPresetKey();
+        updateMediaShrinkTargetSummary();
+    });
+});
+document.getElementById('mediaShrinkIncludeImages').addEventListener('change', updateMediaShrinkTargetSummary);
+document.getElementById('mediaShrinkIncludeVideos').addEventListener('change', updateMediaShrinkTargetSummary);
 document.getElementById('blurryCleanupSensitivity').addEventListener('change', updateBlurrySensitivityHint);
 
 document.getElementById('mediaShrinkPreviewModal').addEventListener('hidden.bs.modal', function () {

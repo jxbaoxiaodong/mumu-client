@@ -51,28 +51,28 @@
         </div>
         
         <nav class="nav flex-column mt-4">
-            <a class="nav-link" href="/admin/dashboard">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/dashboard">
                 <i class="bi bi-speedometer2"></i> 仪表盘
             </a>
-            <a class="nav-link" href="/admin/clients">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/clients">
                 <i class="bi bi-device-ssd"></i> 设备管理
             </a>
-            <a class="nav-link" href="/admin/credentials">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/credentials">
                 <i class="bi bi-key"></i> 凭证管理
             </a>
-            <a class="nav-link" href="/admin/tunnel-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/tunnel-pool">
                 <i class="bi bi-hdd-network"></i> Tunnel池
             </a>
-            <a class="nav-link" href="/admin/news-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/news-pool">
                 <i class="bi bi-newspaper"></i> 新闻池
             </a>
-            <a class="nav-link" href="/admin/feedback">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/feedback">
                 <i class="bi bi-chat-dots"></i> 用户反馈
             </a>
-            <a class="nav-link active" href="/admin/settings">
+            <a class="nav-link active" href="/mumu-gate-7k2p9x/settings">
                 <i class="bi bi-gear"></i> 系统设置
             </a>
-            <a class="nav-link" href="/admin/logout">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/logout">
                 <i class="bi bi-box-arrow-right"></i> 退出登录
             </a>
         </nav>
@@ -198,6 +198,108 @@
                 </div>
             </div>
         </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-credit-card"></i> AI 在线支付设置</h5>
+            </div>
+            <div class="card-body">
+                <form id="aiAccessSettingsForm" onsubmit="saveAIAccessSettings(event)">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               id="payment_enabled"
+                               {% if admin_config.ai_access_settings.payment.enabled %}checked{% endif %}>
+                        <label class="form-check-label" for="payment_enabled">
+                            在 AI 未开通弹窗里显示在线支付入口
+                        </label>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">弹窗标题</label>
+                                <input type="text" class="form-control" id="notice_title"
+                                       value="{{ admin_config.ai_access_settings.notice_title }}">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label class="form-label">半年价格</label>
+                                <input type="number" min="1" class="form-control" id="half_year_price"
+                                       value="{{ admin_config.ai_access_settings.half_year_price }}">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label class="form-label">一年价格</label>
+                                <input type="number" min="1" class="form-control" id="year_price"
+                                       value="{{ admin_config.ai_access_settings.year_price }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">GitHub / 文档链接</label>
+                        <input type="url" class="form-control" id="docs_url"
+                               value="{{ admin_config.ai_access_settings.docs_url }}">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">微信收款码 URL</label>
+                                <input type="url" class="form-control" id="wechat_qr_image_url"
+                                       value="{{ admin_config.ai_access_settings.payment.wechat_qr_image_url }}"
+                                       placeholder="https://example.com/wechat-pay.png">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">支付宝收款码 URL</label>
+                                <input type="url" class="form-control" id="alipay_qr_image_url"
+                                       value="{{ admin_config.ai_access_settings.payment.alipay_qr_image_url }}"
+                                       placeholder="https://example.com/alipay-pay.png">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label class="form-label">联系方式标签</label>
+                                <input type="text" class="form-control" id="payment_contact_label"
+                                       value="{{ admin_config.ai_access_settings.payment.contact_label }}"
+                                       placeholder="微信">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label class="form-label">联系方式内容</label>
+                                <input type="text" class="form-control" id="payment_contact_value"
+                                       value="{{ admin_config.ai_access_settings.payment.contact_value }}"
+                                       placeholder="linhb112233">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label class="form-label">付款信息有效分钟</label>
+                                <input type="number" min="5" class="form-control" id="payment_session_minutes"
+                                       value="{{ admin_config.ai_access_settings.payment.session_minutes }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        当前支付链路是轻量人工审核模式：前台生成唯一金额并提交付款截图，后台审核通过后直接把当前客户端的 AI 服务开通。
+                    </div>
+
+                    <button type="submit" class="btn btn-save">
+                        <i class="bi bi-check-circle"></i> 保存 AI 支付设置
+                    </button>
+                </form>
+            </div>
+        </div>
         
         <!-- 二维码设置卡片 -->
         <div class="card">
@@ -314,7 +416,7 @@
             formData.append('site_title', document.getElementById('site_title').value);
             formData.append('contact_email', document.getElementById('contact_email').value);
             
-            fetch('/admin/settings/update', {
+            fetch('/mumu-gate-7k2p9x/settings/update', {
                 method: 'POST',
                 body: formData
             })
@@ -325,9 +427,42 @@
                     // 如果修改了密码，重新登录
                     if (document.getElementById('admin_password').value) {
                         if (confirm('密码已修改，需要重新登录。确定要跳转到登录页面吗？')) {
-                            window.location.href = '/admin';
+                            window.location.href = '/mumu-gate-7k2p9x';
                         }
                     }
+                } else {
+                    alert('保存失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('请求失败: ' + error);
+            });
+        }
+
+        function saveAIAccessSettings(event) {
+            event.preventDefault();
+
+            const formData = new FormData();
+            formData.append('notice_title', document.getElementById('notice_title').value);
+            formData.append('docs_url', document.getElementById('docs_url').value);
+            formData.append('half_year_price', document.getElementById('half_year_price').value);
+            formData.append('year_price', document.getElementById('year_price').value);
+            formData.append('payment_enabled', document.getElementById('payment_enabled').checked ? 'true' : 'false');
+            formData.append('wechat_qr_image_url', document.getElementById('wechat_qr_image_url').value);
+            formData.append('alipay_qr_image_url', document.getElementById('alipay_qr_image_url').value);
+            formData.append('payment_contact_label', document.getElementById('payment_contact_label').value);
+            formData.append('payment_contact_value', document.getElementById('payment_contact_value').value);
+            formData.append('payment_session_minutes', document.getElementById('payment_session_minutes').value);
+
+            fetch('/mumu-gate-7k2p9x/settings/update', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('AI 支付设置已保存！');
+                    location.reload();
                 } else {
                     alert('保存失败: ' + data.message);
                 }
@@ -375,7 +510,7 @@
                 qr_code_url: urlValue
             };
             
-            fetch('/admin/settings/qrcode', {
+            fetch('/mumu-gate-7k2p9x/settings/qrcode', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(data)
@@ -415,7 +550,7 @@
                 return;
             }
             
-            fetch('/admin/settings/domain', {
+            fetch('/mumu-gate-7k2p9x/settings/domain', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({server_domain: domain})
@@ -445,7 +580,7 @@
                 return;
             }
 
-            fetch('/admin/settings/security', {
+            fetch('/mumu-gate-7k2p9x/settings/security', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({

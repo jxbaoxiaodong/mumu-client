@@ -10,12 +10,12 @@
 <body>
     <nav class="navbar navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/admin/dashboard">
+            <a class="navbar-brand" href="/mumu-gate-7k2p9x/dashboard">
                 <i class="fas fa-cog me-2"></i>管理后台
             </a>
             <div class="d-flex">
-                <a href="/admin/dashboard" class="btn btn-outline-light btn-sm me-2">返回 Dashboard</a>
-                <a href="/admin/logout" class="btn btn-outline-danger btn-sm">退出</a>
+                <a href="/mumu-gate-7k2p9x/dashboard" class="btn btn-outline-light btn-sm me-2">返回 Dashboard</a>
+                <a href="/mumu-gate-7k2p9x/logout" class="btn btn-outline-danger btn-sm">退出</a>
             </div>
         </div>
     </nav>
@@ -25,25 +25,25 @@
             <!-- 侧边栏 -->
             <div class="col-md-2">
                 <div class="list-group">
-                    <a href="/admin/dashboard" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/dashboard" class="list-group-item list-group-item-action">
                         <i class="fas fa-tachometer-alt me-2"></i>概览
                     </a>
-                    <a href="/admin/clients" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/clients" class="list-group-item list-group-item-action">
                         <i class="fas fa-users me-2"></i>客户端管理
                     </a>
-                    <a href="/admin/credentials" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/credentials" class="list-group-item list-group-item-action">
                         <i class="fas fa-key me-2"></i>凭证管理
                     </a>
-                    <a href="/admin/tunnel-pool" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/tunnel-pool" class="list-group-item list-group-item-action">
                         <i class="fas fa-network-wired me-2"></i>Tunnel池
                     </a>
-                    <a href="/admin/news-pool" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/news-pool" class="list-group-item list-group-item-action">
                         <i class="fas fa-newspaper me-2"></i>新闻池
                     </a>
-                    <a href="/admin/client-data" class="list-group-item list-group-item-action active">
+                    <a href="/mumu-gate-7k2p9x/client-data" class="list-group-item list-group-item-action active">
                         <i class="fas fa-baby me-2"></i>客户端日志
                     </a>
-                    <a href="/admin/settings" class="list-group-item list-group-item-action">
+                    <a href="/mumu-gate-7k2p9x/settings" class="list-group-item list-group-item-action">
                         <i class="fas fa-cog me-2"></i>系统设置
                     </a>
                 </div>
@@ -174,7 +174,7 @@
         // 加载客户端数据摘要
         async function loadClientDataSummary() {
             try {
-                const response = await fetch('/admin/api/client-data/summary');
+                const response = await fetch('/mumu-gate-7k2p9x/api/client-data/summary');
                 const data = await response.json();
                 
                 if (data.success) {
@@ -218,7 +218,7 @@
         // 查看客户端详情
         async function viewClientDetail(clientId) {
             try {
-                const response = await fetch(`/admin/api/client-data/${clientId}`);
+                const response = await fetch(`/mumu-gate-7k2p9x/api/client-data/${clientId}`);
                 const data = await response.json();
                 
                 if (data.success) {

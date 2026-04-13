@@ -281,6 +281,14 @@ curl http://127.0.0.1:8000/czrz/health
 
 ## 备份与发布
 
+### 代码仓库边界
+
+- 当前日常开发主目录是：`/home/bob/projects/mumu`
+- 客户端公开发布仓库是：`/home/bob/projects/mumu-client`
+- 私密备份仓库打包目录是：`/home/bob/projects/mumu_bundle`
+- 公开仓和私密仓是两个独立 git 仓库，默认不会互相影响
+- 不要在错误目录里直接执行 `git push`
+
 ### 备份当前项目
 
 ```bash
@@ -312,6 +320,52 @@ cd /home/bob/projects/mumu
 - 发布时建议始终显式传入版本号，不要依赖默认 tag
 - 发布完成后官网下载镜像目录为：
   - `landing_page/download/`
+
+### 推送公开仓
+
+公开 GitHub 发布链路当前不直接在本仓库执行普通 `git push`，而是通过根目录脚本转调客户端发布仓：
+
+```bash
+cd /home/bob/projects/mumu
+./release.sh v45 "release: 版本说明"
+```
+
+说明：
+
+- 这个脚本实际会调用 `/home/bob/projects/mumu-client/release.sh`
+- 它面向的是公开客户端仓库 `mumu-client`
+- 适合正式发布客户端版本、打 tag、触发公开构建
+
+### 推送私密仓
+
+私密备份仓单独位于：
+
+```bash
+/home/bob/projects/mumu_bundle
+```
+
+推送入口脚本：
+
+```bash
+cd /home/bob/projects/mumu_bundle
+./push_private_bundle.sh
+```
+
+如果要自定义分支和提交信息：
+
+```bash
+cd /home/bob/projects/mumu_bundle
+./push_private_bundle.sh main "chore: update private bundle"
+```
+
+说明：
+
+- `push_private_bundle.sh` 会从 `/home/bob/projects/mumu/.env` 读取 `GITHUB_TOKEN`
+- 有本地改动时会自动执行 `git add -A`、`git commit`、`git push`
+- 私密仓当前远端是：
+  - `https://github.com/jxbaoxiaodong/mumu-private-bundle-20260411`
+- 私密仓用于备份 `mumu` 与 `baby_health_ai`
+- 私密仓当前已排除 `.env`、数据库、日志、虚拟环境、Android 构建缓存，以及 `mumu/cloudflare.exe`
 
 ## 宣传视频二次替换
 

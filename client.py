@@ -10,6 +10,7 @@ import json
 import io
 import uuid
 import shutil
+import errno
 import socket
 import ctypes
 import logging
@@ -1134,6 +1135,15 @@ def is_local_request():
     """检查是否为本地请求"""
     source_ip = get_request_source_ip()
     return _is_private_or_loopback_ip(source_ip)
+
+
+def is_loopback_request():
+    """仅允许真正的本机回环访问。"""
+    source_ip = get_request_source_ip()
+    try:
+        return ipaddress.ip_address(source_ip).is_loopback
+    except Exception:
+        return source_ip in {"127.0.0.1", "::1", "localhost"}
 
 
 def _is_private_or_loopback_ip(ip_text: str) -> bool:
@@ -3130,6 +3140,8 @@ def inject_quota_info():
 
     token_usage = {"total_tokens": 0, "total_prompt": 0, "total_completion": 0}
     image_usage = {"image_count": 0, "request_count": 0}
+    ai_balance = 0.0
+    ai_balance_enabled = False
     fetched_any = False
 
     if (
@@ -3149,6 +3161,8 @@ def inject_quota_info():
                 if data.get("success"):
                     token_usage = data.get("token_usage", token_usage)
                     image_usage = data.get("image_usage", image_usage)
+                    ai_balance = data.get("ai_balance", ai_balance)
+                    ai_balance_enabled = data.get("ai_balance_enabled", ai_balance_enabled)
                     fetched_any = True
         except:
             pass
@@ -3160,6 +3174,8 @@ def inject_quota_info():
         quota_percent=0,
         token_usage=token_usage,
         image_usage=image_usage,
+        ai_balance=ai_balance,
+        ai_balance_enabled=ai_balance_enabled,
     )
 
     if fetched_any or not cached:
@@ -3923,6 +3939,98 @@ def get_current_settings():
         return jsonify({"success": False, "message": str(e)})
 
 
+def _choose_folder_with_native_dialog(current_path: str = "") -> str:
+    initial_dir = ""
+    if current_path:
+        try:
+            current = Path(current_path).expanduser()
+            if current.is_file():
+                current = current.parent
+            if current.exists():
+                initial_dir = str(current)
+            elif current.parent.exists():
+                initial_dir = str(current.parent)
+        except Exception:
+            initial_dir = ""
+
+    if not initial_dir:
+        initial_dir = str(Path.home())
+
+    display_available = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+    zenity_path = shutil.which("zenity")
+    if zenity_path and display_available:
+        cmd = [
+            zenity_path,
+            "--file-selection",
+            "--directory",
+            "--title=选择媒体文件夹",
+            f"--filename={initial_dir.rstrip(os.sep) + os.sep}",
+        ]
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
+            if result.returncode == 0:
+                selected = (result.stdout or "").strip()
+                if selected:
+                    return selected
+            if result.returncode in {1, 5}:
+                return ""
+        except Exception as exc:
+            logger.warning(f"本机目录选择器 zenity 调用失败: {exc}")
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(
+            title="选择媒体文件夹",
+            initialdir=initial_dir,
+            mustexist=False,
+        )
+        root.destroy()
+        return (selected or "").strip()
+    except Exception as exc:
+        logger.warning(f"本机目录选择器 tkinter 调用失败: {exc}")
+
+    raise RuntimeError("当前环境无法打开目录选择器，请继续手动输入路径")
+
+
+@app.route("/api/settings/select-folder", methods=["POST"])
+@require_local_or_password
+def select_media_folder():
+    """打开本机目录选择器，仅允许本机回环访问。"""
+    try:
+        if not is_loopback_request():
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "message": "目录选择器只允许在本机浏览器中使用，远程访问时请手动输入路径",
+                    }
+                ),
+                403,
+            )
+
+        data = request.get_json(silent=True) or {}
+        current_path = (data.get("current_path") or "").strip()
+        selected = _choose_folder_with_native_dialog(current_path)
+        if not selected:
+            return jsonify({"success": False, "cancelled": True, "message": "已取消选择"})
+        return jsonify({"success": True, "path": str(Path(selected).expanduser())})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
 @app.route("/api/share/family-text", methods=["GET"])
 @require_local_or_password
 def get_family_share_text():
@@ -4239,6 +4347,7 @@ def get_android_companion_apk_path():
         USER_DATA_DIR / "downloads",
     ]
     patterns = [
+        "mumu成长助手*.apk",
         "mumu-android*.apk",
         "mumu-companion*.apk",
         "mumu*.apk",
@@ -4756,6 +4865,296 @@ def _save_uploaded_file_items(files, caption: str = "", upload_date: str = "") -
         "saved_files": saved_files,
         "skipped_files": skipped_files,
     }
+
+
+UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+
+
+def _get_upload_sessions_dir() -> Path:
+    sessions_dir = Path(public_client.data_dir) / "upload_sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return sessions_dir
+
+
+def _cleanup_upload_session_dir(session_dir: Path) -> None:
+    try:
+        shutil.rmtree(session_dir, ignore_errors=True)
+    except Exception as e:
+        logger.warning(f"清理上传会话失败: {e}")
+
+
+def _get_upload_session_paths(upload_id: str) -> tuple[Path, Path, Path]:
+    session_dir = _get_upload_sessions_dir() / upload_id
+    meta_path = session_dir / "meta.json"
+    partial_path = session_dir / "payload.part"
+    return session_dir, meta_path, partial_path
+
+
+def _load_upload_session_meta(upload_id: str) -> tuple[dict, Path, Path, Path]:
+    session_dir, meta_path, partial_path = _get_upload_session_paths(upload_id)
+    if not meta_path.exists():
+        raise FileNotFoundError("上传会话不存在或已过期")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    return meta, session_dir, meta_path, partial_path
+
+
+def _save_upload_session_meta(meta_path: Path, meta: dict) -> None:
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+
+
+def _commit_upload_session_file(partial_path: Path, target_path: Path) -> None:
+    """将分片合并后的临时文件安全提交到目标路径，兼容跨磁盘目录。"""
+    try:
+        partial_path.replace(target_path)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+
+    temp_target = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            dir=str(target_path.parent),
+            prefix=f".{target_path.name}.",
+            suffix=".part",
+        ) as tmp_file:
+            temp_target = Path(tmp_file.name)
+            with open(partial_path, "rb") as src_file:
+                shutil.copyfileobj(src_file, tmp_file, length=UPLOAD_CHUNK_SIZE)
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
+
+        temp_target.replace(target_path)
+        partial_path.unlink(missing_ok=True)
+    except Exception:
+        if temp_target and temp_target.exists():
+            temp_target.unlink(missing_ok=True)
+        raise
+
+
+@app.route("/api/upload/sessions", methods=["POST"])
+@require_local_or_password
+def create_upload_session():
+    """创建分片上传会话，避免大批量上传受单次请求大小限制。"""
+    try:
+        payload = request.get_json(silent=True) or request.form
+        original_filename = (payload.get("filename") or "").strip()
+        if not original_filename:
+            return jsonify({"success": False, "message": "文件名为空"}), 400
+
+        safe_filename = secure_filename(original_filename)
+        if not safe_filename:
+            return jsonify({"success": False, "message": "文件名无效"}), 400
+
+        upload_date = (payload.get("date") or "").strip()
+        caption = payload.get("caption", "")
+        mime_type = (payload.get("mime_type") or "").strip()
+        try:
+            total_size = int(payload.get("total_size") or 0)
+        except Exception:
+            total_size = 0
+
+        pm = _get_upload_photo_manager()
+        target_path = pm.get_upload_target_path(safe_filename)
+        if target_path.exists():
+            return jsonify(
+                {
+                    "success": True,
+                    "already_exists": True,
+                    "message": f"{safe_filename} 已存在，已跳过",
+                    "count": 0,
+                    "skipped_count": 1,
+                    "skipped_files": [safe_filename],
+                }
+            )
+
+        upload_id = uuid.uuid4().hex
+        session_dir, meta_path, partial_path = _get_upload_session_paths(upload_id)
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        meta = {
+            "upload_id": upload_id,
+            "filename": safe_filename,
+            "original_filename": original_filename,
+            "upload_date": upload_date,
+            "caption": caption,
+            "mime_type": mime_type,
+            "total_size": total_size,
+            "received_size": 0,
+            "next_chunk_index": 0,
+            "total_chunks": None,
+            "created_at": datetime.now().isoformat(),
+        }
+        _save_upload_session_meta(meta_path, meta)
+        partial_path.touch(exist_ok=True)
+
+        return jsonify(
+            {
+                "success": True,
+                "upload_id": upload_id,
+                "chunk_size": UPLOAD_CHUNK_SIZE,
+            }
+        )
+    except Exception as e:
+        logger.exception(f"创建上传会话失败: {e}")
+        return jsonify({"success": False, "message": f"创建上传会话失败: {str(e)}"}), 500
+
+
+@app.route("/api/upload/sessions/<upload_id>/chunk", methods=["POST"])
+@require_local_or_password
+def upload_session_chunk(upload_id: str):
+    """接收单个分片并顺序追加到临时文件。"""
+    try:
+        meta, _, meta_path, partial_path = _load_upload_session_meta(upload_id)
+
+        chunk_file = request.files.get("chunk")
+        if not chunk_file:
+            return jsonify({"success": False, "message": "缺少分片文件"}), 400
+
+        try:
+            chunk_index = int(request.form.get("chunk_index", "-1"))
+        except Exception:
+            chunk_index = -1
+
+        if chunk_index < 0:
+            return jsonify({"success": False, "message": "分片序号无效"}), 400
+
+        expected_index = int(meta.get("next_chunk_index", 0))
+        if chunk_index != expected_index:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": f"分片顺序不匹配，期望 {expected_index}，收到 {chunk_index}",
+                    "next_chunk_index": expected_index,
+                }
+            ), 409
+
+        total_chunks_raw = request.form.get("total_chunks")
+        if total_chunks_raw not in (None, ""):
+            try:
+                meta["total_chunks"] = int(total_chunks_raw)
+            except Exception:
+                pass
+
+        before_size = partial_path.stat().st_size if partial_path.exists() else 0
+        with open(partial_path, "ab") as f:
+            shutil.copyfileobj(chunk_file.stream, f, length=1024 * 1024)
+
+        meta["received_size"] = partial_path.stat().st_size
+        meta["next_chunk_index"] = expected_index + 1
+        _save_upload_session_meta(meta_path, meta)
+
+        return jsonify(
+            {
+                "success": True,
+                "received_size": meta["received_size"],
+                "chunk_size": meta["received_size"] - before_size,
+                "next_chunk_index": meta["next_chunk_index"],
+            }
+        )
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except Exception as e:
+        logger.exception(f"上传分片失败: {e}")
+        return jsonify({"success": False, "message": f"上传分片失败: {str(e)}"}), 500
+
+
+@app.route("/api/upload/sessions/<upload_id>/complete", methods=["POST"])
+@require_local_or_password
+def complete_upload_session(upload_id: str):
+    """合并分片并落盘到最终目录，然后建立索引。"""
+    target_path = None
+    try:
+        payload = request.get_json(silent=True) or request.form
+        meta, session_dir, _, partial_path = _load_upload_session_meta(upload_id)
+
+        total_chunks = meta.get("total_chunks")
+        total_chunks_raw = payload.get("total_chunks") if payload else None
+        if total_chunks_raw not in (None, ""):
+            try:
+                total_chunks = int(total_chunks_raw)
+            except Exception:
+                pass
+
+        next_chunk_index = int(meta.get("next_chunk_index", 0))
+        if total_chunks is not None and next_chunk_index < total_chunks:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": f"分片未上传完整，已收到 {next_chunk_index}/{total_chunks}",
+                }
+            ), 400
+
+        if not partial_path.exists():
+            return jsonify({"success": False, "message": "上传临时文件不存在"}), 400
+
+        pm = _get_upload_photo_manager()
+        filename = meta["filename"]
+        target_path = pm.get_upload_target_path(filename)
+        if target_path.exists():
+            _cleanup_upload_session_dir(session_dir)
+            return jsonify(
+                {
+                    "success": True,
+                    "message": f"{filename} 已存在，已跳过",
+                    "count": 0,
+                    "files": [],
+                    "skipped_count": 1,
+                    "skipped_files": [filename],
+                }
+            )
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        _commit_upload_session_file(partial_path, target_path)
+
+        ext = Path(filename).suffix.lower()
+        is_video = ext in {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+        result = pm.register_saved_upload_with_date(
+            target_path,
+            filename,
+            meta.get("upload_date") or "",
+            fast_hash=is_video,
+        )
+        if meta.get("caption"):
+            result["caption"] = meta["caption"]
+
+        _cleanup_upload_session_dir(session_dir)
+        return jsonify(
+            {
+                "success": True,
+                "message": "成功上传 1 个文件",
+                "count": 1,
+                "files": [result],
+                "skipped_count": 0,
+                "skipped_files": [],
+            }
+        )
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "message": str(e)}), 404
+    except PermissionError as e:
+        return jsonify(
+            {
+                "success": False,
+                "message": "保存文件失败：目标文件夹没有写入权限，请检查文件夹权限或更换保存位置",
+            }
+        ), 500
+    except Exception as e:
+        logger.exception(f"完成上传会话失败: {e}")
+        if target_path and target_path.exists():
+            target_path.unlink(missing_ok=True)
+        try:
+            session_dir, _, partial_path = _get_upload_session_paths(upload_id)
+            if not partial_path.exists():
+                _cleanup_upload_session_dir(session_dir)
+        except Exception:
+            pass
+        return jsonify({"success": False, "message": f"完成上传失败: {str(e)}"}), 500
 
 
 @app.route("/upload", methods=["POST"])
@@ -12131,8 +12530,22 @@ def create_media_folder_shrink_preview():
     try:
         manager = _get_media_folder_shrinker_manager()
         data = request.get_json(silent=True) or {}
-        target_total_bytes = int(data.get("target_total_bytes") or 0)
-        preview = manager.create_preview(target_total_bytes)
+
+        def _as_bool(value, default=True):
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            return str(value).strip().lower() not in {"0", "false", "no", "off", ""}
+
+        preset_key = (data.get("preset_key") or "gentle").strip()
+        include_images = _as_bool(data.get("include_images"), True)
+        include_videos = _as_bool(data.get("include_videos"), True)
+        preview = manager.create_preview(
+            preset_key,
+            include_images=include_images,
+            include_videos=include_videos,
+        )
         return jsonify({"success": True, "data": preview})
     except ValueError as e:
         return jsonify({"success": False, "message": str(e)}), 400

@@ -147,6 +147,9 @@
                                 <div class="input-group mb-2">
                                     <input type="text" class="form-control media-folder"
                                            placeholder="例如: C:\Users\用户名\Pictures\宝宝照片（按 Enter 确认）" required>
+                                    <button class="btn btn-outline-primary choose-folder-btn" type="button" title="打开目录">
+                                        <i class="fas fa-folder-open"></i>
+                                    </button>
                                     <button class="btn btn-outline-danger remove-folder-btn" type="button" disabled>
                                         <i class="fas fa-trash"></i>
                                     </button>
@@ -157,7 +160,7 @@
                             </button>
                             <div class="form-text text-muted">
                                 <i class="fas fa-info-circle me-1"></i>
-                                请输入完整的文件夹路径，如 <code>C:\Users\用户名\Pictures\宝宝照片</code><br>
+                                可直接点“打开目录”选择，也可手动输入完整路径，如 <code>C:\Users\用户名\Pictures\宝宝照片</code><br>
                                 系统会自动创建不存在的文件夹
                             </div>
                         </div>
@@ -413,15 +416,10 @@ document.addEventListener('DOMContentLoaded', function() {
         initializeRegionSelector();
     }
     
-    // 为第一个文件夹输入框添加 Enter 键监听
-    const firstFolderInput = document.querySelector('#folderList .media-folder');
-    if (firstFolderInput) {
-        firstFolderInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                addFolder();
-            }
-        });
-    }
+    const folderList = document.getElementById('folderList');
+    folderList.innerHTML = '';
+    folderList.appendChild(createSetupFolderRow(''));
+    updateSetupFolderRemoveButtons();
 });
 
 document.getElementById('setupForm').addEventListener('submit', async function(e) {
@@ -590,31 +588,95 @@ document.addEventListener('click', function(e) {
     }
 });
 
-function addFolder() {
-    const folderList = document.getElementById('folderList');
-    const newRow = document.createElement('div');
-    newRow.className = 'input-group mb-2';
-    newRow.innerHTML = `
-        <input type="text" class="form-control media-folder"
-               placeholder="例如: C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）">
-        <button class="btn btn-outline-danger remove-folder-btn" type="button">
-            <i class="fas fa-trash"></i>
-        </button>
-    `;
-    folderList.appendChild(newRow);
-    
-    // 添加 Enter 键监听
-    const input = newRow.querySelector('input');
-    input.addEventListener('keypress', function(e) {
+function updateSetupFolderRemoveButtons() {
+    document.querySelectorAll('#folderList .remove-folder-btn').forEach((btn, index, all) => {
+        btn.disabled = all.length <= 1;
+    });
+}
+
+function chooseFolderForSetupInput(input) {
+    if (!input) return Promise.resolve(null);
+
+    const trigger = input.parentElement ? input.parentElement.querySelector('.choose-folder-btn') : null;
+    const originalHtml = trigger ? trigger.innerHTML : '';
+    if (trigger) {
+        trigger.disabled = true;
+        trigger.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    return fetch('/api/settings/select-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_path: input.value || '' })
+    })
+    .then(response => response.json().then(data => ({ ok: response.ok, data: data || {} })))
+    .then(result => {
+        if (!result.ok || !result.data.success) {
+            if (result.data.cancelled) {
+                return null;
+            }
+            throw new Error(result.data.message || '打开目录选择器失败');
+        }
+        input.value = result.data.path || '';
+        return result.data.path || '';
+    })
+    .catch(error => {
+        console.error('目录选择失败:', error);
+        showNotification(error.message || '打开目录选择器失败', 'error');
+        return null;
+    })
+    .finally(() => {
+        if (trigger) {
+            trigger.disabled = false;
+            trigger.innerHTML = originalHtml || '<i class="fas fa-folder-open"></i>';
+        }
+    });
+}
+
+function createSetupFolderRow(value) {
+    const row = document.createElement('div');
+    row.className = 'input-group mb-2';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control media-folder';
+    input.placeholder = '例如: C:\\Users\\用户名\\Pictures\\宝宝照片（按 Enter 确认）';
+    input.value = value || '';
+
+    input.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') {
-            addFolder();
+            e.preventDefault();
+            if (!row.nextElementSibling) {
+                addFolder();
+            }
         }
     });
 
-    // 启用所有删除按钮
-    document.querySelectorAll('.remove-folder-btn').forEach(btn => {
-        btn.disabled = false;
+    const chooseBtn = document.createElement('button');
+    chooseBtn.className = 'btn btn-outline-primary choose-folder-btn';
+    chooseBtn.type = 'button';
+    chooseBtn.title = '打开目录';
+    chooseBtn.innerHTML = '<i class="fas fa-folder-open"></i>';
+    chooseBtn.addEventListener('click', function() {
+        chooseFolderForSetupInput(input);
     });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'btn btn-outline-danger remove-folder-btn';
+    removeBtn.type = 'button';
+    removeBtn.innerHTML = '<i class="fas fa-trash"></i>';
+
+    row.appendChild(input);
+    row.appendChild(chooseBtn);
+    row.appendChild(removeBtn);
+    return row;
+}
+
+function addFolder() {
+    const folderList = document.getElementById('folderList');
+    const newRow = createSetupFolderRow('');
+    folderList.appendChild(newRow);
+    updateSetupFolderRemoveButtons();
 }
 
 function showNotification(message, type) {

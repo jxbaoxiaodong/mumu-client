@@ -44,28 +44,28 @@
         </div>
         
         <nav class="nav flex-column mt-4">
-            <a class="nav-link" href="/admin/dashboard">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/dashboard">
                 <i class="bi bi-speedometer2"></i> 仪表盘
             </a>
-            <a class="nav-link" href="/admin/clients">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/clients">
                 <i class="bi bi-device-ssd"></i> 设备管理
             </a>
-            <a class="nav-link" href="/admin/credentials">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/credentials">
                 <i class="bi bi-key"></i> 凭证管理
             </a>
-            <a class="nav-link active" href="/admin/tunnel-pool">
+            <a class="nav-link active" href="/mumu-gate-7k2p9x/tunnel-pool">
                 <i class="bi bi-hdd-network"></i> Tunnel池
             </a>
-            <a class="nav-link" href="/admin/news-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/news-pool">
                 <i class="bi bi-newspaper"></i> 新闻池
             </a>
-            <a class="nav-link" href="/admin/feedback">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/feedback">
                 <i class="bi bi-chat-dots"></i> 用户反馈
             </a>
-            <a class="nav-link" href="/admin/settings">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/settings">
                 <i class="bi bi-gear"></i> 系统设置
             </a>
-            <a class="nav-link" href="/admin/logout">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/logout">
                 <i class="bi bi-box-arrow-right"></i> 退出登录
             </a>
         </nav>
@@ -276,7 +276,7 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 创建中...';
             
             try {
-                const response = await fetch('/admin/tunnel-pool/create-batch', {
+                const response = await fetch('/mumu-gate-7k2p9x/tunnel-pool/create-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ count: parseInt(count), prefix: prefix })
@@ -318,7 +318,7 @@
             }
             
             try {
-                const response = await fetch('/admin/tunnel-pool/add', {
+                const response = await fetch('/mumu-gate-7k2p9x/tunnel-pool/add', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -349,7 +349,7 @@
             }
             
             try {
-                const response = await fetch(`/admin/tunnel-pool/release/${clientId}`, {
+                const response = await fetch(`/mumu-gate-7k2p9x/tunnel-pool/release/${clientId}`, {
                     method: 'POST'
                 });
                 
@@ -373,7 +373,7 @@
             }
             
             try {
-                const response = await fetch(`/admin/tunnel-pool/${tunnelId}`, {
+                const response = await fetch(`/mumu-gate-7k2p9x/tunnel-pool/${tunnelId}`, {
                     method: 'DELETE'
                 });
                 

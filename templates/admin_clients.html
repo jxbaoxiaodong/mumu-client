@@ -32,6 +32,16 @@
         .logout-btn { position: absolute; bottom: 20px; left: 20px; right: 20px; }
         .public-url { font-size: 0.75rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .quota-info { font-size: 0.75rem; }
+        .payment-orders-wrap { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05); margin-top: 24px; }
+        .payment-orders-list { display: grid; gap: 16px; }
+        .payment-order-card { border: 1px solid #e9ecef; border-radius: 16px; padding: 18px; background: #fff; }
+        .payment-order-head, .payment-order-meta, .payment-order-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+        .payment-order-body { display: grid; grid-template-columns: 220px 1fr; gap: 16px; margin-top: 14px; }
+        .payment-order-proof { width: 100%; border-radius: 12px; border: 1px solid #e9ecef; background: #f8f9fa; object-fit: cover; aspect-ratio: 3 / 4; }
+        .payment-order-proof-empty { display: flex; align-items: center; justify-content: center; min-height: 220px; border: 1px dashed #ced4da; border-radius: 12px; color: #6c757d; background: #f8f9fa; }
+        .payment-order-info p { margin-bottom: 8px; font-size: 0.9rem; }
+        .payment-review-note { min-height: 88px; }
+        .payment-order-empty { padding: 24px; text-align: center; color: #6c757d; border: 1px dashed #ced4da; border-radius: 14px; }
         
         /* 汉堡菜单按钮 */
         .menu-toggle { display: none; position: fixed; top: 15px; left: 15px; z-index: 1001; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
@@ -53,6 +63,8 @@
             .table { font-size: 0.75rem; }
             .table th, .table td { font-size: 0.7rem; padding: 8px 4px; }
             .action-btn { padding: 2px 6px; font-size: 0.65rem; }
+            .payment-orders-wrap { padding: 15px; border-radius: 10px; }
+            .payment-order-body { grid-template-columns: 1fr; }
             .d-flex { flex-wrap: wrap; }
             .btn { padding: 6px 10px; font-size: 0.8rem; }
         }
@@ -75,28 +87,28 @@
         </div>
         
         <nav class="nav flex-column mt-4">
-            <a class="nav-link" href="/admin/dashboard">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/dashboard">
                 <i class="bi bi-speedometer2"></i> 仪表盘
             </a>
-            <a class="nav-link active" href="/admin/clients">
+            <a class="nav-link active" href="/mumu-gate-7k2p9x/clients">
                 <i class="bi bi-device-ssd"></i> 设备管理
             </a>
-            <a class="nav-link" href="/admin/credentials">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/credentials">
                 <i class="bi bi-key"></i> 凭证管理
             </a>
-            <a class="nav-link" href="/admin/tunnel-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/tunnel-pool">
                 <i class="bi bi-hdd-network"></i> Tunnel池
             </a>
-            <a class="nav-link" href="/admin/news-pool">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/news-pool">
                 <i class="bi bi-newspaper"></i> 新闻池
             </a>
-            <a class="nav-link" href="/admin/feedback">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/feedback">
                 <i class="bi bi-chat-dots"></i> 用户反馈
             </a>
-            <a class="nav-link" href="/admin/settings">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/settings">
                 <i class="bi bi-gear"></i> 系统设置
             </a>
-            <a class="nav-link" href="/admin/logout">
+            <a class="nav-link" href="/mumu-gate-7k2p9x/logout">
                 <i class="bi bi-box-arrow-right"></i> 退出登录
             </a>
         </nav>
@@ -225,6 +237,21 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="payment-orders-wrap">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">AI 支付订单</h5>
+                    <div class="text-muted small">前台用户提交付款截图后，会在这里审核；审核通过即自动开通对应客户端的 AI 服务。</div>
+                </div>
+                <button class="btn btn-outline-primary" type="button" onclick="loadPaymentOrders()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新订单
+                </button>
+            </div>
+            <div id="paymentOrdersList" class="payment-orders-list">
+                <div class="payment-order-empty">正在加载订单...</div>
+            </div>
+        </div>
         
         <div class="alert alert-info mt-4">
             <h6><i class="bi bi-info-circle"></i> 使用说明</h6>
@@ -257,10 +284,144 @@
             
             // 检查所有客户端的AI状态并更新按钮
             updateAllAILinkButtons();
+
+            // 加载 AI 支付订单
+            loadPaymentOrders();
             
             // 根据保存的状态显示/隐藏禁用设备
             toggleDisabledRows();
         });
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function paymentOrderStatusBadge(status) {
+            if (status === 'approved') {
+                return '<span class="badge bg-success">已开通</span>';
+            }
+            if (status === 'rejected') {
+                return '<span class="badge bg-danger">未通过</span>';
+            }
+            return '<span class="badge bg-warning text-dark">待审核</span>';
+        }
+
+        function paymentOrderCardHtml(order) {
+            const proofHtml = order.proofImageUrl
+                ? `<img class="payment-order-proof" src="${escapeHtml(order.proofImageUrl)}" alt="付款截图">`
+                : '<div class="payment-order-proof-empty">暂无截图</div>';
+
+            return `
+                <div class="payment-order-card" data-order-id="${escapeHtml(order.orderId)}">
+                    <div class="payment-order-head">
+                        <div>
+                            <strong>${escapeHtml(order.clientLabel || order.clientId || '-')}</strong>
+                            <span class="text-muted ms-2">订单 ${escapeHtml(order.orderId)}</span>
+                        </div>
+                        <div>${paymentOrderStatusBadge(order.status)}</div>
+                    </div>
+                    <div class="payment-order-meta text-muted small mt-2">
+                        <span>${escapeHtml(order.planTitle || '-')}</span>
+                        <span>${escapeHtml(order.paymentChannelLabel || '-')}</span>
+                        <span>用户填报 ${escapeHtml(order.amountText || '-')}</span>
+                        <span>应付 ${escapeHtml(order.expectedAmountText || '-')}</span>
+                        <span>留言码 ${escapeHtml(order.proofCode || '-')}</span>
+                        <span>${escapeHtml(order.createdAt || '-')}</span>
+                    </div>
+                    <div class="payment-order-body">
+                        <div>${proofHtml}</div>
+                        <div class="payment-order-info">
+                            <p><strong>付款人称呼：</strong>${escapeHtml(order.buyerName || '-')}</p>
+                            <p><strong>联系方式：</strong>${escapeHtml(order.contact || '-')}</p>
+                            <p><strong>备注：</strong>${escapeHtml(order.note || '无')}</p>
+                            <p><strong>审核备注：</strong>${escapeHtml(order.reviewNote || '未填写')}</p>
+                            <textarea class="form-control payment-review-note mt-2" data-review-note placeholder="补充审核备注">${escapeHtml(order.reviewNote || '')}</textarea>
+                            <div class="payment-order-actions mt-3">
+                                <button class="btn btn-success btn-sm" type="button" onclick="reviewPaymentOrder('${escapeHtml(order.orderId)}', 'approved', this)">审核通过并开通AI</button>
+                                <button class="btn btn-outline-danger btn-sm" type="button" onclick="reviewPaymentOrder('${escapeHtml(order.orderId)}', 'rejected', this)">驳回订单</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPaymentOrders(orders) {
+            const container = document.getElementById('paymentOrdersList');
+            if (!container) return;
+
+            if (!Array.isArray(orders) || orders.length === 0) {
+                container.innerHTML = '<div class="payment-order-empty">当前还没有用户提交 AI 支付订单。</div>';
+                return;
+            }
+
+            container.innerHTML = orders.map(paymentOrderCardHtml).join('');
+        }
+
+        function loadPaymentOrders() {
+            const container = document.getElementById('paymentOrdersList');
+            if (container) {
+                container.innerHTML = '<div class="payment-order-empty">正在加载订单...</div>';
+            }
+
+            fetch('/mumu-gate-7k2p9x/payments/orders')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderPaymentOrders(data.orders || []);
+                    } else {
+                        if (container) {
+                            container.innerHTML = `<div class="payment-order-empty">加载失败：${escapeHtml(data.message || '未知错误')}</div>`;
+                        }
+                    }
+                })
+                .catch(error => {
+                    if (container) {
+                        container.innerHTML = `<div class="payment-order-empty">加载失败：${escapeHtml(String(error))}</div>`;
+                    }
+                });
+        }
+
+        function reviewPaymentOrder(orderId, status, button) {
+            const card = button.closest('[data-order-id]');
+            const note = card ? (card.querySelector('[data-review-note]')?.value || '').trim() : '';
+            const actionText = status === 'approved' ? '通过并开通 AI' : '驳回';
+
+            if (!confirm(`确定要${actionText}这个订单吗？`)) {
+                return;
+            }
+
+            button.disabled = true;
+            fetch(`/mumu-gate-7k2p9x/payments/orders/${orderId}/review`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    status: status,
+                    reviewNote: note
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    button.disabled = false;
+                    alert('操作失败: ' + data.message);
+                }
+            })
+            .catch(error => {
+                button.disabled = false;
+                alert('请求失败: ' + error);
+            });
+        }
         
         // 切换显示/隐藏禁用设备
         function toggleDisabledRows() {
@@ -292,7 +453,7 @@
             if (!clientId) return;
             
             try {
-                const response = await fetch(`/admin/clients/${clientId}/ai-status`);
+                const response = await fetch(`/mumu-gate-7k2p9x/clients/${clientId}/ai-status`);
                 const data = await response.json();
                 
                 if (data.child_exists) {
@@ -353,7 +514,7 @@
             button.disabled = true;
             button.innerHTML = '关联中...';
             
-            fetch(`/admin/clients/${clientId}/link-ai`, {
+            fetch(`/mumu-gate-7k2p9x/clients/${clientId}/link-ai`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -386,7 +547,7 @@
         
         // 切换 AI 额度档位
         function togglePaid(clientId, isCurrentlyPaid) {
-            fetch(`/admin/clients/${clientId}/toggle-paid`, {
+            fetch(`/mumu-gate-7k2p9x/clients/${clientId}/toggle-paid`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -409,7 +570,7 @@
         // 禁用客户端
         function disableClient(clientId) {
             if (confirm('确定要禁用这个客户端吗？禁用后将无法使用服务。')) {
-                fetch(`/admin/clients/${clientId}/disable`, {
+                fetch(`/mumu-gate-7k2p9x/clients/${clientId}/disable`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -432,7 +593,7 @@
         
         // 启用客户端
         function enableClient(clientId) {
-            fetch(`/admin/clients/${clientId}/enable`, {
+            fetch(`/mumu-gate-7k2p9x/clients/${clientId}/enable`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -462,7 +623,7 @@
                 return;
             }
             
-            fetch(`/admin/clients/${clientId}/delete`, {
+            fetch(`/mumu-gate-7k2p9x/clients/${clientId}/delete`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -484,7 +645,7 @@
         
         // 导出 CSV
         function exportCSV() {
-            window.location.href = '/admin/clients/export';
+            window.location.href = '/mumu-gate-7k2p9x/clients/export';
         }
         
         // 刷新表格
@@ -495,7 +656,7 @@
         // 重新分配 Tunnel
         function reassignTunnel(clientId) {
             if (confirm('确定要重新分配 Tunnel 吗？\n\n这将：\n1. 回收当前的 tunnel（如果有）\n2. 从 pool 分配一个新的独立 tunnel\n3. 客户端需要重启才能获取新凭证')) {
-                fetch(`/admin/clients/${clientId}/reassign-tunnel`, {
+                fetch(`/mumu-gate-7k2p9x/clients/${clientId}/reassign-tunnel`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -528,7 +689,7 @@
                 return;
             }
             
-            fetch(`/admin/clients/${clientId}/set-quota`, {
+            fetch(`/mumu-gate-7k2p9x/clients/${clientId}/set-quota`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({custom_token_limit: customLimit})

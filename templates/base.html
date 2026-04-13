@@ -287,11 +287,19 @@
         </div>
     </div>
 
+    <style>
+    .ai-access-payment-section { background: #fbfbfc; }
+    .ai-access-qr-card { border: 1px solid rgba(0,0,0,0.08); border-radius: 16px; padding: 14px; background: #fff; height: 100%; }
+    .ai-access-qr-card img { width: 100%; max-width: 220px; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); display: block; margin: 0 auto; }
+    .ai-access-qr-placeholder { min-height: 220px; display: flex; align-items: center; justify-content: center; text-align: center; border: 1px dashed rgba(0,0,0,0.15); border-radius: 12px; color: #6c757d; padding: 16px; }
+    .ai-access-proof-preview { max-width: 180px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); }
+    </style>
+
     <div class="modal fade" id="aiAccessRequiredModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="fas fa-robot me-2"></i>AI 功能说明</h5>
+                    <h5 class="modal-title" id="aiAccessRequiredTitle"><i class="fas fa-robot me-2"></i>AI 功能说明</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                 </div>
                 <div class="modal-body">
@@ -308,6 +316,92 @@
                         </a>
                         <div class="btn btn-outline-secondary disabled text-start" id="aiAccessPricingText">
                             管理员代配参考：半年 50 元，一年 100 元
+                        </div>
+                    </div>
+
+                    <div class="border rounded-4 p-3 mt-3 ai-access-payment-section d-none" id="aiAccessPaymentSection">
+                        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+                            <div>
+                                <h6 class="fw-bold mb-1">在线支付开通</h6>
+                                <div class="small text-muted">
+                                    付款后提交截图，管理员审核通过后会直接开通当前站点的 AI 服务。
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <select class="form-select form-select-sm" id="aiAccessPlanSelect" style="min-width: 180px;"></select>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="aiAccessRefreshSessionBtn">刷新金额</button>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <div class="ai-access-qr-card">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <strong>微信收款码</strong>
+                                        <span class="badge text-bg-success">微信</span>
+                                    </div>
+                                    <img id="aiAccessWechatQrImage" alt="微信收款码" class="d-none">
+                                    <div class="ai-access-qr-placeholder" id="aiAccessWechatQrPlaceholder">管理员尚未配置微信收款码</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="ai-access-qr-card">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <strong>支付宝收款码</strong>
+                                        <span class="badge text-bg-primary">支付宝</span>
+                                    </div>
+                                    <img id="aiAccessAlipayQrImage" alt="支付宝收款码" class="d-none">
+                                    <div class="ai-access-qr-placeholder" id="aiAccessAlipayQrPlaceholder">管理员尚未配置支付宝收款码</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-warning small mb-3" id="aiAccessPaymentSessionStatus">
+                            正在生成本次付款金额...
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">本次应付金额</label>
+                                <input type="text" class="form-control" id="aiAccessAmountInput" readonly placeholder="等待生成">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">留言码</label>
+                                <input type="text" class="form-control" id="aiAccessProofCodeInput" readonly placeholder="等待生成">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">怎么称呼你</label>
+                                <input type="text" class="form-control" id="aiAccessBuyerNameInput" placeholder="比如：沐沐妈妈">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">联系方式</label>
+                                <input type="text" class="form-control" id="aiAccessContactInput" placeholder="微信号 / 手机号 / 邮箱">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款渠道</label>
+                                <select class="form-select" id="aiAccessPaymentChannelSelect"></select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">付款截图</label>
+                                <input type="file" class="form-control" id="aiAccessProofInput" accept="image/*">
+                            </div>
+                            <div class="col-12">
+                                <div class="small text-muted mb-2" id="aiAccessPaymentContact"></div>
+                                <img id="aiAccessProofPreview" class="ai-access-proof-preview d-none" alt="付款截图预览">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label">备注（选填）</label>
+                                <textarea class="form-control" id="aiAccessPaymentNoteInput" rows="3" placeholder="比如：付款人昵称、希望管理员注意的内容"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button" class="btn btn-primary" id="aiAccessSubmitPaymentBtn">提交付款截图</button>
+                            <button type="button" class="btn btn-outline-secondary" id="aiAccessRefreshOrderBtn">刷新审核状态</button>
+                        </div>
+
+                        <div class="alert alert-light border mt-3 mb-0" id="aiAccessOrderStatus">
+                            提交订单后，这里会显示审核进度。审核通过后，当前站点会直接开通 AI 服务。
                         </div>
                     </div>
                 </div>
@@ -350,6 +444,39 @@
     <script>
     (function() {
         var lastShownAt = 0;
+        var paymentState = {
+            notice: null,
+            payment: null,
+            clientId: '',
+            planKey: 'half_year',
+            session: null,
+            orderId: '',
+            lookupToken: '',
+            proofDataUrl: '',
+            fingerprint: '',
+            pollTimer: null
+        };
+
+        function paymentFingerprint() {
+            if (paymentState.fingerprint) {
+                return paymentState.fingerprint;
+            }
+            var key = 'mumu_ai_payment_fingerprint';
+            try {
+                var existing = window.localStorage.getItem(key);
+                if (existing) {
+                    paymentState.fingerprint = existing;
+                    return existing;
+                }
+                var created = 'fp_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+                window.localStorage.setItem(key, created);
+                paymentState.fingerprint = created;
+                return created;
+            } catch (error) {
+                paymentState.fingerprint = 'fp_' + Date.now().toString(36);
+                return paymentState.fingerprint;
+            }
+        }
 
         function isAIAccessRequiredPayload(payload) {
             if (!payload || typeof payload !== 'object') {
@@ -365,6 +492,411 @@
             return notice.access_required === true || notice.error === 'AI_ACCESS_REQUIRED';
         }
 
+        function paymentStorageKey(clientId) {
+            return 'mumu_ai_payment_order_' + (clientId || 'unknown');
+        }
+
+        function saveStoredOrder() {
+            if (!paymentState.clientId || !paymentState.orderId || !paymentState.lookupToken) {
+                return;
+            }
+            try {
+                window.localStorage.setItem(paymentStorageKey(paymentState.clientId), JSON.stringify({
+                    orderId: paymentState.orderId,
+                    lookupToken: paymentState.lookupToken
+                }));
+            } catch (error) {}
+        }
+
+        function loadStoredOrder(clientId) {
+            if (!clientId) {
+                return null;
+            }
+            try {
+                var raw = window.localStorage.getItem(paymentStorageKey(clientId));
+                if (!raw) {
+                    return null;
+                }
+                return JSON.parse(raw);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function clearStoredOrder() {
+            if (!paymentState.clientId) {
+                return;
+            }
+            try {
+                window.localStorage.removeItem(paymentStorageKey(paymentState.clientId));
+            } catch (error) {}
+        }
+
+        function text(value) {
+            return value == null ? '' : String(value);
+        }
+
+        function fetchJson(url, options) {
+            return window.fetch(url, options).then(function(response) {
+                return response.json().catch(function() {
+                    return {success: false, message: '服务器返回异常'};
+                }).then(function(data) {
+                    if (typeof data.success === 'undefined') {
+                        data.success = response.ok;
+                    }
+                    if (!response.ok && !data.message && data.error) {
+                        data.message = data.error;
+                    }
+                    return data;
+                });
+            });
+        }
+
+        function setPaymentSectionVisible(visible) {
+            var section = document.getElementById('aiAccessPaymentSection');
+            if (!section) {
+                return;
+            }
+            section.classList.toggle('d-none', !visible);
+        }
+
+        function setPaymentSessionStatus(message, tone) {
+            var target = document.getElementById('aiAccessPaymentSessionStatus');
+            if (!target) {
+                return;
+            }
+            target.className = 'alert small mb-3 ' + (tone === 'success'
+                ? 'alert-success'
+                : tone === 'danger'
+                ? 'alert-danger'
+                : tone === 'info'
+                ? 'alert-info'
+                : 'alert-warning');
+            target.textContent = message;
+        }
+
+        function setOrderStatus(message, tone) {
+            var target = document.getElementById('aiAccessOrderStatus');
+            if (!target) {
+                return;
+            }
+            target.className = 'alert border mt-3 mb-0 ' + (tone === 'success'
+                ? 'alert-success'
+                : tone === 'danger'
+                ? 'alert-danger'
+                : tone === 'info'
+                ? 'alert-info'
+                : 'alert-light');
+            target.textContent = message;
+        }
+
+        function setQrImage(imgId, placeholderId, url) {
+            var img = document.getElementById(imgId);
+            var placeholder = document.getElementById(placeholderId);
+            if (!img || !placeholder) {
+                return;
+            }
+            if (url) {
+                img.src = url;
+                img.classList.remove('d-none');
+                placeholder.classList.add('d-none');
+            } else {
+                img.removeAttribute('src');
+                img.classList.add('d-none');
+                placeholder.classList.remove('d-none');
+            }
+        }
+
+        function renderPaymentPlans(payment) {
+            var planSelect = document.getElementById('aiAccessPlanSelect');
+            var channelSelect = document.getElementById('aiAccessPaymentChannelSelect');
+            if (!planSelect || !channelSelect) {
+                return;
+            }
+
+            var plans = payment && payment.plans ? payment.plans : {};
+            var planKeys = Object.keys(plans);
+            planSelect.innerHTML = planKeys.map(function(key) {
+                var plan = plans[key] || {};
+                return '<option value="' + key + '">' + text(plan.title || key) + ' · ' + text(plan.price_label || '') + ' 元</option>';
+            }).join('');
+            if (planKeys.indexOf(paymentState.planKey) === -1) {
+                paymentState.planKey = planKeys[0] || 'half_year';
+            }
+            planSelect.value = paymentState.planKey;
+
+            var channels = [];
+            if (payment && payment.wechat_qr_image_url) {
+                channels.push('<option value="wechat">微信</option>');
+            }
+            if (payment && payment.alipay_qr_image_url) {
+                channels.push('<option value="alipay">支付宝</option>');
+            }
+            if (channels.length === 0) {
+                channels.push('<option value="wechat">微信</option>');
+                channels.push('<option value="alipay">支付宝</option>');
+            }
+            channelSelect.innerHTML = channels.join('');
+        }
+
+        function updateAmountFields() {
+            var amountInput = document.getElementById('aiAccessAmountInput');
+            var codeInput = document.getElementById('aiAccessProofCodeInput');
+            if (amountInput) {
+                amountInput.value = paymentState.session && paymentState.session.expectedAmountText
+                    ? paymentState.session.expectedAmountText
+                    : '';
+            }
+            if (codeInput) {
+                codeInput.value = paymentState.session && paymentState.session.proofCode
+                    ? paymentState.session.proofCode
+                    : '';
+            }
+        }
+
+        function clearPaymentPolling() {
+            if (paymentState.pollTimer) {
+                window.clearInterval(paymentState.pollTimer);
+                paymentState.pollTimer = null;
+            }
+        }
+
+        function startPaymentPolling() {
+            clearPaymentPolling();
+            if (!paymentState.orderId || !paymentState.lookupToken) {
+                return;
+            }
+            paymentState.pollTimer = window.setInterval(function() {
+                refreshPaymentOrderStatus(true);
+            }, 10000);
+        }
+
+        function applyOrderPayload(order) {
+            if (!order) {
+                return;
+            }
+            if (order.status === 'approved') {
+                setOrderStatus((order.reviewNote || '付款已核对，当前站点 AI 服务已开通。') + ' 关闭弹窗后重试刚才的功能即可。', 'success');
+                clearPaymentPolling();
+            } else if (order.status === 'rejected') {
+                setOrderStatus(order.reviewNote || '订单暂未通过，请检查截图后重新提交。', 'danger');
+                clearPaymentPolling();
+                clearStoredOrder();
+            } else {
+                setOrderStatus(order.reviewNote || '订单已提交，等待管理员核对付款。审核通过后会直接开通当前站点的 AI 服务。', 'info');
+                startPaymentPolling();
+            }
+        }
+
+        function refreshPaymentOrderStatus(silent) {
+            if (!paymentState.orderId || !paymentState.lookupToken) {
+                if (!silent) {
+                    setOrderStatus('还没有提交付款订单。提交后这里会显示审核状态。');
+                }
+                return Promise.resolve(null);
+            }
+
+            return fetchJson('/api/ai-access/payment/orders/' + encodeURIComponent(paymentState.orderId) + '?lookupToken=' + encodeURIComponent(paymentState.lookupToken))
+                .then(function(data) {
+                    if (!data.success || !data.order) {
+                        if (!silent) {
+                            setOrderStatus(data.message || '订单状态读取失败，请稍后重试。', 'danger');
+                        }
+                        return null;
+                    }
+                    applyOrderPayload(data.order);
+                    return data.order;
+                })
+                .catch(function(error) {
+                    if (!silent) {
+                        setOrderStatus('订单状态读取失败，请稍后重试。', 'danger');
+                    }
+                    return null;
+                });
+        }
+
+        function refreshPaymentSession(forceRefresh) {
+            if (!paymentState.payment || !paymentState.payment.enabled || !paymentState.clientId) {
+                return Promise.resolve(null);
+            }
+
+            paymentState.planKey = document.getElementById('aiAccessPlanSelect').value || paymentState.planKey || 'half_year';
+            setPaymentSessionStatus('正在生成本次付款金额...', 'warning');
+
+            return fetchJson('/api/ai-access/payment/session', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    clientId: paymentState.clientId,
+                    planKey: paymentState.planKey,
+                    browserFingerprint: paymentFingerprint(),
+                    forceRefresh: !!forceRefresh
+                })
+            }).then(function(data) {
+                if (!data.success) {
+                    setPaymentSessionStatus(data.message || '付款信息生成失败，请稍后重试。', 'danger');
+                    return null;
+                }
+                if (data.already_paid) {
+                    setPaymentSessionStatus(data.message || '当前站点 AI 服务已开通。', 'success');
+                    setOrderStatus('当前站点 AI 服务已经是开通状态，可以直接重试刚才的功能。', 'success');
+                    clearPaymentPolling();
+                    clearStoredOrder();
+                    return null;
+                }
+                paymentState.session = data.session || null;
+                updateAmountFields();
+                setPaymentSessionStatus(
+                    '请按本次唯一金额付款：' + text(paymentState.session.expectedAmountText) + ' 元，留言码：' + text(paymentState.session.proofCode) + '。',
+                    'warning'
+                );
+                return paymentState.session;
+            }).catch(function(error) {
+                setPaymentSessionStatus('付款信息生成失败，请稍后重试。', 'danger');
+                return null;
+            });
+        }
+
+        function handlePaymentProofSelected(event) {
+            var file = event && event.target && event.target.files ? event.target.files[0] : null;
+            var preview = document.getElementById('aiAccessProofPreview');
+            paymentState.proofDataUrl = '';
+            if (!file || !preview) {
+                if (preview) {
+                    preview.classList.add('d-none');
+                }
+                return;
+            }
+            var reader = new FileReader();
+            reader.onload = function(loadEvent) {
+                paymentState.proofDataUrl = text(loadEvent.target && loadEvent.target.result);
+                if (paymentState.proofDataUrl) {
+                    preview.src = paymentState.proofDataUrl;
+                    preview.classList.remove('d-none');
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function submitPaymentOrder() {
+            if (!paymentState.clientId) {
+                setOrderStatus('缺少客户端信息，请刷新页面后再试。', 'danger');
+                return;
+            }
+            if (!paymentState.session || !paymentState.session.sessionId) {
+                setOrderStatus('请先生成本次付款金额。', 'danger');
+                return;
+            }
+            if (!paymentState.proofDataUrl) {
+                setOrderStatus('请先上传付款截图。', 'danger');
+                return;
+            }
+
+            var buyerName = document.getElementById('aiAccessBuyerNameInput').value.trim();
+            var contact = document.getElementById('aiAccessContactInput').value.trim();
+            var paymentChannel = document.getElementById('aiAccessPaymentChannelSelect').value;
+            var note = document.getElementById('aiAccessPaymentNoteInput').value.trim();
+            var submitButton = document.getElementById('aiAccessSubmitPaymentBtn');
+
+            if (!buyerName) {
+                setOrderStatus('请先填写怎么称呼你。', 'danger');
+                return;
+            }
+            if (!contact) {
+                setOrderStatus('请先填写联系方式。', 'danger');
+                return;
+            }
+
+            if (submitButton) {
+                submitButton.disabled = true;
+            }
+            setOrderStatus('正在提交付款订单，请稍候...', 'info');
+
+            fetchJson('/api/ai-access/payment/orders', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    clientId: paymentState.clientId,
+                    buyerName: buyerName,
+                    contact: contact,
+                    paymentChannel: paymentChannel,
+                    amountText: paymentState.session.expectedAmountText,
+                    note: note,
+                    planKey: paymentState.planKey,
+                    screenshotDataUrl: paymentState.proofDataUrl,
+                    paymentSessionId: paymentState.session.sessionId,
+                    browserFingerprint: paymentFingerprint()
+                })
+            }).then(function(data) {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                }
+                if (!data.success || !data.order) {
+                    setOrderStatus(data.message || '订单提交失败，请稍后重试。', 'danger');
+                    return;
+                }
+                paymentState.orderId = data.order.orderId || '';
+                paymentState.lookupToken = data.order.lookupToken || '';
+                saveStoredOrder();
+                applyOrderPayload(data.order);
+            }).catch(function(error) {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                }
+                setOrderStatus('订单提交失败，请稍后重试。', 'danger');
+            });
+        }
+
+        function applyNoticeToModal(notice) {
+            var message = notice.message || '宝爸/宝妈你好，你要使用的功能需要调用第三方付费大模型服务。你可以自行配置，或请管理员代为配置。';
+            var docsUrl = notice.docs_url || 'https://github.com/jxbaoxiaodong/mumu#readme';
+            var pricing = notice.pricing || {};
+            var halfYearPrice = pricing.half_year_price || 50;
+            var yearPrice = pricing.year_price || 100;
+            var payment = notice.payment || {};
+            var storedOrder;
+
+            document.getElementById('aiAccessRequiredTitle').innerHTML = '<i class="fas fa-robot me-2"></i>' + text(notice.title || 'AI 功能说明');
+            document.getElementById('aiAccessRequiredMessage').textContent = message;
+            document.getElementById('aiAccessDocsLink').href = docsUrl;
+            document.getElementById('aiAccessPricingText').textContent =
+                '管理员代配参考：半年 ' + halfYearPrice + ' 元，一年 ' + yearPrice + ' 元';
+
+            paymentState.notice = notice;
+            paymentState.payment = payment;
+            paymentState.clientId = text(notice.client_id || window.currentClientId || window.currentChildId || '');
+            paymentState.session = null;
+            paymentState.planKey = paymentState.planKey || 'half_year';
+
+            setQrImage('aiAccessWechatQrImage', 'aiAccessWechatQrPlaceholder', payment.wechat_qr_image_url || '');
+            setQrImage('aiAccessAlipayQrImage', 'aiAccessAlipayQrPlaceholder', payment.alipay_qr_image_url || '');
+            renderPaymentPlans(payment);
+
+            var contactText = '';
+            if (payment.contact_value) {
+                contactText = '如果支付页有问题，也可以直接联系管理员：' + text(payment.contact_label || '微信') + ' ' + text(payment.contact_value);
+            }
+            document.getElementById('aiAccessPaymentContact').textContent = contactText;
+
+            setPaymentSectionVisible(!!(payment.enabled && paymentState.clientId));
+            updateAmountFields();
+
+            storedOrder = loadStoredOrder(paymentState.clientId);
+            paymentState.orderId = storedOrder && storedOrder.orderId ? storedOrder.orderId : '';
+            paymentState.lookupToken = storedOrder && storedOrder.lookupToken ? storedOrder.lookupToken : '';
+
+            if (payment.enabled && paymentState.clientId) {
+                refreshPaymentSession(false);
+                if (paymentState.orderId && paymentState.lookupToken) {
+                    refreshPaymentOrderStatus(true);
+                } else {
+                    setOrderStatus('提交订单后，这里会显示审核进度。审核通过后，当前站点会直接开通 AI 服务。');
+                }
+            } else {
+                clearPaymentPolling();
+            }
+        }
+
         function showAIAccessRequiredModal(payload) {
             var now = Date.now();
             if (now - lastShownAt < 1500) {
@@ -373,20 +905,27 @@
             lastShownAt = now;
 
             var notice = (payload && payload.access_notice) || payload || {};
-            var message = notice.message || '宝爸/宝妈你好，你要使用的功能需要调用第三方付费大模型服务。你可以自行配置，或请管理员代为配置。';
-            var docsUrl = notice.docs_url || 'https://github.com/jxbaoxiaodong/mumu#readme';
-            var pricing = notice.pricing || {};
-            var halfYearPrice = pricing.half_year_price || 50;
-            var yearPrice = pricing.year_price || 100;
-
-            document.getElementById('aiAccessRequiredMessage').textContent = message;
-            document.getElementById('aiAccessDocsLink').href = docsUrl;
-            document.getElementById('aiAccessPricingText').textContent =
-                '管理员代配参考：半年 ' + halfYearPrice + ' 元，一年 ' + yearPrice + ' 元';
+            applyNoticeToModal(notice);
 
             var modal = new bootstrap.Modal(document.getElementById('aiAccessRequiredModal'));
             modal.show();
         }
+
+        document.getElementById('aiAccessRefreshSessionBtn').addEventListener('click', function() {
+            refreshPaymentSession(true);
+        });
+        document.getElementById('aiAccessPlanSelect').addEventListener('change', function() {
+            paymentState.planKey = this.value || 'half_year';
+            refreshPaymentSession(true);
+        });
+        document.getElementById('aiAccessProofInput').addEventListener('change', handlePaymentProofSelected);
+        document.getElementById('aiAccessSubmitPaymentBtn').addEventListener('click', submitPaymentOrder);
+        document.getElementById('aiAccessRefreshOrderBtn').addEventListener('click', function() {
+            refreshPaymentOrderStatus(false);
+        });
+        document.getElementById('aiAccessRequiredModal').addEventListener('hidden.bs.modal', function() {
+            clearPaymentPolling();
+        });
 
         var originalFetch = window.fetch.bind(window);
         window.fetch = function() {
