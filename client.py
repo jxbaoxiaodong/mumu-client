@@ -18,6 +18,7 @@ import logging.handlers
 import tempfile
 import hashlib
 import hmac
+import math
 import ipaddress
 import atexit
 import re
@@ -540,6 +541,11 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
     activity_label = assets.get("activity_label") or card.get("activity_label") or source_record.get("activity") or ""
     emotion_label = assets.get("emotion_label") or card.get("emotion_label") or ""
     description = (source_record.get("description") or "").strip()
+    custom_prompt = (
+        assets.get("custom_prompt")
+        or card.get("custom_prompt")
+        or ""
+    ).strip()
 
     style_prompt = ""
     try:
@@ -575,6 +581,8 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
     if style_prompt:
         prompt += f" 画面笔触与光线参考：{style_prompt}。"
     prompt += f" 视觉氛围可参考：{_get_virtual_role_visual_hint(role_archetype)}。"
+    if custom_prompt:
+        prompt += f" 家长额外希望强化的方向：{custom_prompt}。"
     prompt += (
         " 只输出画面，不要出现任何中文、英文、数字、对白气泡、标题、logo、水印。"
         " 画面要温暖、有层次、有分享欲，像一张精心设计的角色海报。"
@@ -7467,8 +7475,9 @@ def convert_photo_path_for_client(obj):
 def select_rotating_cards(cards, per_day: int = 50, date_str: str = None):
     """
     按天轮换展示卡片：
-    - 不删除、不过滤总库，仅决定“今天展示哪一页”
-    - 稳定排序 + 按日偏移，避免每天都看同一批
+    - 不删除总库，仅决定“今天展示哪一批”
+    - 先按卡片类型打散，再按天做稳定轮换
+    - 同一类型设上限，避免 50 张里被单一题材淹没
     """
     if not cards:
         return []
@@ -7484,66 +7493,99 @@ def select_rotating_cards(cards, per_day: int = 50, date_str: str = None):
     except Exception:
         day_seed = datetime.now().toordinal()
 
-    def stable_key(card):
+    def stable_key(card, salt: str = ""):
         card_id = str(card.get("id") or card.get("card_id") or "")
-        # 稳定哈希，保证每天分页可复现
-        return hashlib.md5(card_id.encode("utf-8")).hexdigest()
+        card_type = str(card.get("type") or card.get("card_type") or "unknown")
+        raw = f"{salt}|{card_type}|{card_id}"
+        return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
-    ordered_cards = sorted(cards, key=stable_key)
-    total = len(ordered_cards)
-    if total <= per_day:
+    ordered_cards = sorted(cards, key=lambda card: stable_key(card))
+    if len(ordered_cards) <= per_day:
         return ordered_cards
 
-    # 先保证每个类别至少展示 1 张（如果有）
-    by_type = {}
+    by_type = defaultdict(list)
     for card in ordered_cards:
-        card_type = card.get("type") or card.get("card_type") or "unknown"
-        by_type.setdefault(card_type, []).append(card)
+        card_type = str(card.get("type") or card.get("card_type") or "unknown")
+        by_type[card_type].append(card)
+
+    type_count = max(1, len(by_type))
+    max_per_type = max(4, int(math.ceil(per_day * 0.34)))
+    if type_count <= 3:
+        max_per_type = max(max_per_type, int(math.ceil(per_day / float(type_count))))
+
+    type_states = []
+    for card_type, type_cards in by_type.items():
+        offset = day_seed % len(type_cards)
+        rotated_cards = type_cards[offset:] + type_cards[:offset]
+        type_states.append(
+            {
+                "type": card_type,
+                "cards": rotated_cards,
+                "cursor": 0,
+                "picked": 0,
+                "limit": min(len(rotated_cards), max_per_type),
+            }
+        )
 
     selected = []
     selected_ids = set()
-    for card_type, type_cards in sorted(by_type.items()):
+    round_index = 0
+
+    while len(selected) < per_day:
+        progress = False
+        ordered_states = sorted(
+            type_states,
+            key=lambda state: hashlib.md5(
+                f"{day_seed}|{round_index}|{state['type']}".encode("utf-8")
+            ).hexdigest(),
+        )
+
+        for state in ordered_states:
+            if state["picked"] >= state["limit"]:
+                continue
+
+            while state["cursor"] < len(state["cards"]):
+                card = state["cards"][state["cursor"]]
+                state["cursor"] += 1
+                card_id = str(card.get("id") or card.get("card_id") or "").strip()
+                if not card_id or card_id in selected_ids:
+                    continue
+                selected.append(card)
+                selected_ids.add(card_id)
+                state["picked"] += 1
+                progress = True
+                break
+
+            if len(selected) >= per_day:
+                break
+
         if len(selected) >= per_day:
             break
-        if not type_cards:
-            continue
-        idx = day_seed % len(type_cards)
-        chosen = type_cards[idx]
-        card_id = chosen.get("id") or chosen.get("card_id")
-        if card_id not in selected_ids:
-            selected.append(chosen)
-            selected_ids.add(card_id)
 
-    # 再按日轮换补齐剩余名额
-    remaining = per_day - len(selected)
-    if remaining <= 0:
-        return selected
-
-    total_pages = (total + remaining - 1) // remaining
-    page_idx = day_seed % total_pages
-    start = page_idx * remaining
-    end = start + remaining
-    for card in ordered_cards[start:end]:
-        card_id = card.get("id") or card.get("card_id")
-        if card_id in selected_ids:
+        if progress:
+            round_index += 1
             continue
-        selected.append(card)
-        selected_ids.add(card_id)
-        if len(selected) >= per_day:
+
+        expanded = False
+        for state in type_states:
+            if state["limit"] < len(state["cards"]):
+                state["limit"] = min(len(state["cards"]), state["limit"] + 2)
+                expanded = True
+        if not expanded:
             break
+        round_index += 1
 
-    # 如果还有空位，从头补齐
     if len(selected) < per_day:
         for card in ordered_cards:
-            card_id = card.get("id") or card.get("card_id")
-            if card_id in selected_ids:
+            card_id = str(card.get("id") or card.get("card_id") or "").strip()
+            if not card_id or card_id in selected_ids:
                 continue
             selected.append(card)
             selected_ids.add(card_id)
             if len(selected) >= per_day:
                 break
 
-    return selected
+    return selected[:per_day]
 
 
 def sync_card_cache_silently():
@@ -7802,6 +7844,316 @@ def _build_manual_comic_card(
         "custom_prompt": (custom_prompt or "").strip(),
         "generated_at": generated_at,
     }
+
+
+def _select_manual_virtual_role_persona(record: dict, custom_prompt: str = "") -> tuple[dict, list, list]:
+    from server_card_generator import ServerCardGenerator
+
+    generator = ServerCardGenerator()
+    text_parts = [
+        record.get("description") or "",
+        record.get("scene") or "",
+        record.get("activity") or "",
+        record.get("caption") or "",
+        custom_prompt or "",
+    ]
+    text_pool = " ".join(str(item).strip() for item in text_parts if str(item).strip())
+    if not text_pool:
+        text_pool = f"{getattr(public_client, 'baby_name', '宝宝')} 的今天照片"
+
+    domain_scores = generator._collect_story_domain_scores(text_pool)
+    ranked = []
+    for index, persona in enumerate(generator.VIRTUAL_ROLE_LIBRARY):
+        score = 0
+        for domain_name, weight in (persona.get("domains") or {}).items():
+            score += int(domain_scores.get(domain_name, 0) or 0) * int(weight or 0) * 4
+        score += generator._score_keywords(text_pool, persona.get("keywords") or []) * 6
+        if custom_prompt and persona.get("name") and persona["name"] in custom_prompt:
+            score += 18
+        score += generator._stable_seed(
+            getattr(public_client, "client_id", ""),
+            record.get("filename") or record.get("path") or "",
+            persona.get("name"),
+            index,
+        ) % 5
+        ranked.append((score, persona))
+
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    best_persona = dict(ranked[0][1]) if ranked else {
+        "name": "小小主角",
+        "subtitle": "把这一天映射成一个更有故事感的小角色",
+        "headline": "根据当天照片自动挑选的角色方向。",
+        "tagline": "真实日常，也能长出一张角色海报。",
+        "icon": "🪄",
+        "palette": ["#f6c36a", "#f7e3a6", "#93c9b7", "#fff8ef"],
+        "frame_shape": "arch",
+        "domains": {},
+        "keywords": [],
+    }
+
+    reason_lines = []
+    if record.get("scene"):
+        reason_lines.append(f"会把“{record.get('scene')}”翻成角色背景")
+    if record.get("activity"):
+        reason_lines.append(f"动作主线“{record.get('activity')}”适合延展成角色设定")
+    if custom_prompt:
+        reason_lines.append("已叠加家长指定的角色方向")
+    if not reason_lines:
+        reason_lines.append("这张照片本身很适合被翻成一张角色封面")
+
+    role_traits = generator._dedup_texts(
+        [
+            record.get("activity") or "",
+            record.get("scene") or "",
+            record.get("description") or "",
+            custom_prompt or "",
+            best_persona.get("tagline") or "",
+        ],
+        limit=4,
+        max_len=16,
+    )
+    return best_persona, role_traits, reason_lines[:4]
+
+
+def _build_manual_virtual_role_card(
+    record: dict,
+    persona: dict,
+    generated_url: str,
+    *,
+    custom_prompt: str = "",
+    selection_reason: str = "",
+    role_traits: list | None = None,
+    reason_lines: list | None = None,
+) -> dict:
+    from server_card_generator import ServerCardGenerator
+
+    generator = ServerCardGenerator()
+    filename = record.get("filename") or Path(record.get("path", "")).name
+    source_photo_url = f"/photo/{quote(filename)}" if filename else ""
+    frame_shape = generator._pick_album_frame_shape(
+        record,
+        persona.get("frame_shape", "arch"),
+    )
+    prompt_hint = persona.get("headline") or persona.get("tagline") or ""
+    if custom_prompt:
+        prompt_hint = (
+            f"{prompt_hint}；家长加料：{custom_prompt.strip()}"
+            if prompt_hint
+            else custom_prompt.strip()
+        )
+
+    merged_reason_lines = []
+    if selection_reason:
+        merged_reason_lines.append(selection_reason.strip())
+    for item in reason_lines or []:
+        text = str(item or "").strip()
+        if text and text not in merged_reason_lines:
+            merged_reason_lines.append(text)
+    if not merged_reason_lines:
+        merged_reason_lines.append("这张照片适合翻成一张角色封面")
+
+    role_traits = generator._dedup_texts(role_traits or [], limit=4, max_len=16)
+    generated_at = datetime.now().isoformat()
+    card_id = (
+        f"manual_virtual_role_{datetime.now().strftime('%Y%m%d%H%M%S')}_"
+        f"{hashlib.md5((filename + generated_at).encode('utf-8')).hexdigest()[:8]}"
+    )
+    assets = {
+        "generated_image": generated_url,
+        "source_photo": source_photo_url,
+        "role_name": persona.get("name") or "虚拟角色",
+        "role_display_name": persona.get("name") or "虚拟角色",
+        "role_archetype": persona.get("name") or "虚拟角色",
+        "role_subtitle": persona.get("subtitle") or persona.get("tagline") or "",
+        "role_traits": role_traits,
+        "role_palette": list(persona.get("palette") or []),
+        "frame_shape": frame_shape,
+        "scene_label": record.get("scene") or "",
+        "activity_label": record.get("activity") or "",
+        "custom_prompt": (custom_prompt or "").strip(),
+    }
+    return {
+        "id": card_id,
+        "card_id": card_id,
+        "type": "virtual_role_card",
+        "card_subtype": f"manual_{(persona.get('name') or 'custom')}",
+        "layout": "virtual_role",
+        "title": "🪄 定制虚拟人物",
+        "subtitle": persona.get("name") or "虚拟角色",
+        "content": (persona.get("headline") or "把今天这张照片翻成一位更有故事感的小角色。").strip(),
+        "footer": "照片墙手动生成 · 已存入角色卡片",
+        "emoji": persona.get("icon") or "🪄",
+        "photo_paths": [source_photo_url] if source_photo_url else [],
+        "generated_image": generated_url,
+        "source_photo": source_photo_url,
+        "role_name": persona.get("name") or "虚拟角色",
+        "role_display_name": persona.get("name") or "虚拟角色",
+        "role_archetype": persona.get("name") or "虚拟角色",
+        "role_subtitle": persona.get("subtitle") or persona.get("tagline") or "",
+        "role_traits": role_traits,
+        "role_palette": list(persona.get("palette") or []),
+        "frame_shape": frame_shape,
+        "scene_label": record.get("scene") or "",
+        "activity_label": record.get("activity") or "",
+        "prompt_hint": prompt_hint,
+        "reason_lines": merged_reason_lines[:4],
+        "photo_date": (record.get("date") or datetime.now().strftime("%Y-%m-%d")).strip(),
+        "generation_mode": "manual",
+        "custom_prompt": (custom_prompt or "").strip(),
+        "generated_at": generated_at,
+        "assets": assets,
+    }
+
+
+@app.route("/api/cards/virtual-role/generate", methods=["POST"])
+@require_local_or_password
+def api_generate_manual_virtual_role_cards():
+    try:
+        data = request.get_json() or {}
+        date_str = (data.get("date") or datetime.now().strftime("%Y-%m-%d")).strip()
+        custom_prompt = (data.get("custom_prompt") or "").strip()
+        requested_filenames = [
+            Path(str(name or "")).name
+            for name in (data.get("filenames") or [])
+            if str(name or "").strip()
+        ]
+
+        records = _prepare_story_photo_records(
+            date_str,
+            public_client.client_id,
+            allow_media_fallback=True,
+        )
+        selected_records = []
+        selection_reasons = []
+        if requested_filenames:
+            record_map = {
+                (item.get("filename") or Path(item.get("path", "")).name): item
+                for item in records
+                if isinstance(item, dict)
+            }
+            for filename in requested_filenames:
+                item = record_map.get(filename)
+                if not item:
+                    continue
+                selected_records.append(item)
+                selection_reasons.append("家长手动选中的当天照片")
+            selected_records = selected_records[:3]
+
+        if not selected_records:
+            selected_records, selection_reasons = _select_comic_source_records(records, limit=1)
+        if not selected_records:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "当前日期还没有可用于生成虚拟人物的照片，请先选择一张当天已索引的照片。",
+                }
+            ), 400
+
+        created_cards = []
+        for index, record in enumerate(selected_records):
+            source_path = record.get("path") or ""
+            if not source_path or not Path(source_path).exists():
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            f"虚拟人物生成失败：照片源文件不存在或已被移动"
+                            f"（{record.get('filename') or Path(source_path).name or 'unknown'}）。"
+                        ),
+                    }
+                ), 400
+
+            persona, role_traits, auto_reasons = _select_manual_virtual_role_persona(
+                record, custom_prompt
+            )
+            temp_card = {
+                "type": "virtual_role_card",
+                "role_name": persona.get("name") or "虚拟角色",
+                "role_display_name": persona.get("name") or "虚拟角色",
+                "role_archetype": persona.get("name") or "虚拟角色",
+                "role_subtitle": persona.get("subtitle") or persona.get("tagline") or "",
+                "role_traits": role_traits,
+                "role_palette": list(persona.get("palette") or []),
+                "frame_shape": persona.get("frame_shape") or "arch",
+                "scene_label": record.get("scene") or "",
+                "activity_label": record.get("activity") or "",
+                "custom_prompt": custom_prompt,
+                "assets": {
+                    "role_name": persona.get("name") or "虚拟角色",
+                    "role_display_name": persona.get("name") or "虚拟角色",
+                    "role_archetype": persona.get("name") or "虚拟角色",
+                    "role_subtitle": persona.get("subtitle") or persona.get("tagline") or "",
+                    "role_traits": role_traits,
+                    "frame_shape": persona.get("frame_shape") or "arch",
+                    "scene_label": record.get("scene") or "",
+                    "activity_label": record.get("activity") or "",
+                    "custom_prompt": custom_prompt,
+                },
+            }
+            prompt = _build_virtual_role_image_prompt(temp_card, record)
+            remote_url, image_error = _generate_image_with_reference_result(
+                prompt,
+                source_path,
+                operation="photo_to_virtual_role",
+                model_name=DEFAULT_STORY_IMAGE_MODEL,
+                size=DEFAULT_STORY_IMAGE_SIZE,
+            )
+            if not remote_url:
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": (
+                            f"虚拟人物生成失败：{image_error or '图片模型没有返回结果。'}"
+                        ),
+                    }
+                ), 502
+
+            filename = (
+                f"virtual_role_{datetime.now().strftime('%Y%m%d%H%M%S')}_{index}_"
+                f"{hashlib.md5((record.get('filename') or source_path).encode('utf-8')).hexdigest()[:8]}.jpg"
+            )
+            target_path = _generated_asset_dir("virtual_roles") / filename
+            if not _save_generated_asset_image(remote_url, target_path):
+                return jsonify(
+                    {
+                        "success": False,
+                        "message": "虚拟人物生成失败：图片已生成，但保存到本地失败。",
+                    }
+                ), 500
+
+            generated_url = _generated_asset_url("virtual_roles", filename)
+            selection_reason = selection_reasons[index] if index < len(selection_reasons) else ""
+            created_cards.append(
+                _build_manual_virtual_role_card(
+                    record,
+                    persona,
+                    generated_url,
+                    custom_prompt=custom_prompt,
+                    selection_reason=selection_reason,
+                    role_traits=role_traits,
+                    reason_lines=auto_reasons,
+                )
+            )
+
+        if not created_cards:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "虚拟人物生成失败：没有生成出任何可保存的结果。",
+                }
+            ), 500
+
+        append_local_manual_cards(created_cards)
+        return jsonify(
+            {
+                "success": True,
+                "message": f"已生成 {len(created_cards)} 张虚拟人物卡片",
+                "cards": created_cards,
+            }
+        )
+    except Exception as e:
+        logger.warning(f"[VirtualRole] 手动生成失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/cards/comic/generate", methods=["POST"])

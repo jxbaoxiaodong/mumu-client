@@ -694,6 +694,10 @@
     flex-wrap: wrap;
 }
 
+.photo-tools .btn {
+    white-space: nowrap;
+}
+
 .btn-comic-generate {
     border: none;
     border-radius: 999px;
@@ -708,6 +712,49 @@
 .btn-comic-generate:hover {
     transform: translateY(-1px);
     box-shadow: 0 14px 30px rgba(248, 111, 130, 0.28);
+}
+
+.generation-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.generation-mode-btn {
+    width: 100%;
+    border: 1px solid rgba(233, 215, 192, 0.9);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fffdf9 0%, #fff7ef 100%);
+    color: #5a4c46;
+    font-weight: 700;
+    padding: 12px 14px;
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.generation-mode-btn.active {
+    border-color: rgba(248, 111, 130, 0.88);
+    box-shadow: 0 12px 28px rgba(248, 111, 130, 0.14);
+    transform: translateY(-1px);
+}
+
+.generation-mode-btn small {
+    display: block;
+    margin-top: 4px;
+    color: #7c6f68;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.55;
+}
+
+.generation-mode-note {
+    margin-top: 10px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255, 244, 231, 0.9), rgba(255, 251, 246, 0.96));
+    color: #6e5e53;
+    font-size: 0.88rem;
+    line-height: 1.7;
 }
 
 .comic-style-grid {
@@ -898,15 +945,18 @@
     display: flex;
     align-items: flex-end;
     padding: 16px;
+    pointer-events: none;
 }
 
-.gallery-item-uni:hover .gallery-item-overlay {
+.gallery-item-uni:hover .gallery-item-overlay,
+.gallery-item-uni:focus-within .gallery-item-overlay {
     opacity: 1;
 }
 
 .gallery-item-actions {
     display: flex;
     gap: 8px;
+    pointer-events: auto;
 }
 
 .btn-gallery-action {
@@ -1825,8 +1875,8 @@
             
             <!-- 照片工具按钮 -->
             <div class="photo-tools mt-3">
-                <button class="btn btn-sm btn-comic-generate" onclick="openComicGenerationModal()" title="自动选取当前页代表照片生成漫画卡">
-                    <i class="fas fa-wand-magic-sparkles me-1"></i>生成漫画
+                <button class="btn btn-sm btn-comic-generate" onclick="openComicGenerationModal()" title="把当天照片生成漫画卡或虚拟人物卡">
+                    <i class="fas fa-wand-magic-sparkles me-1"></i>生成漫画 / 虚拟人物
                 </button>
                 <button class="btn btn-sm btn-outline-warning" onclick="cleanupPhotos()" title="清理重复和模糊照片">
                     <i class="fas fa-broom me-1"></i>清理
@@ -2064,15 +2114,41 @@
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">生成漫画卡片</h5>
+                <h5 class="modal-title" id="cardGenerationModalTitle">生成漫画 / 虚拟人物卡</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
+                    <label class="form-label fw-semibold">生成方向</label>
+                    <div class="generation-mode-switch">
+                        <button
+                            type="button"
+                            class="generation-mode-btn active"
+                            data-generation-mode="comic"
+                            onclick="selectCardGenerationMode('comic')"
+                        >
+                            生成漫画
+                            <small>把当天照片翻成更适合分享的一张漫画封面。</small>
+                        </button>
+                        <button
+                            type="button"
+                            class="generation-mode-btn"
+                            data-generation-mode="virtual_role"
+                            onclick="selectCardGenerationMode('virtual_role')"
+                        >
+                            虚拟人物
+                            <small>把当天照片映射成更有角色感的一张人物海报。</small>
+                        </button>
+                    </div>
+                    <div class="generation-mode-note" id="generationModeNote">
+                        漫画适合做单幅分享卡；虚拟人物更适合把宝宝今天的气质翻成一个有故事感的小角色。
+                    </div>
+                </div>
+                <div class="mb-3">
                     <label class="form-label fw-semibold">选择当天照片</label>
                     <div class="comic-photo-picker" id="comicPhotoPicker"></div>
                 </div>
-                <div class="mb-3">
+                <div class="mb-3" id="comicStyleSection">
                     <label class="form-label fw-semibold">风格方向</label>
                     <div class="comic-style-grid">
                         {% for preset in comic_style_presets %}
@@ -2091,7 +2167,7 @@
                     </div>
                 </div>
                 <div class="mb-2">
-                    <label class="form-label fw-semibold" for="comicCustomPrompt">自定义补充</label>
+                    <label class="form-label fw-semibold" id="generationPromptLabel" for="comicCustomPrompt">家长自定义要求</label>
                     <textarea class="form-control" id="comicCustomPrompt" rows="3" maxlength="140" placeholder="比如：旧胶片海报感、强调宝宝眼神里的专注、把背景做得更有晨光氛围，不写字进画面。"></textarea>
                 </div>
                 <div class="comic-modal-note" id="comicGenerationHint">
@@ -2100,8 +2176,8 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="comicGenerateSubmitBtn" onclick="submitComicGeneration()">
-                    <i class="fas fa-sparkles me-1"></i>开始生成
+                <button type="button" class="btn btn-primary" id="comicGenerateSubmitBtn" onclick="submitCardGeneration()">
+                    <i class="fas fa-sparkles me-1"></i>生成漫画
                 </button>
             </div>
         </div>
@@ -2133,6 +2209,7 @@ window.currentClientId = '{{ client_id or "" }}';
 window.comicStylePresets = {{ comic_style_presets | tojson }} || [];
 let currentComicStyleKey = 'auto';
 let currentComicPhotoFilename = '';
+let currentCardGenerationMode = 'comic';
 
 // 日历切换函数（需要在HTML使用之前定义）
 function changeDate(days) {
@@ -2218,6 +2295,59 @@ function selectComicPhoto(filename) {
     });
 }
 
+function getCardGenerationSubmitLabel(mode) {
+    return mode === 'virtual_role'
+        ? '<i class="fas fa-sparkles me-1"></i>生成虚拟人物'
+        : '<i class="fas fa-sparkles me-1"></i>生成漫画';
+}
+
+function selectCardGenerationMode(mode) {
+    currentCardGenerationMode = mode === 'virtual_role' ? 'virtual_role' : 'comic';
+    document.querySelectorAll('.generation-mode-btn').forEach(function(button) {
+        button.classList.toggle('active', button.dataset.generationMode === currentCardGenerationMode);
+    });
+
+    var titleEl = document.getElementById('cardGenerationModalTitle');
+    var noteEl = document.getElementById('generationModeNote');
+    var styleSection = document.getElementById('comicStyleSection');
+    var promptLabel = document.getElementById('generationPromptLabel');
+    var promptEl = document.getElementById('comicCustomPrompt');
+    var hintEl = document.getElementById('comicGenerationHint');
+    var submitBtn = document.getElementById('comicGenerateSubmitBtn');
+
+    if (currentCardGenerationMode === 'virtual_role') {
+        if (titleEl) titleEl.textContent = '生成虚拟人物卡';
+        if (noteEl) {
+            noteEl.textContent = '系统会根据这张照片的场景、动作和家长要求，自动挑一个更贴近宝宝气质的角色方向，再生成一张角色海报。';
+        }
+        if (styleSection) styleSection.style.display = 'none';
+        if (promptLabel) promptLabel.textContent = '家长想强化的角色方向';
+        if (promptEl) {
+            promptEl.placeholder = '比如：想更像小探险家、保留今天衣服颜色、背景有地图感、看起来更勇敢但不要夸张 cosplay。';
+        }
+        if (hintEl) {
+            hintEl.textContent = '先选一张当天照片，再写明家长想强调的气质、服装或氛围，生成后会直接存入虚拟人物卡片。';
+        }
+    } else {
+        if (titleEl) titleEl.textContent = '生成漫画卡片';
+        if (noteEl) {
+            noteEl.textContent = '漫画适合把当天这张照片翻成更适合分享的一张单幅封面，风格会比原图更完整、更有画面感。';
+        }
+        if (styleSection) styleSection.style.display = '';
+        if (promptLabel) promptLabel.textContent = '家长自定义要求';
+        if (promptEl) {
+            promptEl.placeholder = '比如：旧胶片海报感、强调宝宝眼神里的专注、把背景做得更有晨光氛围，不写字进画面。';
+        }
+        if (hintEl) {
+            hintEl.textContent = '先选 ' + getCurrentGalleryDate() + ' 这一天的一张照片，再决定风格和额外要求，生成后直接存入漫画卡片。';
+        }
+    }
+
+    if (submitBtn && !submitBtn.disabled) {
+        submitBtn.innerHTML = getCardGenerationSubmitLabel(currentCardGenerationMode);
+    }
+}
+
 function renderComicPhotoPicker() {
     var picker = document.getElementById('comicPhotoPicker');
     if (!picker) return;
@@ -2252,7 +2382,7 @@ function renderComicPhotoPicker() {
 function openComicGenerationModal() {
     var photos = getCurrentGalleryPhotos();
     if (!photos.length) {
-        showNotification('当前日期还没有可用于生成漫画的已索引照片', 'warning');
+        showNotification('当前日期还没有可用于生成卡片的已索引照片', 'warning');
         return;
     }
     currentComicStyleKey = 'auto';
@@ -2260,20 +2390,17 @@ function openComicGenerationModal() {
     currentComicPhotoFilename = currentFeaturedPhoto || (photos[0] && photos[0].filename) || '';
     renderComicPhotoPicker();
     var promptEl = document.getElementById('comicCustomPrompt');
-    var hintEl = document.getElementById('comicGenerationHint');
     if (promptEl) promptEl.value = '';
-    if (hintEl) {
-        hintEl.textContent = '先选 ' + getCurrentGalleryDate() + ' 这一天的一张照片，再决定风格和额外要求，生成后直接存入漫画卡片。';
-    }
+    selectCardGenerationMode(currentCardGenerationMode || 'comic');
     var modalEl = document.getElementById('comicGenerationModal');
     var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
 }
 
-function submitComicGeneration() {
+function submitCardGeneration() {
     var photos = getCurrentGalleryPhotos();
     if (!photos.length) {
-        showNotification('当前日期还没有可用于生成漫画的已索引照片', 'warning');
+        showNotification('当前日期还没有可用于生成卡片的已索引照片', 'warning');
         return;
     }
     if (!currentComicPhotoFilename) {
@@ -2283,11 +2410,17 @@ function submitComicGeneration() {
 
     var submitBtn = document.getElementById('comicGenerateSubmitBtn');
     var promptEl = document.getElementById('comicCustomPrompt');
-    var originalHtml = submitBtn.innerHTML;
+    var originalHtml = getCardGenerationSubmitLabel(currentCardGenerationMode);
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>生成中...';
+    submitBtn.innerHTML = currentCardGenerationMode === 'virtual_role'
+        ? '<i class="fas fa-spinner fa-spin me-1"></i>生成虚拟人物中...'
+        : '<i class="fas fa-spinner fa-spin me-1"></i>生成漫画中...';
 
-    fetch('/api/cards/comic/generate', {
+    var requestUrl = currentCardGenerationMode === 'virtual_role'
+        ? '/api/cards/virtual-role/generate'
+        : '/api/cards/comic/generate';
+
+    fetch(requestUrl, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -2300,20 +2433,24 @@ function submitComicGeneration() {
     .then(function(resp) { return resp.json(); })
     .then(function(data) {
         if (!data || !data.success) {
-            throw new Error((data && data.message) || '漫画生成失败');
+            throw new Error((data && data.message) || '卡片生成失败');
         }
         var modal = bootstrap.Modal.getInstance(document.getElementById('comicGenerationModal'));
         if (modal) modal.hide();
-        showNotification(data.message || '漫画卡片已生成', 'success');
+        showNotification(data.message || '卡片已生成', 'success');
     })
     .catch(function(err) {
-        console.error('生成漫画卡片失败:', err);
-        showNotification(err.message || '生成漫画卡片失败', 'error');
+        console.error('生成卡片失败:', err);
+        showNotification(err.message || '生成卡片失败', 'error');
     })
     .finally(function() {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalHtml;
     });
+}
+
+function submitComicGeneration() {
+    submitCardGeneration();
 }
 
 function updateCalendarDisplay() {
@@ -5127,11 +5264,35 @@ body.modal-open .mini-growth-card {
     .date-number-big {
         font-size: 2.5rem;
     }
+
+    .hero-right-frame {
+        padding: 20px 16px 18px;
+    }
+
+    .photo-frame-container {
+        width: min(100%, 420px);
+        max-width: 100%;
+        min-height: 420px;
+        max-height: none;
+        padding: 16px;
+    }
+
+    .photo-action-buttons {
+        right: 26px;
+        bottom: 20px;
+        gap: 8px;
+    }
+
+    .photo-action-buttons .btn {
+        width: 38px;
+        height: 38px;
+        font-size: 0.92rem;
+    }
     
     /* 照片网格适配 */
     .gallery-grid-uni {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 8px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
     }
 
     .gallery-tabs {
@@ -5151,17 +5312,25 @@ body.modal-open .mini-growth-card {
         gap: 8px;
     }
 
+    .photo-tools .btn {
+        padding: 7px 12px;
+        font-size: 0.84rem;
+        border-radius: 999px;
+    }
+
     .gallery-item-overlay {
-        padding: 8px;
-        align-items: center;
-        background: linear-gradient(to top, rgba(44,44,44,0.82) 0%, rgba(44,44,44,0.16) 100%);
+        inset: auto 0 0 0;
+        opacity: 1;
+        padding: 6px;
+        align-items: flex-end;
+        background: linear-gradient(to top, rgba(44,44,44,0.72) 0%, rgba(44,44,44,0.08) 100%);
     }
 
     .gallery-item-actions {
         width: 100%;
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 6px;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 5px;
     }
 
     .gallery-item-actions > div {
@@ -5174,9 +5343,14 @@ body.modal-open .mini-growth-card {
 
     .btn-gallery-action {
         width: 100%;
-        height: 32px;
+        height: 30px;
         border-radius: 999px;
-        font-size: 0.82rem;
+        font-size: 0.76rem;
+        padding: 0;
+    }
+
+    .generation-mode-switch {
+        grid-template-columns: 1fr;
     }
 }
 
