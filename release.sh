@@ -165,6 +165,14 @@ updated, count = re.subn(
     count=1,
 )
 if count != 1:
+    updated, count = re.subn(
+        r"(<div class=\"mini-card\">\s*<strong>)([^<]+)(</strong>\s*<span>电脑版当前版本</span>)",
+        lambda match: f"{match.group(1)}{tag}{match.group(3)}",
+        updated,
+        count=1,
+        flags=re.S,
+    )
+if count != 1:
     raise SystemExit("failed to update landing version label")
 
 if updated != text:
