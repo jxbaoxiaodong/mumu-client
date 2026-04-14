@@ -1380,27 +1380,7 @@ class PublicClient:
                     index.get("videos", {})
                 )
                 print(f"📂 已有索引: {total_files} 个文件")
-
-                # 异步扫描更新（不阻塞启动）
-                import threading
-
-                def async_scan():
-                    try:
-                        # 读取日期范围设置（从配置文件读取）
-                        index_after = USER_CONFIG.get("index_after_date", "") or None
-                        print(
-                            f"[索引] 配置中的index_after_date: '{USER_CONFIG.get('index_after_date')}'"
-                        )
-                        print(f"[索引] 传递给scan的start_date: '{index_after}'")
-                        result = pm.scan_existing_photos(start_date=index_after)
-                        print(
-                            f"✅ 索引更新完成: 新增 {result.get('new', 0)} 个文件, 总计 {result.get('total', 0)} 个"
-                        )
-                    except Exception as e:
-                        print(f"⚠️ 索引更新失败: {e}")
-
-                thread = threading.Thread(target=async_scan, daemon=True)
-                thread.start()
+                request_photo_rescan("启动后自动校正索引")
                 return {"first_time": False, "existing_files": total_files}
             else:
                 # 首次建立索引，先快速估算文件数量
@@ -3870,42 +3850,14 @@ def api_setup():
 def build_photo_index_api():
     """执行照片索引建立（首次，后台执行）"""
     try:
-        global scan_progress
-
-        if scan_progress["running"]:
-            return jsonify(
-                {
-                    "success": True,
-                    "started": False,
-                    "message": "索引建立已在进行中",
-                }
-            )
-
-        media_folders = getattr(public_client, "media_folders", [])
-        if not media_folders:
-            return jsonify({"success": False, "error": "未配置媒体文件夹"})
-
-        start_date = getattr(public_client, "index_after_date", "") or None
-        scan_progress = {
-            "running": True,
-            "current": 0,
-            "total": 0,
-            "message": "正在准备创建索引...",
-            "result": None,
-        }
-
-        thread = threading.Thread(
-            target=run_scan_in_background,
-            args=(media_folders, public_client.data_dir, start_date, None),
-            daemon=True,
-        )
-        thread.start()
+        result = request_photo_rescan("首次建索引/手动建索引")
 
         return jsonify(
             {
                 "success": True,
-                "started": True,
-                "message": "索引建立已开始",
+                "started": bool(result.get("started")),
+                "queued": bool(result.get("queued")),
+                "message": result.get("message") or "索引建立已开始",
             }
         )
     except Exception as e:
@@ -5416,6 +5368,14 @@ scan_progress = {
     "message": "",
     "result": None,
 }
+SCAN_PROGRESS_LOCK = threading.Lock()
+PENDING_SCAN_REQUEST = {
+    "pending": False,
+    "reason": "",
+    "start_date": None,
+    "end_date": None,
+    "requested_at": None,
+}
 
 
 def scan_progress_callback(current, total, message):
@@ -5424,6 +5384,77 @@ def scan_progress_callback(current, total, message):
     scan_progress["current"] = current
     scan_progress["total"] = total
     scan_progress["message"] = message
+
+
+def _get_effective_index_after_date():
+    configured = getattr(public_client, "index_after_date", "") or USER_CONFIG.get(
+        "index_after_date", ""
+    )
+    configured = str(configured or "").strip()
+    return configured or None
+
+
+def _start_photo_scan_thread(
+    media_folders, data_dir, start_date=None, end_date=None, reason=""
+):
+    global scan_progress
+    scan_progress = {
+        "running": True,
+        "current": 0,
+        "total": 0,
+        "message": f"正在启动扫描...（{reason}）" if reason else "正在启动扫描...",
+        "result": None,
+        "reason": reason,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+    thread = threading.Thread(
+        target=run_scan_in_background,
+        args=(media_folders, data_dir, start_date, end_date),
+        daemon=True,
+    )
+    thread.start()
+
+
+def request_photo_rescan(reason: str, start_date=None, end_date=None):
+    media_folders = getattr(public_client, "media_folders", [])
+    if not media_folders:
+        return {
+            "started": False,
+            "queued": False,
+            "message": "未配置媒体文件夹，跳过自动重扫",
+        }
+
+    if start_date is None and end_date is None:
+        start_date = _get_effective_index_after_date()
+
+    with SCAN_PROGRESS_LOCK:
+        if scan_progress.get("running"):
+            PENDING_SCAN_REQUEST.update(
+                {
+                    "pending": True,
+                    "reason": reason,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "requested_at": time.time(),
+                }
+            )
+            return {
+                "started": False,
+                "queued": True,
+                "message": "已有扫描任务，已加入排队自动重扫",
+            }
+
+        _start_photo_scan_thread(
+            media_folders,
+            public_client.data_dir,
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason,
+        )
+
+    return {"started": True, "queued": False, "message": "重扫已启动"}
 
 
 def run_scan_in_background(media_folders, data_dir, start_date=None, end_date=None):
@@ -5446,22 +5477,41 @@ def run_scan_in_background(media_folders, data_dir, start_date=None, end_date=No
         scan_progress["result"] = {"error": str(e)}
         scan_progress["message"] = f"扫描失败：{str(e)}"
     finally:
-        scan_progress["running"] = False
+        next_request = None
+        with SCAN_PROGRESS_LOCK:
+            scan_progress["running"] = False
+            if PENDING_SCAN_REQUEST.get("pending"):
+                next_request = {
+                    "reason": PENDING_SCAN_REQUEST.get("reason") or "排队自动重扫",
+                    "start_date": PENDING_SCAN_REQUEST.get("start_date"),
+                    "end_date": PENDING_SCAN_REQUEST.get("end_date"),
+                }
+                PENDING_SCAN_REQUEST.update(
+                    {
+                        "pending": False,
+                        "reason": "",
+                        "start_date": None,
+                        "end_date": None,
+                        "requested_at": None,
+                    }
+                )
+
+        if next_request:
+            current_media_folders = getattr(public_client, "media_folders", [])
+            if current_media_folders:
+                _start_photo_scan_thread(
+                    current_media_folders,
+                    public_client.data_dir,
+                    start_date=next_request["start_date"],
+                    end_date=next_request["end_date"],
+                    reason=next_request["reason"],
+                )
 
 
 @app.route("/api/photos/scan", methods=["POST"])
 @require_local_or_password
 def scan_photos():
     """手动触发照片扫描（后台执行）"""
-    global scan_progress
-
-    if scan_progress["running"]:
-        return jsonify({"success": False, "message": "扫描正在进行中，请稍候"})
-
-    media_folders = getattr(public_client, "media_folders", [])
-    if not media_folders:
-        return jsonify({"success": False, "message": "未配置媒体文件夹"})
-
     # 获取起始日期参数
     data = request.get_json() or {}
     start_date = data.get("start_date", "")
@@ -5470,25 +5520,10 @@ def scan_photos():
     if start_date:
         public_client.index_after_date = start_date
         public_client.save_config()
-
-    scan_progress = {
-        "running": True,
-        "current": 0,
-        "total": 0,
-        "message": "正在启动扫描...",
-        "result": None,
-    }
-
-    import threading
-
-    thread = threading.Thread(
-        target=run_scan_in_background,
-        args=(media_folders, public_client.data_dir, start_date or None, None),
-    )
-    thread.daemon = True
-    thread.start()
-
-    return jsonify({"success": True, "message": "扫描已开始"})
+    result = request_photo_rescan("手动重扫", start_date=start_date or None, end_date=None)
+    if not result.get("started") and not result.get("queued"):
+        return jsonify({"success": False, "message": result.get("message")}), 400
+    return jsonify({"success": True, "message": result.get("message")})
 
 
 @app.route("/api/photos/scan/progress", methods=["GET"])
@@ -12296,7 +12331,14 @@ def _get_media_folder_shrinker_manager():
         for folder in (getattr(public_client, "media_folders", []) or [])
         if Path(folder).exists()
     ]
-    return init_media_folder_shrinker(public_client.data_dir, media_folders)
+    manager = init_media_folder_shrinker(public_client.data_dir, media_folders)
+    try:
+        manager.set_batch_complete_callback(
+            lambda summary: request_photo_rescan("原地压缩完成后自动重扫")
+        )
+    except Exception:
+        pass
+    return manager
 
 
 def _decorate_blurry_scan_result(result):
@@ -13181,6 +13223,8 @@ def get_compressed_video(filename):
                         download_name=filename,
                     )
 
+                manager.add_to_queue(source_path, "video", prioritize=True)
+
         return jsonify({"success": False, "message": "压缩视频不存在"}), 404
 
     except Exception as e:
@@ -13289,6 +13333,8 @@ def get_compressed_image(filename):
                     )
 
                     return send_file(compressed_path, mimetype=mime_type)
+
+                manager.add_to_queue(source_path, "image", prioritize=True)
 
         return jsonify({"success": False, "message": "压缩图片不存在"}), 404
 

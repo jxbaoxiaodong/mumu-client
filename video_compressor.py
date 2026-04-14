@@ -86,8 +86,11 @@ class CompressionManager:
     def _save_state(self):
         """保存压缩状态"""
         try:
-            with open(self.state_file, "w", encoding="utf-8") as f:
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            temp_file = self.state_file.with_suffix(self.state_file.suffix + ".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(self.state, f, indent=2, ensure_ascii=False)
+            temp_file.replace(self.state_file)
         except Exception as e:
             print(f"[ERROR] 保存压缩状态失败: {e}")
 
@@ -105,8 +108,13 @@ class CompressionManager:
     def _save_settings(self):
         """保存压缩设置"""
         try:
-            with open(self.settings_file, "w", encoding="utf-8") as f:
+            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+            temp_file = self.settings_file.with_suffix(
+                self.settings_file.suffix + ".tmp"
+            )
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
+            temp_file.replace(self.settings_file)
         except Exception as e:
             print(f"[ERROR] 保存压缩设置失败: {e}")
 
@@ -119,6 +127,7 @@ class CompressionManager:
         self.source_folders = [
             Path(folder) for folder in (source_folders or []) if Path(folder).exists()
         ]
+        self.reconcile_state()
 
     def save_settings(self, settings: Dict):
         """保存压缩设置"""
@@ -215,6 +224,122 @@ class CompressionManager:
         if filename in self.state["image_compressed"]:
             return True, "image"
         return False, ""
+
+    def _iter_source_media_files(self):
+        """遍历当前媒体目录下的有效媒体文件，跳过压缩与索引目录。"""
+        for folder in self.source_folders:
+            if not folder.exists():
+                continue
+
+            for root, dirs, files in os.walk(folder):
+                dirs[:] = [
+                    d
+                    for d in dirs
+                    if d not in ["compressed", "photo_index", "original", "thumbnails"]
+                ]
+
+                for filename in files:
+                    file_path = Path(root) / filename
+                    ext = file_path.suffix.lower()
+                    if ext in self.VIDEO_EXTENSIONS or ext in self.IMAGE_EXTENSIONS:
+                        yield file_path
+
+    def reconcile_state(self) -> Dict:
+        """
+        按当前媒体目录与真实压缩文件回写状态，避免目录变更后统计失真。
+
+        Returns:
+            简要统计信息
+        """
+        actual_videos = []
+        actual_images = []
+        total_videos = 0
+        total_images = 0
+
+        for file_path in self._iter_source_media_files():
+            ext = file_path.suffix.lower()
+            if ext in self.VIDEO_EXTENSIONS:
+                total_videos += 1
+                if self.get_compressed_file_path(file_path, file_path.name):
+                    actual_videos.append(file_path.name)
+            elif ext in self.IMAGE_EXTENSIONS:
+                total_images += 1
+                if self.get_compressed_file_path(file_path, file_path.name):
+                    actual_images.append(file_path.name)
+
+        actual_video_set = set(actual_videos)
+        actual_image_set = set(actual_images)
+
+        with self._queue_lock:
+            changed = False
+
+            if self.state.get("video_compressed") != actual_videos:
+                self.state["video_compressed"] = actual_videos
+                changed = True
+
+            if self.state.get("image_compressed") != actual_images:
+                self.state["image_compressed"] = actual_images
+                changed = True
+
+            if self.state.get("total_videos") != total_videos:
+                self.state["total_videos"] = total_videos
+                changed = True
+
+            if self.state.get("total_images") != total_images:
+                self.state["total_images"] = total_images
+                changed = True
+
+            filtered_queue = []
+            for item in self.state.get("queue", []):
+                file_path = Path(item.get("path", ""))
+                filename = item.get("filename", "")
+                file_type = item.get("type")
+
+                if not file_path.exists():
+                    changed = True
+                    continue
+
+                if file_type == "video" and filename in actual_video_set:
+                    changed = True
+                    continue
+
+                if file_type == "image" and filename in actual_image_set:
+                    changed = True
+                    continue
+
+                filtered_queue.append(item)
+
+            if filtered_queue != self.state.get("queue", []):
+                self.state["queue"] = filtered_queue
+                changed = True
+
+            current = self.state.get("current")
+            if current:
+                current_path = Path(current.get("path", ""))
+                current_name = current.get("filename", "")
+                current_type = current.get("type")
+                current_invalid = (
+                    not current_path.exists()
+                    or (
+                        current_type == "video" and current_name in actual_video_set
+                    )
+                    or (
+                        current_type == "image" and current_name in actual_image_set
+                    )
+                )
+                if current_invalid:
+                    self.state["current"] = None
+                    changed = True
+
+            if changed:
+                self._save_state()
+
+        return {
+            "videos_compressed": len(actual_videos),
+            "images_compressed": len(actual_images),
+            "total_videos": total_videos,
+            "total_images": total_images,
+        }
 
     def get_compressed_file_path(
         self, source_path: Path, filename: str
@@ -347,6 +472,16 @@ class CompressionManager:
             print(f"🖼️ 正在压缩图片: {input_path.name}...")
 
             with Image.open(input_path) as img:
+                exif_bytes = None
+                try:
+                    exif = img.getexif()
+                    if exif:
+                        # 像素已在 exif_transpose 后归一化，避免保留旧方向导致重复旋转。
+                        exif[274] = 1
+                        exif_bytes = exif.tobytes()
+                except Exception:
+                    exif_bytes = img.info.get("exif")
+
                 # 根据EXIF方向自动旋转（解决手机照片方向问题）
                 try:
                     img = ImageOps.exif_transpose(img)
@@ -365,6 +500,9 @@ class CompressionManager:
                     )
 
                 output_path.parent.mkdir(parents=True, exist_ok=True)
+                save_kwargs = {}
+                if exif_bytes:
+                    save_kwargs["exif"] = exif_bytes
 
                 if output_path.suffix.lower() in [".jpg", ".jpeg"]:
                     img.save(
@@ -372,13 +510,23 @@ class CompressionManager:
                         "JPEG",
                         quality=image_config["quality"],
                         optimize=True,
+                        **save_kwargs,
                     )
                 elif output_path.suffix.lower() == ".png":
-                    img.save(output_path, "PNG", optimize=True)
+                    img.save(output_path, "PNG", optimize=True, **save_kwargs)
                 elif output_path.suffix.lower() == ".webp":
-                    img.save(output_path, "WEBP", quality=image_config["quality"])
+                    img.save(
+                        output_path,
+                        "WEBP",
+                        quality=image_config["quality"],
+                        **save_kwargs,
+                    )
                 else:
-                    img.save(output_path, quality=image_config["quality"])
+                    img.save(
+                        output_path,
+                        quality=image_config["quality"],
+                        **save_kwargs,
+                    )
 
             original_size = input_path.stat().st_size
             compressed_size = output_path.stat().st_size
@@ -394,13 +542,14 @@ class CompressionManager:
             print(f"⚠️ 图片压缩出错: {e}")
             return False
 
-    def add_to_queue(self, file_path: Path, file_type: str):
+    def add_to_queue(self, file_path: Path, file_type: str, prioritize: bool = False):
         """
         添加文件到压缩队列
 
         Args:
             file_path: 文件路径
             file_type: 'video' 或 'image'
+            prioritize: 是否插到队列前部
         """
         # 检查设置，如果是原图则不压缩
         if file_type == "video" and self.settings.get("video_quality") == "原图":
@@ -410,18 +559,43 @@ class CompressionManager:
             print(f"⏭️ 图片设置为原图，跳过压缩: {file_path.name}")
             return
 
+        if self.get_compressed_file_path(file_path, file_path.name):
+            return
+
         with self._queue_lock:
             filename = file_path.name
             item = {"path": str(file_path), "type": file_type, "filename": filename}
 
+            existing_index = next(
+                (
+                    idx
+                    for idx, queued in enumerate(self.state["queue"])
+                    if queued.get("path") == item["path"]
+                    and queued.get("type") == item["type"]
+                    and queued.get("filename") == item["filename"]
+                ),
+                None,
+            )
+
+            if existing_index is not None:
+                if prioritize and existing_index > 0:
+                    queued_item = self.state["queue"].pop(existing_index)
+                    self.state["queue"].insert(0, queued_item)
+                    self._save_state()
+                    print(f"⏫ 已提升压缩优先级: {filename}")
+                return
+
             if (
-                item not in self.state["queue"]
-                and filename not in self.state["video_compressed"]
+                filename not in self.state["video_compressed"]
                 and filename not in self.state["image_compressed"]
             ):
-                self.state["queue"].append(item)
+                if prioritize:
+                    self.state["queue"].insert(0, item)
+                    print(f"⏫ 已优先加入压缩队列: {filename}")
+                else:
+                    self.state["queue"].append(item)
+                    print(f"📥 已添加到压缩队列: {filename}")
                 self._save_state()
-                print(f"📥 已添加到压缩队列: {filename}")
 
     def start_worker(self):
         """启动后台压缩工作线程"""
@@ -502,6 +676,8 @@ class CompressionManager:
         if not self.is_ffmpeg_available():
             return {"success": False, "message": "FFmpeg 不可用"}
 
+        self.reconcile_state()
+
         videos_added = 0
         images_added = 0
 
@@ -576,6 +752,8 @@ class CompressionManager:
         Returns:
             状态信息
         """
+        self.reconcile_state()
+
         queue_length = len(self.state["queue"])
         current = self.state.get("current")
 

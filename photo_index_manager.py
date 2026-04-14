@@ -290,35 +290,41 @@ class PhotoIndexManager:
                 progress_callback(i + 1, total, f"扫描中: {file_path.name}")
 
             file_hash = self._calculate_hash(file_path)
+            file_date = self._get_file_date(file_path)
+            is_video = file_path.suffix.lower() in self.video_extensions
+            target_key = "videos" if is_video else "photos"
+            other_key = "photos" if is_video else "videos"
+            path_str = str(file_path)
 
-            if file_hash in self.index["photos"] or file_hash in self.index["videos"]:
-                # 已存在，更新路径（文件可能移动了）
-                entry = self.index["photos"].get(file_hash) or self.index["videos"].get(
-                    file_hash
-                )
-                if entry["path"] != str(file_path):
-                    entry["path"] = str(file_path)
+            entry = {
+                "hash": file_hash,
+                "path": path_str,
+                "filename": file_path.name,
+                "date": file_date,
+                "size": file_path.stat().st_size,
+                "modified": file_path.stat().st_mtime,
+                "is_video": is_video,
+            }
+
+            # 同一路径文件若内容被改写，旧哈希条目必须先移除，否则会残留旧日期/旧体积。
+            for key in ["photos", "videos"]:
+                stale_hashes = [
+                    h
+                    for h, existing_entry in self.index[key].items()
+                    if existing_entry.get("path") == path_str and h != file_hash
+                ]
+                for stale_hash in stale_hashes:
+                    del self.index[key][stale_hash]
+
+            if file_hash in self.index[target_key]:
+                self.index[target_key][file_hash].update(entry)
+                existing_count += 1
+            elif file_hash in self.index[other_key]:
+                del self.index[other_key][file_hash]
+                self.index[target_key][file_hash] = entry
                 existing_count += 1
             else:
-                # 新文件，添加到索引
-                file_date = self._get_file_date(file_path)
-                is_video = file_path.suffix.lower() in self.video_extensions
-
-                entry = {
-                    "hash": file_hash,
-                    "path": str(file_path),
-                    "filename": file_path.name,
-                    "date": file_date,
-                    "size": file_path.stat().st_size,
-                    "modified": file_path.stat().st_mtime,
-                    "is_video": is_video,
-                }
-
-                if is_video:
-                    self.index["videos"][file_hash] = entry
-                else:
-                    self.index["photos"][file_hash] = entry
-
+                self.index[target_key][file_hash] = entry
                 new_count += 1
 
         # 清理不存在的文件索引
