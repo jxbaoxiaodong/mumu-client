@@ -4362,6 +4362,7 @@ document.addEventListener('click', function(e) {
 
 // 播放视频（带自动降级）
 function playVideo(filename, useCompressed = false) {
+    const safeFilename = encodeURIComponent(filename || '');
     const overlay = document.createElement('div');
     overlay.style.cssText = `
         position: fixed;
@@ -4375,7 +4376,9 @@ function playVideo(filename, useCompressed = false) {
         padding: 20px 20px 60px 20px;
     `;
     
-    const videoUrl = useCompressed ? `/video/compressed/${filename}` : `/video/${filename}`;
+    const videoUrl = useCompressed
+        ? `/video/compressed/${safeFilename}?fallback=1`
+        : `/video/${safeFilename}`;
     
     overlay.innerHTML = `
         <div class="text-center" style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;">
@@ -4396,6 +4399,45 @@ function playVideo(filename, useCompressed = false) {
     
     const video = overlay.querySelector('#fullscreenVideo');
     const loadingText = overlay.querySelector('#videoLoading');
+    let switchedToCompressed = Boolean(useCompressed);
+
+    function keepOriginalVideo(message, notice) {
+        loadingText.textContent = message || '压缩版暂时不可用，继续尝试打开原视频...';
+        if (notice) {
+            showNotification(notice, 'info');
+        }
+    }
+
+    async function trySwitchToCompressed(reasonText) {
+        try {
+            loadingText.textContent = reasonText || '正在检查压缩版是否可用...';
+            const response = await fetch(`/video/compressed/${safeFilename}`, {
+                method: 'HEAD',
+                cache: 'no-store'
+            });
+
+            if (response.ok) {
+                switchedToCompressed = true;
+                loadingText.textContent = '压缩版已就绪，正在切换...';
+                video.querySelector('source').src = `/video/compressed/${safeFilename}`;
+                video.load();
+                return true;
+            }
+
+            keepOriginalVideo(
+                '压缩版还没准备好，继续尝试打开原视频...',
+                '压缩版还在后台生成，暂时不切换省流模式。'
+            );
+            return false;
+        } catch (error) {
+            console.warn('检查压缩版可用性失败:', error);
+            keepOriginalVideo(
+                '压缩版状态检查失败，继续尝试打开原视频...',
+                '压缩版状态暂时没查到，先继续打开原视频。'
+            );
+            return false;
+        }
+    }
     
     // 监听视频元数据加载，调整播放器大小
     video.addEventListener('loadedmetadata', function() {
@@ -4417,30 +4459,27 @@ function playVideo(filename, useCompressed = false) {
     // 监听视频错误和超时，自动降级
     let hasError = false;
     
-    video.addEventListener('error', function(e) {
-        if (hasError) return;
-        hasError = true;
-        
-        console.log('视频加载失败，尝试切换到压缩版...');
-        loadingText.textContent = '原视频加载失败，正在切换到压缩版...';
-        
-        const compressedUrl = `/video/compressed/${filename}`;
-        video.querySelector('source').src = compressedUrl;
-        video.load();
+    video.addEventListener('error', async function(e) {
+        if (!switchedToCompressed) {
+            if (hasError) return;
+            hasError = true;
+            console.log('视频加载失败，尝试检查压缩版...');
+            await trySwitchToCompressed('原视频加载失败，正在检查压缩版...');
+            return;
+        }
+
+        loadingText.textContent = '视频暂时打开失败，请稍后再试。';
+        showNotification('这个视频的压缩版还没准备好，系统已经把它提到优先压缩队列。', 'warning');
     });
     
     // 超时降级（5秒）
-    const timeoutId = setTimeout(() => {
+    const timeoutId = setTimeout(async () => {
         if (video.readyState < 2 && !hasError) {
             console.log('视频加载超时，尝试切换到压缩版...');
             hasError = true;
-            loadingText.textContent = '加载较慢，正在切换到压缩版...';
-            
-            const compressedUrl = `/video/compressed/${filename}`;
-            video.querySelector('source').src = compressedUrl;
-            video.load();
+            await trySwitchToCompressed('加载较慢，正在检查压缩版...');
         }
-    }, 5000);
+    }, 8000);
     
     video.addEventListener('canplay', function() {
         clearTimeout(timeoutId);
@@ -5353,10 +5392,6 @@ body.modal-open .mini-growth-card {
         font-size: 0.74rem;
         padding: 0;
         box-shadow: none;
-    }
-
-    .gallery-action-danger {
-        display: none;
     }
 
     .generation-mode-switch {

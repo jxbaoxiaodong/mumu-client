@@ -13576,8 +13576,31 @@ def get_compressed_video(filename):
                     )
 
                 manager.add_to_queue(source_path, "video", prioritize=True)
+                allow_fallback = str(request.args.get("fallback") or "").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                }
+                if allow_fallback:
+                    response = send_file(
+                        source_path,
+                        mimetype="video/mp4",
+                        conditional=True,
+                        download_name=filename,
+                    )
+                    response.headers["X-Mumu-Compression-Status"] = "queued"
+                    response.headers["X-Mumu-Video-Served"] = "original-fallback"
+                    return response
 
-        return jsonify({"success": False, "message": "压缩视频不存在"}), 404
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "message": "压缩版还没准备好，已加入优先压缩队列，请稍后再试。",
+                }
+            ),
+            202,
+        )
 
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
