@@ -2128,7 +2128,7 @@
                             onclick="selectCardGenerationMode('comic')"
                         >
                             生成漫画
-                            <small>把当天照片翻成更适合分享的一张漫画封面。</small>
+                            <small>基于当天照片那一幕，做风格动漫化的分享封面。</small>
                         </button>
                         <button
                             type="button"
@@ -2137,11 +2137,11 @@
                             onclick="selectCardGenerationMode('virtual_role')"
                         >
                             虚拟人物
-                            <small>把当天照片映射成更有角色感的一张人物海报。</small>
+                            <small>保留人物原型，但按卡片设计重构成虚拟角色海报。</small>
                         </button>
                     </div>
                     <div class="generation-mode-note" id="generationModeNote">
-                        漫画适合做单幅分享卡；虚拟人物更适合把宝宝今天的气质翻成一个有故事感的小角色。
+                        漫画卡更接近“原作品动漫化”；虚拟人物卡则只保留人物原型，场景和陪伴角色可以按海报设计重构。
                     </div>
                 </div>
                 <div class="mb-3">
@@ -2318,20 +2318,20 @@ function selectCardGenerationMode(mode) {
     if (currentCardGenerationMode === 'virtual_role') {
         if (titleEl) titleEl.textContent = '生成虚拟人物卡';
         if (noteEl) {
-            noteEl.textContent = '系统会根据这张照片的场景、动作和家长要求，自动挑一个更贴近宝宝气质的角色方向，再生成一张角色海报。';
+            noteEl.textContent = '系统会保留主角原型，再根据气质和卡片设计去重构服装、场景、镜头；如画面需要，也可以加入家人或宠物等陪伴角色。';
         }
         if (styleSection) styleSection.style.display = 'none';
         if (promptLabel) promptLabel.textContent = '家长想强化的角色方向';
         if (promptEl) {
-            promptEl.placeholder = '比如：想更像小探险家、保留今天衣服颜色、背景有地图感、看起来更勇敢但不要夸张 cosplay。';
+            promptEl.placeholder = '比如：想更像小探险家、主角还是宝宝本人、背景换成山路和地图、旁边可以有小狗作陪，不要做成真实照片感。';
         }
         if (hintEl) {
-            hintEl.textContent = '先选一张当天照片，再写明家长想强调的气质、服装或氛围，生成后会直接存入虚拟人物卡片。';
+            hintEl.textContent = '先选一张当天照片作为人物原型，再写明想强调的气质、世界观或陪伴角色，系统会按角色海报方向生成虚拟人物卡片。';
         }
     } else {
         if (titleEl) titleEl.textContent = '生成漫画卡片';
         if (noteEl) {
-            noteEl.textContent = '漫画适合把当天这张照片翻成更适合分享的一张单幅封面，风格会比原图更完整、更有画面感。';
+            noteEl.textContent = '漫画卡会尽量围绕当天这张照片的原场景、原动作和原作品信息做动漫化处理，让同一幕更完整、更有画面感。';
         }
         if (styleSection) styleSection.style.display = '';
         if (promptLabel) promptLabel.textContent = '家长自定义要求';
@@ -2339,7 +2339,7 @@ function selectCardGenerationMode(mode) {
             promptEl.placeholder = '比如：旧胶片海报感、强调宝宝眼神里的专注、把背景做得更有晨光氛围，不写字进画面。';
         }
         if (hintEl) {
-            hintEl.textContent = '先选 ' + getCurrentGalleryDate() + ' 这一天的一张照片，再决定风格和额外要求，生成后直接存入漫画卡片。';
+            hintEl.textContent = '先选 ' + getCurrentGalleryDate() + ' 这一天的一张照片，再决定动漫化风格和额外要求，系统会基于这张原作品生成漫画卡片。';
         }
     }
 
@@ -4320,10 +4320,10 @@ function showNotification(message, type, duration = 3500) {
 document.addEventListener('DOMContentLoaded', function() {
     var isCompanionApp = /mumucompanion/i.test(navigator.userAgent || '');
     var isAndroidWeb = /android/i.test(navigator.userAgent || '');
-    var apkUrl = {{ android_companion_apk_url|tojson }};
+    var companionPageUrl = {{ android_companion_page_url|tojson }};
     var promptKey = 'mumu_android_companion_prompt_v2';
 
-    if (isCompanionApp || !isAndroidWeb || !apkUrl) {
+    if (isCompanionApp || !isAndroidWeb || !companionPageUrl) {
         return;
     }
 
@@ -4338,7 +4338,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.setTimeout(function() {
         showNotification(
-            '下载 <a href="' + apkUrl + '" class="fw-semibold text-decoration-underline">专用app</a> 浏览更顺畅，还可以压缩手机照片，释放空间。',
+            '打开 <a href="' + companionPageUrl + '" class="fw-semibold text-decoration-underline">专用app说明页</a>，先看安装顺序，再装安卓伴侣。',
             'info',
             5000
         );

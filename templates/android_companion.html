@@ -22,6 +22,30 @@
     padding: 16px 18px;
     margin-bottom: 12px;
 }
+.android-helper-strong {
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(255, 244, 231, 0.98), rgba(255, 251, 246, 0.96));
+    border: 1px solid rgba(246, 196, 120, 0.45);
+    padding: 16px 18px;
+    color: #6b4f2e;
+}
+.android-helper-url-card {
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 14px;
+    background: #fbfbfd;
+    padding: 14px 16px;
+}
+.android-helper-url-card code {
+    word-break: break-all;
+    font-size: 0.84rem;
+}
+.android-helper-auto-note {
+    border-radius: 12px;
+    background: rgba(13, 110, 253, 0.06);
+    color: #355b99;
+    padding: 12px 14px;
+    font-size: 0.92rem;
+}
 </style>
 {% endblock %}
 
@@ -30,43 +54,121 @@
     <div class="android-helper-card">
         <div class="mb-3">
             <div class="small text-uppercase text-muted mb-2">安卓伴侣</div>
-            <h1 class="h3 mb-2">打开 APK 就是本站网页，再补一层原生上传</h1>
+            <h1 class="h3 mb-2">安卓伴侣安装说明</h1>
             <p class="text-muted mb-0">
-                对部分手机，尤其是 vivo、OPPO 等 ROM，网页即使在 Chrome 里也可能被系统选图器限制。装到主屏幕通常也解决不了这个问题。
-                真正更稳的是安卓伴侣 APK：安装后先直接进入本站网页，右下角再补一个原生批量导入上传入口。
+                先把电脑端配好，再来手机安装。
             </p>
+        </div>
+
+        <div class="android-helper-strong mb-4">
+            <strong>记住这一句：</strong>
+            先装电脑，再装 App。装完后回到这页，点“一键写入当前站点”。
         </div>
 
         {% if apk_available %}
         <div class="alert alert-success">
             当前已提供安卓伴侣 APK：<strong>{{ apk_name }}</strong>
         </div>
+        {% if connect_url %}
+        <div class="android-helper-auto-note mb-3">
+            回到这页后会自动尝试写入地址。没自动打开，再点下面的按钮。
+        </div>
+        {% endif %}
         <div class="d-flex flex-wrap gap-2 mb-4">
             <a class="btn btn-dark" href="{{ apk_url }}">
                 <i class="fas fa-download me-2"></i>下载安卓伴侣 APK
             </a>
+            {% if connect_url %}
+            <a class="btn btn-outline-primary" href="{{ connect_url }}">
+                <i class="fas fa-link me-2"></i>一键写入当前站点
+            </a>
+            {% endif %}
         </div>
         {% else %}
         <div class="alert alert-warning">
-            当前还没有现成的安卓伴侣 APK 包可下载。这里不再继续推荐“装到桌面”，避免误导。
+            当前还没有可下载的安卓伴侣 APK。
+        </div>
+        {% endif %}
+
+        {% if local_url or public_url %}
+        <div class="mb-4">
+            <h2 class="h5 mb-3">当前地址</h2>
+            <div class="row g-3">
+                {% if local_url %}
+                <div class="col-12 col-md-6">
+                    <div class="android-helper-url-card h-100">
+                        <div class="small text-uppercase text-muted mb-2">局域网</div>
+                        <code>{{ local_url }}</code>
+                        <div class="small text-muted mt-2">同一 WiFi 下优先用这个。</div>
+                    </div>
+                </div>
+                {% endif %}
+                {% if public_url %}
+                <div class="col-12 col-md-6">
+                    <div class="android-helper-url-card h-100">
+                        <div class="small text-uppercase text-muted mb-2">公网</div>
+                        <code>{{ public_url }}</code>
+                        <div class="small text-muted mt-2">不在同一 WiFi 时用这个。</div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="small text-muted mt-3">
+                APK 都是同一个安装包。地址是在安装后，由这页写进 App。
+            </div>
         </div>
         {% endif %}
 
         <div class="mb-3">
             <h2 class="h5 mb-3">安装步骤</h2>
             <div class="android-helper-step">
-                1. 在手机上打开这个页面，如果已经有 APK，就点“下载安卓伴侣 APK”。
+                1. 先在电脑主程序里把照片目录和网页访问配好，再用手机打开这页。
             </div>
             <div class="android-helper-step">
-                2. 下载完成后，打开 APK。第一次安装时，系统可能会要求你授权“允许此来源安装应用”。
+                2. 点“下载安卓伴侣 APK”，按手机提示完成安装。
             </div>
+            {% if connect_url %}
             <div class="android-helper-step">
-                3. 安装完成后，打开 APK 就是本站网页。如果你走公网入口，仍然按现有逻辑首次输入一次家庭码即可。
+                3. 安装后回到这页，点“一键写入当前站点”，App 会保存现在的地址。
+            </div>
+            {% endif %}
+            <div class="android-helper-step">
+                4. 打开 App 后，会先试局域网，不通再试公网。走公网时，第一次要输家庭码。
             </div>
             <div class="android-helper-step mb-0">
-                4. 网页里照常浏览，右下角“导入上传”会调用原生多选和系统文件能力；如果网页自己的上传框表现正常，也还能继续用。
+                5. 进 App 后照常看网页。右下角“导入上传”更适合批量选图。
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{% if connect_url %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var isAndroidWeb = /android/i.test(navigator.userAgent || '');
+    var isCompanionApp = /mumucompanion/i.test(navigator.userAgent || '');
+    var connectUrl = {{ connect_url|tojson }};
+    var autoKey = 'mumu_companion_auto_connect_once';
+
+    if (!isAndroidWeb || isCompanionApp || !connectUrl) {
+        return;
+    }
+
+    try {
+        if (window.sessionStorage.getItem(autoKey) === connectUrl) {
+            return;
+        }
+        window.sessionStorage.setItem(autoKey, connectUrl);
+    } catch (error) {
+        console.warn('保存安卓伴侣自动连接状态失败:', error);
+    }
+
+    window.setTimeout(function() {
+        window.location.href = connectUrl;
+    }, 900);
+});
+</script>
+{% endif %}
 {% endblock %}

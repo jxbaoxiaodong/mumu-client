@@ -19,6 +19,7 @@ DOWNLOAD_DIR="$MUMU_DIR/landing_page/download"
 LANDING_INDEX_FILE="$MUMU_DIR/landing_page/index.html"
 LANDING_DOWNLOAD_BASE_URL="${LANDING_DOWNLOAD_BASE_URL:-https://mumu.ftir.fun/download}"
 REQUIRED_ASSETS=("mumu-windows.exe" "mumu-linux" "mumu-macos")
+GITEE_KEEP_INSTALLER_RELEASES="${GITEE_KEEP_INSTALLER_RELEASES:-3}"
 
 public_asset_name() {
     local name="$1"
@@ -193,6 +194,95 @@ cleanup_download_dir() {
         "$DOWNLOAD_DIR"/mumu-macos-v*
 }
 
+cleanup_old_gitee_release_attachments() {
+    local owner="$1"
+    local repo="$2"
+    local current_tag="$3"
+    local keep_count="$4"
+
+    python3 - "$owner" "$repo" "$current_tag" "$GITEE_TOKEN" "$keep_count" <<'PY'
+from datetime import datetime
+import json
+import sys
+import urllib.request
+
+owner, repo, current_tag, token, keep_count_raw = sys.argv[1:]
+keep_count = max(int(keep_count_raw), 1)
+installer_names = {"mumu-windows.exe", "mumu-linux", "mumu-macos"}
+base_url = f"https://gitee.com/api/v5/repos/{owner}/{repo}"
+
+def fetch_json(url: str, method: str = "GET"):
+    request = urllib.request.Request(url, method=method)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        body = response.read().decode("utf-8", "ignore")
+    return json.loads(body) if body else None
+
+def parse_created_at(value: str):
+    if not value:
+        return datetime.min
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min
+
+releases = []
+page = 1
+while True:
+    url = f"{base_url}/releases?access_token={token}&per_page=100&page={page}"
+    page_data = fetch_json(url) or []
+    if not page_data:
+        break
+    releases.extend(page_data)
+    if len(page_data) < 100:
+        break
+    page += 1
+
+releases_with_installers = [
+    release
+    for release in releases
+    if any((asset.get("name") in installer_names) for asset in (release.get("assets") or []))
+]
+releases_with_installers.sort(
+    key=lambda release: parse_created_at(release.get("created_at") or ""),
+    reverse=True,
+)
+
+keep_other_count = max(keep_count - 1, 0)
+keep_tags = {current_tag}
+for release in releases_with_installers:
+    tag = release.get("tag_name") or ""
+    if tag == current_tag or tag in keep_tags:
+        continue
+    if keep_other_count <= 0:
+        break
+    keep_tags.add(tag)
+    keep_other_count -= 1
+
+print(f"🧹 Gitee 安装包附件保留最近 {keep_count} 个版本（含当前 {current_tag}）")
+delete_plan = []
+for release in releases_with_installers:
+    tag = release.get("tag_name") or ""
+    if tag in keep_tags:
+        print(f"   保留 {tag}")
+        continue
+    release_id = release.get("id")
+    attach_files_url = f"{base_url}/releases/{release_id}/attach_files?access_token={token}"
+    attach_files = fetch_json(attach_files_url) or []
+    for asset in attach_files:
+        if asset.get("name") in installer_names:
+            delete_plan.append((tag, release_id, asset["id"], asset["name"]))
+
+if not delete_plan:
+    print("   无需清理旧版安装包附件")
+    raise SystemExit(0)
+
+for tag, release_id, asset_id, name in delete_plan:
+    delete_url = f"{base_url}/releases/{release_id}/attach_files/{asset_id}?access_token={token}"
+    fetch_json(delete_url, method="DELETE")
+    print(f"   已删除 {tag} -> {name}")
+PY
+}
+
 # 检查必需的 Token
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "❌ 错误: 未设置 GITHUB_TOKEN 环境变量"
@@ -306,7 +396,6 @@ if [ -n "$GITEE_TOKEN" ]; then
     
     OWNER="baoxiaodong1"
     REPO="mumu-client"
-    REPO="mumu-client"
     
     # 检查是否已存在 Release
     EXISTING_RELEASE=$(curl -s "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/tags/${TAG}?access_token=${GITEE_TOKEN}" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
@@ -339,10 +428,15 @@ if [ -n "$GITEE_TOKEN" ]; then
         fi
     fi
     
-    # 上传附件
     if [ -n "$RELEASE_ID" ]; then
         echo ""
-        echo "=== 6. 上传文件到 Gitee Release ==="
+        echo "=== 6. 清理旧版 Gitee 安装包附件 ==="
+        if ! cleanup_old_gitee_release_attachments "$OWNER" "$REPO" "$TAG" "$GITEE_KEEP_INSTALLER_RELEASES"; then
+            echo "⚠️ 旧版 Gitee 安装包附件清理失败，后续上传仍会继续"
+        fi
+        
+        echo ""
+        echo "=== 7. 上传文件到 Gitee Release ==="
         
         upload_to_gitee() {
             local file=$1
@@ -362,13 +456,12 @@ if [ -n "$GITEE_TOKEN" ]; then
             fi
             
             # 检查是否已存在同名附件，如存在则先删除
-            EXISTING_ASSET=$(curl -s "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/assets" \
-                -H "access_token: ${GITEE_TOKEN}" | python3 -c "import json,sys; d=json.load(sys.stdin); print([a['id'] for a in d if a['name']=='${file}'])" 2>/dev/null || echo "")
+            EXISTING_ASSET=$(curl -s "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/attach_files?access_token=${GITEE_TOKEN}" | python3 -c "import json,sys; d=json.load(sys.stdin); print([a['id'] for a in d if a['name']=='${file}'])" 2>/dev/null || echo "")
             if [ -n "$EXISTING_ASSET" ] && [ "$EXISTING_ASSET" != "[]" ]; then
                 echo "🗑️ 删除旧的 $file..."
-                ASSET_ID=$(echo $EXISTING_ASSET | tr -d '[]')
-                curl -s -X DELETE "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/assets/${ASSET_ID}" \
-                    -H "access_token: ${GITEE_TOKEN}" || true
+                for ASSET_ID in $(echo "$EXISTING_ASSET" | tr -d '[],' ); do
+                    curl -s -X DELETE "https://gitee.com/api/v5/repos/${OWNER}/${REPO}/releases/${RELEASE_ID}/attach_files/${ASSET_ID}?access_token=${GITEE_TOKEN}" >/dev/null || true
+                done
             fi
             
             echo "📤 上传 $file ($(($FILE_SIZE/1024/1024))MB)..."

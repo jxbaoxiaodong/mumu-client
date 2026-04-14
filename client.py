@@ -529,6 +529,11 @@ def _get_virtual_role_visual_hint(role_name: str) -> str:
 
 
 def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
+    # 设计约束：
+    # 1. 漫画卡强调“基于原作品做风格动漫化”，应尽量保留原场景、原动作和作品内信息。
+    # 2. 虚拟人物卡强调“保留人物原型，但服务于卡片设计”，不要求复刻原照片构图或真实场景。
+    #    只要主角原型稳定可识别，服装、场景、镜头、陪伴角色都可以按海报设计重构；
+    #    如卡面需要，家人、宠物等也可以作为辅助原型加入，不必被限制在原照片取景内。
     baby_name = getattr(public_client, "baby_name", "宝宝")
     assets = (card or {}).get("assets") or {}
     role_name = assets.get("role_name") or card.get("role_name") or "虚拟角色"
@@ -557,10 +562,12 @@ def _build_virtual_role_image_prompt(card: dict, source_record: dict) -> str:
         logger.warning(f"[VirtualRole] 读取角色画风失败: {e}")
 
     prompt = (
-        f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅角色肖像海报。"
-        f"主角固定为{baby_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色和真实场景线索，不能换脸，不能变成陌生孩子。"
-        f"把她自然映射成“{role_archetype}”这一类人物气质，让人一眼看出还是{baby_name}本人，同时又能联想到这个角色。"
-        f"允许加入少量与角色气质相符的服饰、道具或环境元素，但不要做夸张 cosplay。"
+        f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅虚拟人物海报。"
+        f"主角固定为{baby_name}，必须保留宝宝本人可识别的五官特征、发型、体态和年龄感，让人一眼看出还是{baby_name}本人，不能换成陌生孩子。"
+        f"这张卡不是在复刻原照片，而是把{baby_name}自然映射成“{role_archetype}”这一类人物气质。"
+        f"不必保留原照片的真实场景、原动作、原构图和原服装细节，可以为了角色海报设计自由重构世界观、镜头、背景、道具和服装。"
+        f"如果卡面表达需要，也可以加入宠物、家人或伙伴型配角作为辅助原型或陪伴角色，但主视觉仍要以{baby_name}为中心。"
+        f"整体应是虚拟人物设定海报，而不是把原照片轻度卡通化。"
     )
     if role_display_name and role_display_name != role_archetype:
         prompt += f" 当前这张角色卡的展示名是：{role_display_name}。"
@@ -619,7 +626,7 @@ def ensure_virtual_role_card_images(cards: list) -> bool:
             remote_url = _generate_image_with_reference(
                 prompt,
                 source_record["path"],
-                operation="photo_to_comic",
+                operation="photo_to_virtual_role",
                 model_name=DEFAULT_STORY_IMAGE_MODEL,
                 size=DEFAULT_STORY_IMAGE_SIZE,
             )
@@ -3187,11 +3194,17 @@ def inject_android_companion_info():
     apk_path = get_android_companion_apk_path()
     user_agent = (request.headers.get("User-Agent") or "").lower()
     is_companion_app = "mumucompanion" in user_agent
+    local_url = get_current_local_base_url()
+    public_url = str(getattr(public_client, "public_url", "") or "").strip()
     return {
         "android_companion_apk_available": bool(apk_path),
         "android_companion_apk_name": apk_path.name if apk_path else "",
         "android_companion_apk_url": get_android_companion_apk_url(apk_path),
         "android_companion_page_url": "/android-companion",
+        "android_companion_connect_url": build_android_companion_connect_url(
+            local_url,
+            public_url,
+        ),
         "is_companion_app": is_companion_app,
     }
 
@@ -4341,6 +4354,30 @@ def get_android_companion_apk_url(apk_path: Path | None) -> str:
     return "/android-companion/apk"
 
 
+def get_current_local_base_url() -> str:
+    try:
+        if not public_client:
+            return ""
+        local_ip = (public_client.get_local_ip() or "").strip()
+        client_port = int(getattr(public_client, "client_port", 0) or 0)
+        if not local_ip or client_port <= 0:
+            return ""
+        return f"http://{local_ip}:{client_port}"
+    except Exception:
+        return ""
+
+
+def build_android_companion_connect_url(local_url: str = "", public_url: str = "") -> str:
+    params = {}
+    if str(local_url or "").strip():
+        params["local_base_url"] = str(local_url).strip()
+    if str(public_url or "").strip():
+        params["public_base_url"] = str(public_url).strip()
+    if not params:
+        return ""
+    return f"mumucompanion://connect?{urlencode(params)}"
+
+
 def get_or_create_thumbnail(
     image_path: Path, size=(400, 400), cache_tag: str = "thumb"
 ) -> Path:
@@ -5176,11 +5213,21 @@ def upload_photos():
 
 @app.route("/android-companion")
 def android_companion_page():
-    """安卓伴侣入口：直接跳下载或首页，不再单独保留说明页。"""
+    """安卓伴侣入口：展示下载、连接和当前站点说明。"""
     apk_path = get_android_companion_apk_path()
-    if apk_path:
-        return redirect(get_android_companion_apk_url(apk_path))
-    return redirect("/")
+    local_url = get_current_local_base_url()
+    public_url = str(getattr(public_client, "public_url", "") or "").strip()
+    return render_template(
+        "android_companion.html",
+        baby_name=getattr(public_client, "baby_name", "宝宝"),
+        avatar_url=getattr(public_client, "avatar_url", DEFAULT_AVATAR_URL),
+        apk_available=bool(apk_path),
+        apk_name=apk_path.name if apk_path else "",
+        apk_url=get_android_companion_apk_url(apk_path),
+        local_url=local_url,
+        public_url=public_url,
+        connect_url=build_android_companion_connect_url(local_url, public_url),
+    )
 
 
 @app.route("/android-companion/apk")
@@ -7740,6 +7787,9 @@ def _select_comic_source_records(records: list, limit: int = 1) -> tuple[list, l
 
 
 def _build_manual_comic_prompt(record: dict, style: dict, custom_prompt: str = "") -> str:
+    # 漫画卡和虚拟人物卡的设计边界不同：
+    # - 漫画卡：基于原作品/原照片做风格动漫化，核心是把已有那一幕画得更完整、更适合分享。
+    # - 虚拟人物卡：只保留人物原型，场景和陪伴角色可按卡片设计重构，不要求复刻原作。
     baby_name = getattr(public_client, "baby_name", "宝宝")
     description = (record.get("description") or "").strip()
     scene = (record.get("scene") or "").strip()
@@ -7749,6 +7799,7 @@ def _build_manual_comic_prompt(record: dict, style: dict, custom_prompt: str = "
     prompt = (
         f"请参考这张宝宝真实照片，创作一张适合家长分享的单幅漫画海报。"
         f"主角固定为{baby_name}，必须保留宝宝本人五官特征、发型、体态、年龄感、衣服主色和当前真实场景元素，不能换脸，不能换成陌生孩子。"
+        f"这张卡的目标是基于原作品做风格动漫化，不是另起一个虚构人物设定。"
         f"不要把原图直接卡通滤镜化，而是要重新组织构图、背景层次、镜头距离和光线，让它看起来像一张精心设计的封面图。"
     )
     if style.get("name"):
