@@ -953,6 +953,10 @@
     opacity: 1;
 }
 
+.gallery-item-uni.mobile-toolbar-visible .gallery-item-overlay {
+    opacity: 1;
+}
+
 .gallery-item-actions {
     display: flex;
     gap: 8px;
@@ -1888,7 +1892,7 @@
         <div class="gallery-grid-uni" id="galleryGrid" style="{% if not today_photos %}display:none;{% endif %}">
             {% if today_photos %}
             {% for photo in today_photos %}
-            <div class="gallery-item-uni {% if photo.is_video %}is-video{% endif %}" data-photo-id="{{ photo.filename }}" title="{{ photo.path }}" onclick="{% if photo.is_video %}playVideo('{{ photo.filename }}'){% else %}selectAsFeatured('{{ photo.filename }}'){% endif %}">
+            <div class="gallery-item-uni {% if photo.is_video %}is-video{% endif %}" data-photo-id="{{ photo.filename }}" title="{{ photo.path }}" onclick="handleGalleryItemClick(event, '{{ photo.filename }}', {{ 'true' if photo.is_video else 'false' }})">
                 {% if photo.is_video %}
                 <img src="{{ url_for('get_video_thumb', filename=photo.filename) }}" alt="视频" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='/api/default-video-thumb'">
                 <div class="video-play-icon">
@@ -3227,7 +3231,7 @@ function updatePhotoGallery(photos, dateStr) {
     console.log('[DEBUG] 更新照片网格');
     if (galleryGrid) {
         galleryGrid.innerHTML = photos.map(photo => `
-            <div class="gallery-item-uni ${photo.is_video ? 'is-video' : ''}" data-photo-id="${photo.filename}" title="${photo.path || photo.filename}" onclick="${photo.is_video ? `playVideo('${photo.filename}')` : `selectAsFeatured('${photo.filename}')`}">
+            <div class="gallery-item-uni ${photo.is_video ? 'is-video' : ''}" data-photo-id="${photo.filename}" title="${photo.path || photo.filename}" onclick="handleGalleryItemClick(event, '${photo.filename}', ${photo.is_video ? 'true' : 'false'})">
                 ${photo.is_video ? `
                     <img src="/video/thumb/${photo.filename}" alt="视频" loading="lazy" decoding="async" fetchpriority="low" onerror="this.src='/api/default-video-thumb'">
                     <div class="video-play-icon">
@@ -4601,6 +4605,48 @@ function getThumbImageUrl(filename) {
     return '/photo/thumb/' + encodeURIComponent(getSafePhotoFilename(filename));
 }
 
+function isMobileGalleryToolbarMode() {
+    return window.matchMedia('(max-width: 767.98px)').matches;
+}
+
+function hideMobileGalleryToolbars(exceptItem = null) {
+    document.querySelectorAll('.gallery-item-uni.mobile-toolbar-visible').forEach(item => {
+        if (item !== exceptItem) {
+            item.classList.remove('mobile-toolbar-visible');
+        }
+    });
+}
+
+function handleGalleryItemClick(event, filename, isVideo) {
+    const galleryItem = event && event.currentTarget ? event.currentTarget : null;
+    if (!galleryItem) {
+        if (isVideo) {
+            playVideo(filename);
+        } else {
+            selectAsFeatured(filename);
+        }
+        return;
+    }
+
+    if (isMobileGalleryToolbarMode()) {
+        const isToolbarTap = event.target.closest('.gallery-item-actions');
+        if (!isToolbarTap && !galleryItem.classList.contains('mobile-toolbar-visible')) {
+            event.preventDefault();
+            event.stopPropagation();
+            hideMobileGalleryToolbars(galleryItem);
+            galleryItem.classList.add('mobile-toolbar-visible');
+            return;
+        }
+    }
+
+    hideMobileGalleryToolbars();
+    if (isVideo) {
+        playVideo(filename);
+    } else {
+        selectAsFeatured(filename);
+    }
+}
+
 function loadImagePreferCompressed(img, filename, loadingText) {
     const safeFilename = getSafePhotoFilename(filename);
     if (!safeFilename || !img) {
@@ -4760,6 +4806,15 @@ function closeFullscreen() {
     // 移除键盘事件
     document.removeEventListener('keydown', handleFullscreenKeydown);
 }
+
+document.addEventListener('click', function(event) {
+    if (!isMobileGalleryToolbarMode()) {
+        return;
+    }
+    if (!event.target.closest('.gallery-item-uni')) {
+        hideMobileGalleryToolbars();
+    }
+});
 
 // 分享照片 - 使用与日志分享一样的逻辑
 function sharePhoto(filename) {
@@ -5359,10 +5414,11 @@ body.modal-open .mini-growth-card {
 
     .gallery-item-overlay {
         inset: 8px 8px auto auto;
-        opacity: 1;
+        opacity: 0;
         padding: 0;
         display: block;
         background: none;
+        pointer-events: none;
     }
 
     .gallery-item-actions {
@@ -5375,6 +5431,10 @@ body.modal-open .mini-growth-card {
         background: rgba(255,255,255,0.9);
         backdrop-filter: blur(10px);
         box-shadow: 0 8px 20px rgba(44,44,44,0.16);
+    }
+
+    .gallery-item-uni.mobile-toolbar-visible .gallery-item-overlay {
+        pointer-events: auto;
     }
 
     .gallery-item-actions > div {
