@@ -266,7 +266,7 @@
                         </div>
                         <div class="card-body">
                             <p class="text-muted small mb-3">
-                                先按目标大小生成图片/视频样例，确认满意后再批量原地压缩。图片会优先处理，最长边低于 1440 的图片不会被压缩。
+                                先按目标大小生成图片/视频样例，确认满意后再批量原地压缩。两档都统一跳过图片最小边小于或等于 1440px、视频短边小于或等于 720px；轻压档不改分辨率，空间优先档会在超过门槛时再降分辨率并重压缩。
                             </p>
                             <div class="p-3 bg-light rounded mb-3">
                                 <div class="d-flex justify-content-between small mb-2">
@@ -519,7 +519,7 @@
             </div>
             <div class="modal-body">
                 <div class="alert alert-info small mb-3">
-                    现在固定分两挡：`基本不伤画质` 和 `保底压缩`。你还可以单独勾选只压图片、只压视频，或把某一种完全排除。
+                    现在固定分两挡：`基本不伤画质` 和 `尽量缩小空间`。两挡都统一跳过图片最小边小于或等于 1440px、视频短边小于或等于 720px；前者只做轻度压缩不改分辨率，后者会在超过门槛时再降分辨率并更重压缩。你还可以单独勾选只压图片、只压视频，或把某一种完全排除。
                 </div>
                 <div class="alert alert-secondary small mb-3">
                     压缩任务会按单线程顺序慢慢处理，并周期性回收内存、短暂让出 CPU。看到速度偏慢属于正常现象，目的是避免把机器压死。
@@ -548,11 +548,14 @@
                     </div>
                     <div class="col-md-3">
                         <div class="p-3 border rounded h-100">
-                            <div class="text-muted small mb-1">其他不处理部分</div>
+                            <div class="text-muted small mb-1">暂不压缩部分</div>
                             <div class="fw-semibold" id="mediaShrinkImmutableSize">-</div>
                             <div class="small text-muted mt-1" id="mediaShrinkImmutableCount">-</div>
                         </div>
                     </div>
+                </div>
+                <div class="small text-muted mb-3">
+                    注：上方“可压缩图片 / 视频”已经按统一门槛过滤；“暂不压缩部分”包含低于或等于门槛的图片/视频，以及其他本轮不会处理的文件。
                 </div>
 
                 <div id="mediaShrinkUnavailable" class="alert alert-warning d-none mb-3"></div>
@@ -574,7 +577,7 @@
                             <div class="col-md-6">
                                 <label class="border rounded p-3 h-100 w-100 media-shrink-preset-card" id="mediaShrinkPresetCardMinimum">
                                     <input class="form-check-input me-2" type="radio" name="mediaShrinkPreset" id="mediaShrinkPresetMinimum" value="minimum">
-                                    <span class="fw-semibold">保底压缩</span>
+                                    <span class="fw-semibold">尽量缩小空间</span>
                                     <div class="small text-muted mt-2" id="mediaShrinkPresetMinimumHint">-</div>
                                     <div class="small mt-2">
                                         估算压后总大小：<strong id="mediaShrinkPresetMinimumEstimate">-</strong>
@@ -777,7 +780,7 @@
                 </div>
                 <ul class="small text-muted mb-0 ps-3">
                     <li>你勾选了什么类型，就只会处理什么类型</li>
-                    <li>基本不伤画质会保留原分辨率；保底压缩会把图片压到最低边 1440、视频压到 720p 保底</li>
+                    <li>基本不伤画质不改分辨率，只做轻度压缩；尽量缩小空间会在超过门槛时把图片压到最低边 1440、把视频压到短边 720，并进一步压缩</li>
                     <li>原文件会被直接替换，不会额外保留备份</li>
                     <li>刚才的样例文件只用于预览，确认前并没有改动原文件</li>
                 </ul>
@@ -1839,6 +1842,67 @@ function formatBytes(bytes) {
     return size.toFixed(size >= 10 || index === 0 ? 0 : 1) + ' ' + units[index];
 }
 
+function formatBytesPrecise(bytes) {
+    var value = Number(bytes || 0);
+    if (!isFinite(value) || value <= 0) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    var size = value / Math.pow(1024, index);
+    if (index >= 3) {
+        return size.toFixed(size >= 100 ? 0 : 1) + ' ' + units[index];
+    }
+    return formatBytes(value);
+}
+
+function buildMediaShrinkPresetHintText(info) {
+    if (!info) {
+        return '-';
+    }
+    var parts = [];
+    if (info.preset_description) {
+        parts.push(info.preset_description);
+    }
+    var imageInfo = info.image || {};
+    var videoInfo = info.video || {};
+    var imageEligibleCount = Number(imageInfo.eligible_count || 0);
+    var videoEligibleCount = Number(videoInfo.eligible_count || 0);
+    parts.push('本档实际会处理 ' + imageEligibleCount + ' 张图片、' + videoEligibleCount + ' 个视频');
+
+    if (imageInfo.skip_reason && !imageEligibleCount) {
+        parts.push('图片：' + imageInfo.skip_reason);
+    }
+    if (videoInfo.skip_reason && !videoEligibleCount) {
+        parts.push('视频：' + videoInfo.skip_reason);
+    }
+    return parts.join(' ');
+}
+
+function getMediaShrinkTotalFileCount(stats) {
+    return (
+        Number(stats.total_image_count || 0) +
+        Number(stats.video_count || 0) +
+        Number(stats.other_count || 0)
+    );
+}
+
+function getMediaShrinkImmutableBytes(stats) {
+    return Math.max(
+        0,
+        Number(stats.total_bytes || 0) -
+        Number(stats.image_bytes || 0) -
+        Number(stats.compressible_video_bytes || 0)
+    );
+}
+
+function getMediaShrinkImmutableCount(stats) {
+    return Math.max(
+        0,
+        getMediaShrinkTotalFileCount(stats) -
+        Number(stats.image_count || 0) -
+        Number(stats.compressible_video_count || 0)
+    );
+}
+
 function bytesToGb(bytes) {
     return (Number(bytes || 0) / 1024 / 1024 / 1024).toFixed(2);
 }
@@ -1906,7 +1970,7 @@ function getMediaShrinkCurrentPlan() {
     var presetStats = stats.presets[selection.preset_key] || {};
     var plan = {
         preset_key: presetStats.preset_key || selection.preset_key,
-        preset_label: presetStats.preset_label || (selection.preset_key === 'minimum' ? '保底压缩' : '基本不伤画质'),
+        preset_label: presetStats.preset_label || (selection.preset_key === 'minimum' ? '尽量缩小空间' : '基本不伤画质'),
         preset_description: presetStats.preset_description || '',
         include_images: selection.include_images,
         include_videos: selection.include_videos,
@@ -1957,8 +2021,8 @@ function renderMediaShrinkPresetCards(stats) {
         if (card) {
             card.classList.toggle('is-active', isActive);
         }
-        document.getElementById(hintId).textContent = info.preset_description || '-';
-        document.getElementById(estimateId).textContent = formatBytes(info.estimated_total_bytes || 0);
+        document.getElementById(hintId).textContent = buildMediaShrinkPresetHintText(info);
+        document.getElementById(estimateId).textContent = formatBytesPrecise(info.estimated_total_bytes || 0);
     });
 }
 
@@ -2009,18 +2073,20 @@ function clearMediaShrinkPollTimer() {
 }
 
 function refreshMediaShrinkSettingsSummary(stats) {
+    var immutableBytes = getMediaShrinkImmutableBytes(stats);
+    var immutableCount = getMediaShrinkImmutableCount(stats);
     document.getElementById('settingsMediaShrinkTotalText').textContent = formatBytes(stats.total_bytes);
     document.getElementById('settingsMediaShrinkImagesText').textContent = formatBytes(stats.image_bytes) + ' / ' + (stats.image_count || 0) + ' 张';
     document.getElementById('settingsMediaShrinkVideosText').textContent = formatBytes(stats.compressible_video_bytes || 0) + ' / ' + (stats.compressible_video_count || 0) + ' 个';
-    document.getElementById('settingsMediaShrinkImmutableText').textContent = formatBytes(stats.unhandled_bytes || 0);
+    document.getElementById('settingsMediaShrinkImmutableText').textContent = formatBytes(immutableBytes);
     document.getElementById('mediaShrinkCurrentSize').textContent = formatBytes(stats.total_bytes);
     document.getElementById('mediaShrinkImageSize').textContent = formatBytes(stats.image_bytes);
     document.getElementById('mediaShrinkVideoSize').textContent = formatBytes(stats.compressible_video_bytes || 0);
-    document.getElementById('mediaShrinkImmutableSize').textContent = formatBytes(stats.unhandled_bytes || 0);
-    document.getElementById('mediaShrinkCurrentCount').textContent = ((stats.image_count || 0) + (stats.video_count || 0) + (stats.other_count || 0)) + ' 个文件';
+    document.getElementById('mediaShrinkImmutableSize').textContent = formatBytes(immutableBytes);
+    document.getElementById('mediaShrinkCurrentCount').textContent = getMediaShrinkTotalFileCount(stats) + ' 个文件';
     document.getElementById('mediaShrinkImageCount').textContent = (stats.image_count || 0) + ' 张图片';
     document.getElementById('mediaShrinkVideoCount').textContent = (stats.compressible_video_count || 0) + ' 个视频';
-    document.getElementById('mediaShrinkImmutableCount').textContent = ((stats.unsupported_video_count || 0) + (stats.other_count || 0)) + ' 个文件';
+    document.getElementById('mediaShrinkImmutableCount').textContent = immutableCount + ' 个文件';
     document.getElementById('mediaShrinkSampleHint').textContent = stats.sample_filename || '未找到样例图';
     document.getElementById('mediaShrinkVideoSampleHint').textContent = stats.sample_video_filename || '未找到样例视频';
 }
@@ -2045,14 +2111,14 @@ function updateMediaShrinkTargetSummary() {
         return;
     }
 
-    document.getElementById('mediaShrinkTargetSummary').textContent = formatBytes(plan.estimated_total_bytes || 0);
+    document.getElementById('mediaShrinkTargetSummary').textContent = formatBytesPrecise(plan.estimated_total_bytes || 0);
     document.getElementById('mediaShrinkImageTargetSummary').textContent =
         selection.include_images
-            ? formatBytes(Number(plan.image.estimated_bytes || 0) + Number(plan.image.skipped_bytes || 0))
+            ? formatBytesPrecise(Number(plan.image.estimated_bytes || 0) + Number(plan.image.skipped_bytes || 0))
             : '不压图片';
     document.getElementById('mediaShrinkVideoTargetSummary').textContent =
         selection.include_videos
-            ? formatBytes(Number(plan.video.estimated_bytes || 0) + Number(plan.video.skipped_bytes || 0))
+            ? formatBytesPrecise(Number(plan.video.estimated_bytes || 0) + Number(plan.video.skipped_bytes || 0))
             : '不压视频';
     document.getElementById('mediaShrinkPreviewBtn').disabled = !plan.can_start;
 }
@@ -2205,7 +2271,7 @@ function generateMediaShrinkPreview() {
                     'JPG ' + data.data.plan.image.jpeg_quality + ' / WEBP ' + data.data.plan.image.webp_quality;
                 document.getElementById('mediaShrinkPreviewImagePolicy').textContent =
                     data.data.plan.image.resize_mode === 'shortest_side'
-                        ? '最低边 1440px 保底'
+                        ? '压到最低边 1440px'
                         : '不改分辨率';
             } else {
                 document.getElementById('mediaShrinkPreviewFilename').textContent = '本轮不压图片';
@@ -2225,7 +2291,7 @@ function generateMediaShrinkPreview() {
                     'CRF ' + data.data.plan.video.crf + ' / 音频 ' + data.data.plan.video.audio_bitrate;
                 document.getElementById('mediaShrinkPreviewVideoPolicy').textContent =
                     data.data.plan.video.resize_mode === 'shortest_side'
-                        ? '720p 保底'
+                        ? '压到短边 720px'
                         : '尽量保留原分辨率';
             } else {
                 document.getElementById('mediaShrinkVideoPreviewFilename').textContent = '本轮不压视频';
