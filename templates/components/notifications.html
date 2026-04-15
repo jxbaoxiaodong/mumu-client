@@ -100,12 +100,12 @@ function showNotificationCard(notif) {
     
     container.appendChild(card);
     
-    // 5秒后自动消失
+    // 8秒后自动消失
     setTimeout(() => {
         if (card.parentElement) {
             card.remove();
         }
-    }, 5000);
+    }, 8000);
 }
 
 // 标记通知为已读

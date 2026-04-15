@@ -81,12 +81,12 @@ function showNotification(message, type = 'info') {
     // 添加到容器
     notificationContainer.appendChild(notification);
     
-    // 5秒后自动移除
+    // 8秒后自动移除
     setTimeout(() => {
         if (notification.parentNode) {
             notification.remove();
         }
-    }, 5000);
+    }, 8000);
 }
 
 function fallbackCopyText(text, successMessage) {
