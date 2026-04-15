@@ -547,22 +547,21 @@ document.getElementById('setupForm').addEventListener('submit', async function(e
         if (data.success) {
             submitBtn.innerHTML = '<i class="fas fa-check me-2"></i>设置完成！';
             showNotification('设置完成！', 'success');
-            
-            if (data.index_info && data.index_info.first_time) {
-                const indexInfo = data.index_info;
-                startInitialIndexBuild(indexInfo);
-            } else {
-                updateSetupProgress({
-                    title: '设置完成',
-                    detail: '正在进入主页...',
-                    percentText: '100%',
-                    progress: 100,
-                    animated: false
-                });
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 1200);
-            }
+
+            const indexTask = data.index_task || (data.index_info && data.index_info.auto_rescan) || null;
+            const backgroundIndexing = !!(indexTask && (indexTask.started || indexTask.queued));
+            updateSetupProgress({
+                title: '设置完成',
+                detail: backgroundIndexing
+                    ? '正在进入主页，素材索引会在后台静默整理，最近日期会优先出现。'
+                    : '正在进入主页...',
+                percentText: '100%',
+                progress: 100,
+                animated: false
+            });
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 1000);
         } else {
             setLoadingError('设置失败：' + data.message);
         }

@@ -1395,8 +1395,12 @@ class PublicClient:
                     index.get("videos", {})
                 )
                 print(f"📂 已有索引: {total_files} 个文件")
-                request_photo_rescan("启动后自动校正索引")
-                return {"first_time": False, "existing_files": total_files}
+                auto_rescan = request_photo_rescan("启动后自动校正索引")
+                return {
+                    "first_time": False,
+                    "existing_files": total_files,
+                    "auto_rescan": auto_rescan,
+                }
             else:
                 # 首次建立索引，先快速估算文件数量
                 print("🔍 首次建立照片索引...")
@@ -3218,6 +3222,23 @@ LOCAL_MODE = False
 CLIENT_DISABLED = False
 
 
+def _get_latest_indexed_date():
+    """返回当前索引里最新的日期，作为首页默认落点。"""
+    try:
+        media_folders = getattr(public_client, "media_folders", []) or []
+        if not media_folders:
+            return None
+
+        from photo_manager import PhotoManager
+
+        pm = PhotoManager(media_folders, public_client.data_dir)
+        all_dates = pm.get_all_dates() or []
+        return all_dates[0] if all_dates else None
+    except Exception as e:
+        logger.info(f"[Home] 读取最新索引日期失败: {e}")
+        return None
+
+
 @app.route("/")
 def index():
     """首页 - 首屏快速渲染，远程数据交给前端异步补齐"""
@@ -3227,6 +3248,7 @@ def index():
     perf_parts = {}
 
     date_param = request.args.get("date")
+    explicit_date = bool(date_param)
     if date_param:
         try:
             datetime.strptime(date_param, "%Y-%m-%d")
@@ -3234,7 +3256,7 @@ def index():
         except ValueError:
             display_date = datetime.now().strftime("%Y-%m-%d")
     else:
-        display_date = datetime.now().strftime("%Y-%m-%d")
+        display_date = _get_latest_indexed_date() or datetime.now().strftime("%Y-%m-%d")
 
     if public_client.is_first_run():
         return redirect("/setup")
@@ -3404,6 +3426,8 @@ def index():
         inline_main_js=get_inline_asset_text("static/js/main.js"),
         defer_fontawesome=True,
         comic_style_presets=get_comic_style_presets(),
+        initial_index_scan_progress=dict(scan_progress),
+        home_has_explicit_date=explicit_date,
     )
 
     perf_parts["total_ms"] = round((time.perf_counter() - perf_started) * 1000, 1)
@@ -3850,6 +3874,11 @@ def api_setup():
 
         # 检查索引状态
         index_info = public_client.init_photo_index()
+        index_task = None
+        if index_info.get("first_time"):
+            index_task = request_photo_rescan("初次设置后静默建索引")
+        elif isinstance(index_info.get("auto_rescan"), dict):
+            index_task = index_info.get("auto_rescan")
 
         return jsonify(
             {
@@ -3859,6 +3888,7 @@ def api_setup():
                 "folders_count": len(valid_folders),
                 "is_first_registration": is_first_registration,
                 "index_info": index_info,
+                "index_task": index_task,
             }
         )
 

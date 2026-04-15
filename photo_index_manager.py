@@ -11,10 +11,12 @@ import os
 import re
 import json
 import hashlib
+import shutil
 import subprocess
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from PIL import Image
 from PIL.ExifTags import TAGS
 
@@ -73,6 +75,9 @@ class PhotoIndexManager:
         self.video_extensions = {".mp4", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
         self.all_extensions = self.image_extensions | self.video_extensions
         self.sample_hash_bytes = 1024 * 1024
+        self.partial_save_every = 24
+        self.partial_save_interval_seconds = 2.5
+        self._ffprobe_path = None
 
     def _load_index(self) -> Dict:
         """加载索引文件"""
@@ -204,22 +209,133 @@ class PhotoIndexManager:
                         continue
         return None
 
-    def _extract_date_from_exif(self, image_path: Path) -> Optional[str]:
-        """从图片EXIF信息中提取日期"""
+    def _extract_image_metadata(
+        self, image_path: Path
+    ) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
+        """一次打开图片，同时提取 EXIF 日期和分辨率。"""
         try:
-            image = Image.open(image_path)
-            exif = image._getexif()
+            with Image.open(image_path) as image:
+                width = int(getattr(image, "width", 0) or 0)
+                height = int(getattr(image, "height", 0) or 0)
+                exif = image._getexif()
+                detected_date = None
 
-            if exif:
-                for tag_id, value in exif.items():
-                    tag = TAGS.get(tag_id, tag_id)
-                    if tag in ["DateTime", "DateTimeOriginal"]:
-                        date_str = value.split()[0]
-                        date_obj = datetime.strptime(date_str, "%Y:%m:%d")
-                        return date_obj.strftime("%Y-%m-%d")
+                if exif:
+                    for tag_id, value in exif.items():
+                        tag = TAGS.get(tag_id, tag_id)
+                        if tag in ["DateTime", "DateTimeOriginal"] and isinstance(
+                            value, str
+                        ):
+                            try:
+                                date_str = value.split()[0]
+                                date_obj = datetime.strptime(date_str, "%Y:%m:%d")
+                                detected_date = date_obj.strftime("%Y-%m-%d")
+                                break
+                            except Exception:
+                                continue
+            dimensions = (width, height) if width > 0 and height > 0 else None
+            return detected_date, dimensions
         except:
             pass
+        return None, None
+
+    def _extract_date_from_exif(self, image_path: Path) -> Optional[str]:
+        """从图片EXIF信息中提取日期"""
+        date_str, _ = self._extract_image_metadata(image_path)
+        return date_str
+
+    def _get_ffprobe_path(self) -> Optional[str]:
+        """获取 ffprobe 路径，用于读取视频分辨率。"""
+        if self._ffprobe_path is not None:
+            return self._ffprobe_path or None
+
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+            ffmpeg_binary = Path(ffmpeg_path)
+            ffprobe_name = (
+                "ffprobe.exe"
+                if ffmpeg_binary.name.lower().endswith(".exe")
+                else "ffprobe"
+            )
+            ffprobe_path = ffmpeg_binary.with_name(ffprobe_name)
+            if ffprobe_path.exists():
+                self._ffprobe_path = str(ffprobe_path)
+                return self._ffprobe_path
+        except Exception:
+            pass
+
+        self._ffprobe_path = shutil.which("ffprobe") or ""
+        return self._ffprobe_path or None
+
+    def _get_video_dimensions(self, video_path: Path) -> Optional[Tuple[int, int]]:
+        """读取视频分辨率。"""
+        ffprobe_path = self._get_ffprobe_path()
+        if not ffprobe_path:
+            return None
+
+        try:
+            result = subprocess.run(
+                [
+                    ffprobe_path,
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "v:0",
+                    "-show_entries",
+                    "stream=width,height",
+                    "-of",
+                    "csv=p=0:s=x",
+                    str(video_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=12,
+            )
+            if result.returncode != 0:
+                return None
+            output = result.stdout.strip().splitlines()
+            if not output:
+                return None
+            values = output[0].strip().lower().replace(",", "x").split("x")
+            if len(values) < 2:
+                return None
+            width = int(values[0])
+            height = int(values[1])
+            if width > 0 and height > 0:
+                return (width, height)
+        except Exception:
+            return None
         return None
+
+    def _get_media_dimensions(
+        self, file_path: Path, is_video: bool
+    ) -> Optional[Tuple[int, int]]:
+        if is_video:
+            return self._get_video_dimensions(file_path)
+        _, dimensions = self._extract_image_metadata(file_path)
+        return dimensions
+
+    def _build_scan_record(self, file_path: Path) -> Optional[Dict]:
+        """构建扫描排序所需的轻量信息，优先让最新日期先进入索引。"""
+        try:
+            stat = file_path.stat()
+        except Exception:
+            return None
+
+        sort_date_hint = self._extract_date_from_filename(file_path.name)
+        if not sort_date_hint:
+            sort_date_hint = datetime.fromtimestamp(stat.st_mtime).strftime(
+                "%Y-%m-%d"
+            )
+
+        return {
+            "path": file_path,
+            "modified": stat.st_mtime,
+            "sort_date_hint": sort_date_hint,
+            "is_video": file_path.suffix.lower() in self.video_extensions,
+        }
 
     def _get_file_date(self, file_path: Path) -> str:
         """获取文件日期（优先文件名，其次EXIF，最后修改时间）"""
@@ -276,7 +392,18 @@ class PhotoIndexManager:
                 for filename in files:
                     file_path = Path(root) / filename
                     if file_path.suffix.lower() in self.all_extensions:
-                        all_files.append(file_path)
+                        record = self._build_scan_record(file_path)
+                        if record:
+                            all_files.append(record)
+
+        all_files.sort(
+            key=lambda item: (
+                item.get("sort_date_hint") or "",
+                float(item.get("modified") or 0),
+                item["path"].name,
+            ),
+            reverse=True,
+        )
 
         total = len(all_files)
         print(f"📁 找到 {total} 个媒体文件")
@@ -284,26 +411,46 @@ class PhotoIndexManager:
         # 更新索引
         new_count = 0
         existing_count = 0
+        last_partial_save_at = time.monotonic()
 
-        for i, file_path in enumerate(all_files):
+        for i, file_info in enumerate(all_files):
+            file_path = file_info["path"]
             if progress_callback:
                 progress_callback(i + 1, total, f"扫描中: {file_path.name}")
 
+            try:
+                stat = file_path.stat()
+            except Exception:
+                continue
+
+            is_video = bool(file_info.get("is_video"))
             file_hash = self._calculate_hash(file_path)
-            file_date = self._get_file_date(file_path)
-            is_video = file_path.suffix.lower() in self.video_extensions
+            if is_video:
+                file_date = self._get_file_date(file_path)
+                dimensions = self._get_video_dimensions(file_path)
+            else:
+                image_date, dimensions = self._extract_image_metadata(file_path)
+                file_date = (
+                    self._extract_date_from_filename(file_path.name)
+                    or image_date
+                    or datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d")
+                )
             target_key = "videos" if is_video else "photos"
             other_key = "photos" if is_video else "videos"
             path_str = str(file_path)
+            width = int(dimensions[0]) if dimensions else 0
+            height = int(dimensions[1]) if dimensions else 0
 
             entry = {
                 "hash": file_hash,
                 "path": path_str,
                 "filename": file_path.name,
                 "date": file_date,
-                "size": file_path.stat().st_size,
-                "modified": file_path.stat().st_mtime,
+                "size": stat.st_size,
+                "modified": stat.st_mtime,
                 "is_video": is_video,
+                "width": width,
+                "height": height,
             }
 
             # 同一路径文件若内容被改写，旧哈希条目必须先移除，否则会残留旧日期/旧体积。
@@ -327,27 +474,28 @@ class PhotoIndexManager:
                 self.index[target_key][file_hash] = entry
                 new_count += 1
 
+            should_checkpoint = (
+                (i + 1) % self.partial_save_every == 0
+                or (time.monotonic() - last_partial_save_at)
+                >= self.partial_save_interval_seconds
+            )
+            if should_checkpoint:
+                self._save_index()
+                last_partial_save_at = time.monotonic()
+
         # 清理不存在的文件索引
         self._cleanup_index()
 
         # 按路径去重（同一文件可能被重复索引，保留最新的）
         self._deduplicate_by_path()
 
-        # 如果只设置起始日期（不设置结束日期），先删除旧索引再扫描
-        # 这样新加入的文件会自动被扫描到索引中
-        if start_date and not end_date:
-            # 先删除 start_date 之前的旧索引
-            removed_count = self._filter_index_by_date_range(start_date, None)
-            if removed_count > 0:
-                print(f"🗑️ 已删除 {removed_count} 个旧索引条目（{start_date}之前）")
-            # 重新扫描添加所有文件（包括 start_date 及之后的全部）
-            start_date = None  # 扫描时不带日期限制，添加所有文件
-            end_date = None
-        elif start_date or end_date:
-            # 旧逻辑：同时指定起始和结束日期时，只保留范围内的
+        if start_date or end_date:
             removed_count = self._filter_index_by_date_range(start_date, end_date)
             if removed_count > 0:
-                print(f"🗑️ 已删除日期范围外的 {removed_count} 个索引条目")
+                if start_date and not end_date:
+                    print(f"🗑️ 已删除 {removed_count} 个旧索引条目（{start_date}之前）")
+                else:
+                    print(f"🗑️ 已删除日期范围外的 {removed_count} 个索引条目")
 
         # 保存索引
         self._save_index()
@@ -521,8 +669,6 @@ class PhotoIndexManager:
         """
         target_path = self.get_upload_target_path(original_filename)
 
-        import shutil
-
         # 直接复制源文件（不阻塞压缩）
         try:
             shutil.copy2(temp_path, target_path)
@@ -566,6 +712,13 @@ class PhotoIndexManager:
             "is_video": is_video,
             "original_name": original_filename,
         }
+        dimensions = self._get_media_dimensions(file_path, is_video)
+        if dimensions:
+            entry["width"] = int(dimensions[0])
+            entry["height"] = int(dimensions[1])
+        else:
+            entry["width"] = 0
+            entry["height"] = 0
 
         if is_video:
             self.index["videos"][file_hash] = entry
@@ -617,6 +770,8 @@ class PhotoIndexManager:
                                 "date": date,
                                 "is_video": entry.get("is_video", False),
                                 "size": entry.get("size", 0),
+                                "width": entry.get("width", 0),
+                                "height": entry.get("height", 0),
                             }
                         )
 

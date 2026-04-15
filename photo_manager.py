@@ -70,6 +70,8 @@ class PhotoManager:
             "path": entry["path"],
             "hash": entry["hash"],
             "is_video": entry.get("is_video", False),
+            "width": entry.get("width", 0),
+            "height": entry.get("height", 0),
         }
 
     def get_upload_target_path(self, filename: str) -> Path:
@@ -98,6 +100,8 @@ class PhotoManager:
             "path": entry["path"],
             "hash": entry["hash"],
             "is_video": entry.get("is_video", False),
+            "width": entry.get("width", 0),
+            "height": entry.get("height", 0),
         }
 
     def get_photos_by_date(self, date: str) -> list:
@@ -176,6 +180,8 @@ class PhotoManager:
                 "date": entry["date"],
                 "is_video": entry.get("is_video", False),
                 "size": entry.get("size", 0),
+                "width": entry.get("width", 0),
+                "height": entry.get("height", 0),
             }
         return None
 
@@ -198,6 +204,8 @@ class PhotoManager:
                 "date": entry["date"],
                 "is_video": entry.get("is_video", False),
                 "size": entry.get("size", 0),
+                "width": entry.get("width", 0),
+                "height": entry.get("height", 0),
             }
         return None
 
@@ -222,6 +230,8 @@ class PhotoManager:
                         "date": entry["date"],
                         "is_video": entry.get("is_video", False),
                         "size": entry.get("size", 0),
+                        "width": entry.get("width", 0),
+                        "height": entry.get("height", 0),
                     }
         return None
 
