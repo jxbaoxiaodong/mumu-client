@@ -5277,9 +5277,24 @@ function showMiniCard() {
     miniCard.classList.add('show');
 }
 
+function syncMiniCardVisibility() {
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    const miniCard = document.getElementById('miniGrowthCard');
+
+    if (isMobile) {
+        if (miniCard) {
+            miniCard.remove();
+        }
+        return;
+    }
+
+    showMiniCard();
+}
+
 // 页面加载完成后立即显示右下角卡片入口
 document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(showMiniCard, 100);
+    setTimeout(syncMiniCardVisibility, 100);
+    window.addEventListener('resize', syncMiniCardVisibility);
 });
 
 function hideMiniCard() {
@@ -5343,6 +5358,10 @@ body.modal-open .mini-growth-card {
 
 /* 移动端基础适配 */
 @media (max-width: 767px) {
+    .mini-growth-card {
+        display: none !important;
+    }
+
     /* 日期头部适配 */
     .date-header-unified {
         flex-direction: column;
